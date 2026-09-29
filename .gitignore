@@ -1,0 +1,7 @@
+# Runtime state: the SQLite database and uploaded deed/lease files.
+# Back this folder up separately — it is the register itself, not source code.
+data/
+
+__pycache__/
+*.py[cod]
+.DS_Store

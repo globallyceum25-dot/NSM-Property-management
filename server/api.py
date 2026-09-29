@@ -1,0 +1,578 @@
+"""REST handlers for the property register."""
+
+import csv
+import datetime
+import io
+import os
+import re
+import uuid
+
+from . import db, srilanka
+from .srilanka import valid_codes
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024
+ALLOWED_EXTENSIONS = {
+    ".pdf", ".jpg", ".jpeg", ".png", ".gif", ".webp", ".tif", ".tiff",
+    ".doc", ".docx", ".xls", ".xlsx", ".txt", ".csv", ".zip",
+}
+
+PROPERTY_FIELDS = [
+    "name", "property_type", "ownership_type", "status",
+    "address_line1", "address_line2", "city", "district", "province", "postal_code",
+    "extent_value", "extent_unit", "building_area_sqft",
+    "assessment_no", "plan_no", "lot_no",
+    "acquisition_date", "acquisition_cost", "current_value", "currency",
+    "current_use", "custodian", "contact_phone", "notes",
+]
+
+DOCUMENT_FIELDS = [
+    "doc_type", "title", "reference_no", "issue_date", "expiry_date",
+    "counterparty", "amount", "currency", "notes",
+]
+
+
+class ApiError(Exception):
+    def __init__(self, message, status=400, field=None):
+        Exception.__init__(self, message)
+        self.message = message
+        self.status = status
+        self.field = field
+
+
+# --- helpers ----------------------------------------------------------------
+
+def _row_to_dict(row):
+    return dict(row) if row is not None else None
+
+
+def _clean_str(value):
+    if value is None:
+        return None
+    value = str(value).strip()
+    return value or None
+
+
+def _as_float(value, field):
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        raise ApiError("%s must be a number." % field, field=field)
+
+
+def _as_date(value, field):
+    value = _clean_str(value)
+    if value is None:
+        return None
+    try:
+        datetime.datetime.strptime(value, "%Y-%m-%d")
+    except ValueError:
+        raise ApiError("%s must be a date in YYYY-MM-DD format." % field, field=field)
+    return value
+
+
+def _check_enum(value, pairs, field, default=None):
+    value = _clean_str(value) or default
+    if value is None:
+        raise ApiError("%s is required." % field, field=field)
+    codes = valid_codes(pairs)
+    if value not in codes:
+        raise ApiError("%s must be one of: %s" % (field, ", ".join(codes)), field=field)
+    return value
+
+
+def _next_property_code(conn, sbu_id):
+    sbu = conn.execute("SELECT code FROM sbu WHERE id = ?", (sbu_id,)).fetchone()
+    prefix = (sbu["code"] if sbu else "PRP").upper()
+    n = conn.execute(
+        "SELECT COUNT(*) AS n FROM property WHERE sbu_id = ?", (sbu_id,)
+    ).fetchone()["n"]
+    while True:
+        n += 1
+        code = "%s-%04d" % (prefix, n)
+        exists = conn.execute(
+            "SELECT 1 FROM property WHERE property_code = ?", (code,)
+        ).fetchone()
+        if not exists:
+            return code
+
+
+# --- reference data ---------------------------------------------------------
+
+def get_reference(ctx):
+    return 200, {
+        "provinces": [
+            {"province": name,
+             "districts": [{"district": d, "lat": lat, "lng": lng}
+                           for d, lat, lng in districts]}
+            for name, districts in srilanka.PROVINCES
+        ],
+        "districts": srilanka.DISTRICTS,
+        "propertyTypes": srilanka.as_options(srilanka.PROPERTY_TYPES),
+        "ownershipTypes": srilanka.as_options(srilanka.OWNERSHIP_TYPES),
+        "statuses": srilanka.as_options(srilanka.PROPERTY_STATUSES),
+        "extentUnits": srilanka.as_options(srilanka.EXTENT_UNITS),
+        "documentTypes": srilanka.as_options(srilanka.DOCUMENT_TYPES),
+        "bounds": srilanka.SRI_LANKA_BOUNDS,
+        "mapCenter": srilanka.MAP_CENTER,
+        "mapZoom": srilanka.MAP_DEFAULT_ZOOM,
+        "colors": srilanka.SBU_COLORS,
+        "maxUploadBytes": MAX_UPLOAD_BYTES,
+    }
+
+
+# --- SBUs -------------------------------------------------------------------
+
+def list_sbus(ctx):
+    conn = db.get_conn()
+    rows = conn.execute(
+        """SELECT s.*,
+                  (SELECT COUNT(*) FROM property p WHERE p.sbu_id = s.id) AS property_count
+           FROM sbu s ORDER BY s.name"""
+    ).fetchall()
+    return 200, [_row_to_dict(r) for r in rows]
+
+
+def _sbu_payload(ctx, require_code=True):
+    data = ctx.json()
+    code = _clean_str(data.get("code"))
+    name = _clean_str(data.get("name"))
+    if require_code and not code:
+        raise ApiError("SBU code is required.", field="code")
+    if not name:
+        raise ApiError("SBU name is required.", field="name")
+    color = _clean_str(data.get("color")) or srilanka.SBU_COLORS[0]
+    if not re.match(r"^#[0-9a-fA-F]{6}$", color):
+        raise ApiError("Colour must be a hex value like #1f77b4.", field="color")
+    return {
+        "code": code.upper() if code else None,
+        "name": name,
+        "description": _clean_str(data.get("description")),
+        "color": color,
+        "is_active": 1 if data.get("is_active", True) else 0,
+    }
+
+
+def create_sbu(ctx):
+    payload = _sbu_payload(ctx)
+    conn = db.get_conn()
+    if conn.execute("SELECT 1 FROM sbu WHERE code = ?", (payload["code"],)).fetchone():
+        raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
+    cur = conn.execute(
+        """INSERT INTO sbu (code, name, description, color, is_active)
+           VALUES (:code, :name, :description, :color, :is_active)""", payload)
+    conn.commit()
+    row = conn.execute("SELECT * FROM sbu WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return 201, _row_to_dict(row)
+
+
+def update_sbu(ctx):
+    sbu_id = int(ctx.match.group("id"))
+    conn = db.get_conn()
+    if not conn.execute("SELECT 1 FROM sbu WHERE id = ?", (sbu_id,)).fetchone():
+        raise ApiError("SBU not found.", 404)
+    payload = _sbu_payload(ctx)
+    clash = conn.execute("SELECT 1 FROM sbu WHERE code = ? AND id <> ?",
+                         (payload["code"], sbu_id)).fetchone()
+    if clash:
+        raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
+    payload["id"] = sbu_id
+    conn.execute(
+        """UPDATE sbu SET code=:code, name=:name, description=:description,
+                          color=:color, is_active=:is_active,
+                          updated_at=datetime('now')
+           WHERE id=:id""", payload)
+    conn.commit()
+    row = conn.execute("SELECT * FROM sbu WHERE id = ?", (sbu_id,)).fetchone()
+    return 200, _row_to_dict(row)
+
+
+def delete_sbu(ctx):
+    sbu_id = int(ctx.match.group("id"))
+    conn = db.get_conn()
+    n = conn.execute("SELECT COUNT(*) AS n FROM property WHERE sbu_id = ?",
+                     (sbu_id,)).fetchone()["n"]
+    if n:
+        raise ApiError(
+            "This SBU still has %d propert%s. Move or delete them first."
+            % (n, "y" if n == 1 else "ies"), 409)
+    conn.execute("DELETE FROM sbu WHERE id = ?", (sbu_id,))
+    conn.commit()
+    return 200, {"deleted": sbu_id}
+
+
+# --- properties -------------------------------------------------------------
+
+_PROPERTY_SELECT = """
+    SELECT p.*, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+           (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count
+    FROM property p JOIN sbu s ON s.id = p.sbu_id
+"""
+
+
+def list_properties(ctx):
+    conn = db.get_conn()
+    where, params = [], []
+    q = ctx.query
+
+    if q.get("sbu_id"):
+        ids = [int(x) for x in q["sbu_id"].split(",") if x.strip().isdigit()]
+        if ids:
+            where.append("p.sbu_id IN (%s)" % ",".join("?" * len(ids)))
+            params.extend(ids)
+    if q.get("district"):
+        where.append("p.district = ?")
+        params.append(q["district"])
+    if q.get("province"):
+        where.append("p.province = ?")
+        params.append(q["province"])
+    if q.get("status"):
+        where.append("p.status = ?")
+        params.append(q["status"])
+    if q.get("property_type"):
+        where.append("p.property_type = ?")
+        params.append(q["property_type"])
+    if q.get("q"):
+        term = "%" + q["q"].strip() + "%"
+        where.append("""(p.name LIKE ? OR p.property_code LIKE ? OR p.city LIKE ?
+                         OR p.address_line1 LIKE ? OR p.district LIKE ?
+                         OR p.assessment_no LIKE ? OR p.current_use LIKE ?)""")
+        params.extend([term] * 7)
+
+    sql = _PROPERTY_SELECT
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY s.name, p.property_code"
+    rows = conn.execute(sql, params).fetchall()
+    return 200, [_row_to_dict(r) for r in rows]
+
+
+def get_property(ctx):
+    conn = db.get_conn()
+    pid = int(ctx.match.group("id"))
+    row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (pid,)).fetchone()
+    if row is None:
+        raise ApiError("Property not found.", 404)
+    data = _row_to_dict(row)
+    data["documents"] = [_row_to_dict(d) for d in conn.execute(
+        "SELECT * FROM document WHERE property_id = ? ORDER BY doc_type, issue_date DESC",
+        (pid,))]
+    return 200, data
+
+
+def _property_payload(ctx, conn):
+    data = ctx.json()
+
+    name = _clean_str(data.get("name"))
+    if not name:
+        raise ApiError("Property name is required.", field="name")
+
+    try:
+        sbu_id = int(data.get("sbu_id"))
+    except (TypeError, ValueError):
+        raise ApiError("Please select an SBU.", field="sbu_id")
+    if not conn.execute("SELECT 1 FROM sbu WHERE id = ?", (sbu_id,)).fetchone():
+        raise ApiError("The selected SBU does not exist.", field="sbu_id")
+
+    lat = _as_float(data.get("latitude"), "Latitude")
+    lng = _as_float(data.get("longitude"), "Longitude")
+    ok, message = srilanka.coordinates_in_sri_lanka(lat, lng)
+    if not ok:
+        raise ApiError(message, field="latitude")
+
+    district = _clean_str(data.get("district"))
+    if district and district not in srilanka.DISTRICT_BY_NAME:
+        raise ApiError("'%s' is not a Sri Lankan district." % district, field="district")
+    province = srilanka.DISTRICT_BY_NAME[district]["province"] if district else \
+        _clean_str(data.get("province"))
+
+    payload = {
+        "name": name,
+        "sbu_id": sbu_id,
+        "latitude": lat,
+        "longitude": lng,
+        "property_type": _check_enum(data.get("property_type"),
+                                     srilanka.PROPERTY_TYPES, "Property type", "LAND"),
+        "ownership_type": _check_enum(data.get("ownership_type"),
+                                      srilanka.OWNERSHIP_TYPES, "Ownership", "FREEHOLD"),
+        "status": _check_enum(data.get("status"),
+                              srilanka.PROPERTY_STATUSES, "Status", "ACTIVE"),
+        "extent_unit": _check_enum(data.get("extent_unit"),
+                                   srilanka.EXTENT_UNITS, "Extent unit", "PERCH"),
+        "district": district,
+        "province": province,
+        "extent_value": _as_float(data.get("extent_value"), "Extent"),
+        "building_area_sqft": _as_float(data.get("building_area_sqft"), "Building area"),
+        "acquisition_cost": _as_float(data.get("acquisition_cost"), "Acquisition cost"),
+        "current_value": _as_float(data.get("current_value"), "Current value"),
+        "acquisition_date": _as_date(data.get("acquisition_date"), "Acquisition date"),
+        "currency": _clean_str(data.get("currency")) or "LKR",
+    }
+    for field in ("address_line1", "address_line2", "city", "postal_code",
+                  "assessment_no", "plan_no", "lot_no", "current_use",
+                  "custodian", "contact_phone", "notes"):
+        payload[field] = _clean_str(data.get(field))
+    return payload, _clean_str(data.get("property_code"))
+
+
+def create_property(ctx):
+    conn = db.get_conn()
+    payload, code = _property_payload(ctx, conn)
+    payload["property_code"] = code.upper() if code else _next_property_code(conn, payload["sbu_id"])
+    if conn.execute("SELECT 1 FROM property WHERE property_code = ?",
+                    (payload["property_code"],)).fetchone():
+        raise ApiError("Property code '%s' is already in use." % payload["property_code"],
+                       409, "property_code")
+
+    columns = ["property_code", "sbu_id", "latitude", "longitude"] + PROPERTY_FIELDS
+    cur = conn.execute(
+        "INSERT INTO property (%s) VALUES (%s)"
+        % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
+    conn.commit()
+    row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (cur.lastrowid,)).fetchone()
+    return 201, _row_to_dict(row)
+
+
+def update_property(ctx):
+    conn = db.get_conn()
+    pid = int(ctx.match.group("id"))
+    existing = conn.execute("SELECT * FROM property WHERE id = ?", (pid,)).fetchone()
+    if existing is None:
+        raise ApiError("Property not found.", 404)
+
+    payload, code = _property_payload(ctx, conn)
+    payload["property_code"] = code.upper() if code else existing["property_code"]
+    clash = conn.execute("SELECT 1 FROM property WHERE property_code = ? AND id <> ?",
+                         (payload["property_code"], pid)).fetchone()
+    if clash:
+        raise ApiError("Property code '%s' is already in use." % payload["property_code"],
+                       409, "property_code")
+    payload["id"] = pid
+
+    columns = ["property_code", "sbu_id", "latitude", "longitude"] + PROPERTY_FIELDS
+    conn.execute(
+        "UPDATE property SET %s, updated_at = datetime('now') WHERE id = :id"
+        % ", ".join("%s = :%s" % (c, c) for c in columns), payload)
+    conn.commit()
+    row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (pid,)).fetchone()
+    return 200, _row_to_dict(row)
+
+
+def delete_property(ctx):
+    conn = db.get_conn()
+    pid = int(ctx.match.group("id"))
+    docs = conn.execute("SELECT stored_name FROM document WHERE property_id = ?",
+                        (pid,)).fetchall()
+    conn.execute("DELETE FROM document WHERE property_id = ?", (pid,))
+    conn.execute("DELETE FROM property WHERE id = ?", (pid,))
+    conn.commit()
+    for d in docs:
+        _remove_stored_file(d["stored_name"])
+    return 200, {"deleted": pid}
+
+
+# --- documents --------------------------------------------------------------
+
+def _remove_stored_file(stored_name):
+    if not stored_name:
+        return
+    path = os.path.join(db.UPLOAD_DIR, os.path.basename(stored_name))
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def list_documents(ctx):
+    conn = db.get_conn()
+    pid = int(ctx.match.group("id"))
+    rows = conn.execute(
+        "SELECT * FROM document WHERE property_id = ? ORDER BY doc_type, issue_date DESC",
+        (pid,)).fetchall()
+    return 200, [_row_to_dict(r) for r in rows]
+
+
+def create_document(ctx):
+    conn = db.get_conn()
+    pid = int(ctx.match.group("id"))
+    if not conn.execute("SELECT 1 FROM property WHERE id = ?", (pid,)).fetchone():
+        raise ApiError("Property not found.", 404)
+
+    fields, upload = ctx.form()
+    title = _clean_str(fields.get("title"))
+    doc_type = _check_enum(fields.get("doc_type"), srilanka.DOCUMENT_TYPES,
+                           "Document type", "OTHER")
+    if not title:
+        # Fall back to the document type label so a row is never nameless.
+        title = dict(srilanka.DOCUMENT_TYPES)[doc_type]
+
+    stored_name = file_name = mime_type = None
+    size_bytes = None
+    if upload is not None and upload.is_file:
+        file_name = os.path.basename(upload.filename.replace("\\", "/"))
+        ext = os.path.splitext(file_name)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise ApiError(
+                "File type '%s' is not allowed. Allowed: %s"
+                % (ext or "(none)", ", ".join(sorted(ALLOWED_EXTENSIONS))), field="file")
+        if len(upload.data) > MAX_UPLOAD_BYTES:
+            raise ApiError("File is larger than the %d MB limit."
+                           % (MAX_UPLOAD_BYTES // (1024 * 1024)), 413, "file")
+        if not upload.data:
+            raise ApiError("The uploaded file is empty.", field="file")
+        stored_name = "%s%s" % (uuid.uuid4().hex, ext)
+        with open(os.path.join(db.UPLOAD_DIR, stored_name), "wb") as fh:
+            fh.write(upload.data)
+        mime_type = upload.content_type
+        size_bytes = len(upload.data)
+
+    payload = {
+        "property_id": pid,
+        "doc_type": doc_type,
+        "title": title,
+        "reference_no": _clean_str(fields.get("reference_no")),
+        "issue_date": _as_date(fields.get("issue_date"), "Issue date"),
+        "expiry_date": _as_date(fields.get("expiry_date"), "Expiry date"),
+        "counterparty": _clean_str(fields.get("counterparty")),
+        "amount": _as_float(fields.get("amount"), "Amount"),
+        "currency": _clean_str(fields.get("currency")) or "LKR",
+        "notes": _clean_str(fields.get("notes")),
+        "file_name": file_name,
+        "stored_name": stored_name,
+        "mime_type": mime_type,
+        "size_bytes": size_bytes,
+    }
+    if payload["issue_date"] and payload["expiry_date"] \
+            and payload["expiry_date"] < payload["issue_date"]:
+        _remove_stored_file(stored_name)
+        raise ApiError("Expiry date cannot be before the issue date.", field="expiry_date")
+
+    columns = ["property_id", "file_name", "stored_name", "mime_type",
+               "size_bytes"] + DOCUMENT_FIELDS
+    cur = conn.execute(
+        "INSERT INTO document (%s) VALUES (%s)"
+        % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
+    conn.commit()
+    row = conn.execute("SELECT * FROM document WHERE id = ?", (cur.lastrowid,)).fetchone()
+    return 201, _row_to_dict(row)
+
+
+def delete_document(ctx):
+    conn = db.get_conn()
+    doc_id = int(ctx.match.group("id"))
+    row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if row is None:
+        raise ApiError("Document not found.", 404)
+    conn.execute("DELETE FROM document WHERE id = ?", (doc_id,))
+    conn.commit()
+    _remove_stored_file(row["stored_name"])
+    return 200, {"deleted": doc_id}
+
+
+def download_document(ctx):
+    """Returns a raw-file response tuple handled specially by the server."""
+    conn = db.get_conn()
+    doc_id = int(ctx.match.group("id"))
+    row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
+    if row is None or not row["stored_name"]:
+        raise ApiError("No file attached to this document.", 404)
+    path = os.path.join(db.UPLOAD_DIR, os.path.basename(row["stored_name"]))
+    if not os.path.exists(path):
+        raise ApiError("The stored file is missing from disk.", 410)
+    with open(path, "rb") as fh:
+        data = fh.read()
+    return 200, {
+        "__raw__": True,
+        "body": data,
+        "content_type": row["mime_type"] or "application/octet-stream",
+        "filename": row["file_name"] or row["stored_name"],
+        "inline": ctx.query.get("disposition") != "attachment",
+    }
+
+
+# --- dashboard & export -----------------------------------------------------
+
+def get_stats(ctx):
+    conn = db.get_conn()
+    by_sbu = [_row_to_dict(r) for r in conn.execute(
+        """SELECT s.id, s.code, s.name, s.color,
+                  COUNT(p.id) AS property_count,
+                  COALESCE(SUM(CASE WHEN p.extent_unit='ACRE' THEN p.extent_value*160
+                                    WHEN p.extent_unit='ROOD' THEN p.extent_value*40
+                                    WHEN p.extent_unit='HECTARE' THEN p.extent_value*395.37
+                                    WHEN p.extent_unit='SQ_M' THEN p.extent_value*0.0395369
+                                    ELSE p.extent_value END), 0) AS extent_perches
+           FROM sbu s LEFT JOIN property p ON p.sbu_id = s.id
+           GROUP BY s.id ORDER BY property_count DESC, s.name""")]
+    by_status = [_row_to_dict(r) for r in conn.execute(
+        "SELECT status, COUNT(*) AS n FROM property GROUP BY status ORDER BY n DESC")]
+    by_district = [_row_to_dict(r) for r in conn.execute(
+        """SELECT district, province, COUNT(*) AS n FROM property
+           WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""")]
+    totals = _row_to_dict(conn.execute(
+        """SELECT (SELECT COUNT(*) FROM property) AS properties,
+                  (SELECT COUNT(*) FROM sbu) AS sbus,
+                  (SELECT COUNT(*) FROM document) AS documents,
+                  (SELECT COUNT(*) FROM document WHERE stored_name IS NOT NULL) AS files,
+                  (SELECT COUNT(*) FROM property p WHERE NOT EXISTS
+                      (SELECT 1 FROM document d WHERE d.property_id = p.id
+                       AND d.doc_type IN ('DEED','TITLE_CERTIFICATE'))) AS without_deed
+        """).fetchone())
+    expiring = [_row_to_dict(r) for r in conn.execute(
+        """SELECT d.id, d.title, d.doc_type, d.expiry_date, d.counterparty,
+                  p.id AS property_id, p.property_code, p.name AS property_name
+           FROM document d JOIN property p ON p.id = d.property_id
+           WHERE d.expiry_date IS NOT NULL
+             AND d.expiry_date >= date('now')
+             AND d.expiry_date <= date('now', '+180 day')
+           ORDER BY d.expiry_date""")]
+    return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
+                 "byDistrict": by_district, "expiringSoon": expiring}
+
+
+def export_properties_csv(ctx):
+    conn = db.get_conn()
+    rows = conn.execute(_PROPERTY_SELECT + " ORDER BY s.name, p.property_code").fetchall()
+    buf = io.StringIO()
+    headers = ["property_code", "name", "sbu_code", "sbu_name", "property_type",
+               "ownership_type", "status", "address_line1", "address_line2", "city",
+               "district", "province", "postal_code", "latitude", "longitude",
+               "extent_value", "extent_unit", "building_area_sqft", "assessment_no",
+               "plan_no", "lot_no", "acquisition_date", "acquisition_cost",
+               "current_value", "currency", "current_use", "custodian",
+               "contact_phone", "document_count", "notes"]
+    writer = csv.writer(buf)
+    writer.writerow(headers)
+    for r in rows:
+        writer.writerow([r[h] if r[h] is not None else "" for h in headers])
+    return 200, {
+        "__raw__": True,
+        "body": buf.getvalue().encode("utf-8-sig"),
+        "content_type": "text/csv; charset=utf-8",
+        "filename": "properties-%s.csv" % datetime.date.today().isoformat(),
+        "inline": False,
+    }
+
+
+ROUTES = [
+    ("GET",    r"^/api/reference$",                      get_reference),
+    ("GET",    r"^/api/sbus$",                           list_sbus),
+    ("POST",   r"^/api/sbus$",                           create_sbu),
+    ("PUT",    r"^/api/sbus/(?P<id>\d+)$",               update_sbu),
+    ("DELETE", r"^/api/sbus/(?P<id>\d+)$",               delete_sbu),
+    ("GET",    r"^/api/properties$",                     list_properties),
+    ("POST",   r"^/api/properties$",                     create_property),
+    ("GET",    r"^/api/properties/(?P<id>\d+)$",         get_property),
+    ("PUT",    r"^/api/properties/(?P<id>\d+)$",         update_property),
+    ("DELETE", r"^/api/properties/(?P<id>\d+)$",         delete_property),
+    ("GET",    r"^/api/properties/(?P<id>\d+)/documents$", list_documents),
+    ("POST",   r"^/api/properties/(?P<id>\d+)/documents$", create_document),
+    ("GET",    r"^/api/documents/(?P<id>\d+)/file$",     download_document),
+    ("DELETE", r"^/api/documents/(?P<id>\d+)$",          delete_document),
+    ("GET",    r"^/api/stats$",                          get_stats),
+    ("GET",    r"^/api/export/properties.csv$",          export_properties_csv),
+]
+
+COMPILED_ROUTES = [(method, re.compile(pattern), handler)
+                   for method, pattern, handler in ROUTES]

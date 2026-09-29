@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Property Register &middot; Stage 1</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="brand-mark">PR</span>
+    <div>
+      <h1>Property Register</h1>
+      <p>Sri Lanka &middot; Stage 1 &mdash; properties, documents &amp; map</p>
+    </div>
+  </div>
+  <div class="topbar-actions">
+    <div class="search">
+      <input id="search" type="search" placeholder="Search code, name, city, district&hellip;" autocomplete="off">
+    </div>
+    <a class="btn btn-ghost" href="/api/export/properties.csv">Export CSV</a>
+    <button class="btn btn-primary" id="btn-new-property">+ New property</button>
+  </div>
+</header>
+
+<div class="layout">
+  <aside class="sidebar">
+    <section class="filter-group">
+      <div class="filter-head">
+        <h2>Business units</h2>
+        <button class="link-btn" id="btn-sbu-all">all</button>
+      </div>
+      <div id="sbu-filters" class="sbu-filters"></div>
+    </section>
+
+    <section class="filter-group">
+      <h2>Filters</h2>
+      <label>District
+        <select id="filter-district"><option value="">All districts</option></select>
+      </label>
+      <label>Status
+        <select id="filter-status"><option value="">Any status</option></select>
+      </label>
+      <label>Type
+        <select id="filter-type"><option value="">Any type</option></select>
+      </label>
+      <button class="btn btn-ghost btn-block" id="btn-reset-filters">Reset filters</button>
+    </section>
+
+    <section class="filter-group summary">
+      <h2>Showing</h2>
+      <p class="big-number" id="result-count">0</p>
+      <p class="muted" id="result-caption">properties</p>
+    </section>
+  </aside>
+
+  <main class="main">
+    <nav class="tabs" role="tablist">
+      <button class="tab is-active" data-view="map">Map</button>
+      <button class="tab" data-view="list">Properties</button>
+      <button class="tab" data-view="sbus">Business units</button>
+      <button class="tab" data-view="dashboard">Dashboard</button>
+    </nav>
+
+    <section class="view is-active" id="view-map">
+      <div id="map"></div>
+      <div class="map-legend" id="map-legend"></div>
+    </section>
+
+    <section class="view" id="view-list">
+      <div class="table-wrap">
+        <table class="grid">
+          <thead>
+            <tr>
+              <th>Code</th><th>Property</th><th>SBU</th><th>Type</th>
+              <th>District</th><th>Extent</th><th>Status</th>
+              <th>Docs</th><th>Coordinates</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="property-rows"></tbody>
+        </table>
+        <p class="empty" id="list-empty" hidden>No properties match the current filters.</p>
+      </div>
+    </section>
+
+    <section class="view" id="view-sbus">
+      <div class="panel-head">
+        <h2>Business units (SBU)</h2>
+        <button class="btn btn-primary" id="btn-new-sbu">+ New SBU</button>
+      </div>
+      <div id="sbu-cards" class="sbu-cards"></div>
+    </section>
+
+    <section class="view" id="view-dashboard">
+      <div id="dashboard"></div>
+    </section>
+  </main>
+</div>
+
+<!-- Property detail drawer -->
+<aside class="drawer" id="drawer" hidden>
+  <header class="drawer-head">
+    <div>
+      <p class="drawer-code" id="drawer-code"></p>
+      <h2 id="drawer-name"></h2>
+    </div>
+    <button class="icon-btn" id="btn-close-drawer" aria-label="Close">&times;</button>
+  </header>
+  <div class="drawer-body" id="drawer-body"></div>
+</aside>
+<div class="scrim" id="scrim" hidden></div>
+
+<!-- Property form modal -->
+<div class="modal" id="property-modal" hidden>
+  <div class="modal-card modal-wide">
+    <header class="modal-head">
+      <h2 id="property-modal-title">New property</h2>
+      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="property-form" class="modal-body">
+      <input type="hidden" name="id">
+
+      <fieldset>
+        <legend>Identification</legend>
+        <div class="grid-2">
+          <label>Property name <span class="req">*</span>
+            <input name="name" required maxlength="160" placeholder="e.g. Kandy City Showroom">
+          </label>
+          <label>Property code
+            <input name="property_code" maxlength="40" placeholder="auto-generated if blank">
+          </label>
+          <label>Business unit (SBU) <span class="req">*</span>
+            <select name="sbu_id" required></select>
+          </label>
+          <label>Status
+            <select name="status"></select>
+          </label>
+          <label>Property type
+            <select name="property_type"></select>
+          </label>
+          <label>Ownership
+            <select name="ownership_type"></select>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Location</legend>
+        <div class="grid-2">
+          <label>Address line 1
+            <input name="address_line1" maxlength="160">
+          </label>
+          <label>Address line 2
+            <input name="address_line2" maxlength="160">
+          </label>
+          <label>City / town
+            <input name="city" maxlength="80">
+          </label>
+          <label>District
+            <select name="district"><option value="">&mdash;</option></select>
+          </label>
+          <label>Province
+            <input name="province" readonly placeholder="set from district">
+          </label>
+          <label>Postal code
+            <input name="postal_code" maxlength="12">
+          </label>
+        </div>
+
+        <div class="coord-block">
+          <div class="coord-inputs">
+            <label>Latitude <span class="req">*</span>
+              <input name="latitude" required inputmode="decimal" placeholder="6.92710">
+            </label>
+            <label>Longitude <span class="req">*</span>
+              <input name="longitude" required inputmode="decimal" placeholder="79.86120">
+            </label>
+            <button type="button" class="btn btn-ghost" id="btn-paste-coords">Paste "lat, lng"</button>
+            <p class="hint">Click the map to drop the pin, or drag it to fine-tune. Coordinates must fall inside Sri Lanka.</p>
+            <p class="field-error" id="coord-error" hidden></p>
+          </div>
+          <div id="picker-map" class="picker-map"></div>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Extent &amp; value</legend>
+        <div class="grid-3">
+          <label>Land extent
+            <input name="extent_value" inputmode="decimal">
+          </label>
+          <label>Unit
+            <select name="extent_unit"></select>
+          </label>
+          <label>Building area (sq ft)
+            <input name="building_area_sqft" inputmode="decimal">
+          </label>
+          <label>Assessment no.
+            <input name="assessment_no" maxlength="60">
+          </label>
+          <label>Survey plan no.
+            <input name="plan_no" maxlength="60">
+          </label>
+          <label>Lot no.
+            <input name="lot_no" maxlength="60">
+          </label>
+          <label>Acquisition date
+            <input name="acquisition_date" type="date">
+          </label>
+          <label>Acquisition cost
+            <input name="acquisition_cost" inputmode="decimal">
+          </label>
+          <label>Current value
+            <input name="current_value" inputmode="decimal">
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Custody &amp; notes</legend>
+        <div class="grid-2">
+          <label>Current use
+            <input name="current_use" maxlength="120">
+          </label>
+          <label>Custodian / officer
+            <input name="custodian" maxlength="120">
+          </label>
+          <label>Contact phone
+            <input name="contact_phone" maxlength="40">
+          </label>
+          <label>Currency
+            <input name="currency" maxlength="8" value="LKR">
+          </label>
+        </div>
+        <label>Notes
+          <textarea name="notes" rows="3" maxlength="2000"></textarea>
+        </label>
+      </fieldset>
+
+      <p class="form-error" id="property-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-primary" id="btn-save-property">Save property</button>
+    </footer>
+  </div>
+</div>
+
+<!-- SBU form modal -->
+<div class="modal" id="sbu-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="sbu-modal-title">New business unit</h2>
+      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="sbu-form" class="modal-body">
+      <input type="hidden" name="id">
+      <div class="grid-2">
+        <label>Code <span class="req">*</span>
+          <input name="code" required maxlength="16" placeholder="e.g. RETAIL">
+        </label>
+        <label>Map colour
+          <input name="color" type="color" value="#1f77b4">
+        </label>
+      </div>
+      <label>Name <span class="req">*</span>
+        <input name="name" required maxlength="120">
+      </label>
+      <label>Description
+        <textarea name="description" rows="3" maxlength="500"></textarea>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="is_active" checked> Active
+      </label>
+      <p class="form-error" id="sbu-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-primary" id="btn-save-sbu">Save</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Document form modal -->
+<div class="modal" id="doc-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>Attach document</h2>
+      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="doc-form" class="modal-body">
+      <input type="hidden" name="property_id">
+      <div class="grid-2">
+        <label>Document type <span class="req">*</span>
+          <select name="doc_type"></select>
+        </label>
+        <label>Reference no.
+          <input name="reference_no" maxlength="80" placeholder="deed no. / agreement no.">
+        </label>
+      </div>
+      <label>Title
+        <input name="title" maxlength="160" placeholder="defaults to the document type">
+      </label>
+      <div class="grid-2">
+        <label>Issue date
+          <input name="issue_date" type="date">
+        </label>
+        <label>Expiry date
+          <input name="expiry_date" type="date">
+        </label>
+        <label>Counterparty / notary
+          <input name="counterparty" maxlength="160">
+        </label>
+        <label>Amount (rent / value)
+          <input name="amount" inputmode="decimal">
+        </label>
+      </div>
+      <label>File
+        <input name="file" type="file">
+        <span class="hint" id="doc-file-hint"></span>
+      </label>
+      <label>Notes
+        <textarea name="notes" rows="2" maxlength="1000"></textarea>
+      </label>
+      <p class="form-error" id="doc-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-primary" id="btn-save-doc">Attach</button>
+    </footer>
+  </div>
+</div>
+
+<div id="toast" class="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="js/api.js"></script>
+<script src="js/map.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
