@@ -21,7 +21,9 @@ def wipe(reload_sample=False):
         DELETE FROM document;
         DELETE FROM property;
         DELETE FROM sbu;
-        DELETE FROM sqlite_sequence WHERE name IN ('document','property','sbu');
+        DELETE FROM legal_entity;
+        DELETE FROM sqlite_sequence
+         WHERE name IN ('document','property','sbu','legal_entity');
     """)
     conn.commit()
     if os.path.isdir(db.UPLOAD_DIR):

@@ -41,6 +41,11 @@ window.API = (function () {
     updateSbu: (id, data) => request('PUT', '/api/sbus/' + id, data),
     deleteSbu: (id) => request('DELETE', '/api/sbus/' + id),
 
+    listEntities: () => request('GET', '/api/legal-entities'),
+    createEntity: (data) => request('POST', '/api/legal-entities', data),
+    updateEntity: (id, data) => request('PUT', '/api/legal-entities/' + id, data),
+    deleteEntity: (id) => request('DELETE', '/api/legal-entities/' + id),
+
     listProperties: (filters) => request('GET', '/api/properties' + qs(filters || {})),
     getProperty: (id) => request('GET', '/api/properties/' + id),
     createProperty: (data) => request('POST', '/api/properties', data),

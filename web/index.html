@@ -41,6 +41,9 @@
       <label>District
         <select id="filter-district"><option value="">All districts</option></select>
       </label>
+      <label>Owning company
+        <select id="filter-entity"><option value="">Any company</option></select>
+      </label>
       <label>Status
         <select id="filter-status"><option value="">Any status</option></select>
       </label>
@@ -62,6 +65,7 @@
       <button class="tab is-active" data-view="map">Map</button>
       <button class="tab" data-view="list">Properties</button>
       <button class="tab" data-view="sbus">Business units</button>
+      <button class="tab" data-view="entities">Owning companies</button>
       <button class="tab" data-view="dashboard">Dashboard</button>
     </nav>
 
@@ -75,7 +79,7 @@
         <table class="grid">
           <thead>
             <tr>
-              <th>Code</th><th>Property</th><th>SBU</th><th>Type</th>
+              <th>Code</th><th>Property</th><th>SBU</th><th>Owned by</th><th>Type</th>
               <th>District</th><th>Extent</th><th>Status</th>
               <th>Docs</th><th>Coordinates</th><th></th>
             </tr>
@@ -92,6 +96,21 @@
         <button class="btn btn-primary" id="btn-new-sbu">+ New SBU</button>
       </div>
       <div id="sbu-cards" class="sbu-cards"></div>
+    </section>
+
+    <section class="view" id="view-entities">
+      <div class="panel-head">
+        <h2>Owning companies (legal entities)</h2>
+        <button class="btn btn-primary" id="btn-new-entity">+ New company</button>
+      </div>
+      <p class="panel-note">
+        The group company that holds title. This is deliberately separate from the
+        business unit that <em>occupies</em> the property, and from how the property
+        is <em>held</em> (owned / leased / rented). A property leased or rented in
+        from an outside landlord has no owning company here &mdash; that party belongs
+        on the lease document instead.
+      </p>
+      <div id="entity-cards" class="sbu-cards"></div>
     </section>
 
     <section class="view" id="view-dashboard">
@@ -135,14 +154,19 @@
           <label>Business unit (SBU) <span class="req">*</span>
             <select name="sbu_id" required></select>
           </label>
+          <label>Owning company
+            <select name="legal_entity_id"></select>
+            <span class="hint">Leave blank if we lease or rent this in &mdash; an
+              outside landlord owns it.</span>
+          </label>
           <label>Status
             <select name="status"></select>
           </label>
-          <label>Property type
-            <select name="property_type"></select>
-          </label>
           <label>Ownership
             <select name="ownership_type"></select>
+          </label>
+          <label>Property type
+            <select name="property_type"></select>
           </label>
         </div>
       </fieldset>
@@ -288,6 +312,41 @@
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
       <button class="btn btn-primary" id="btn-save-sbu">Save</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Owning company modal -->
+<div class="modal" id="entity-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="entity-modal-title">New owning company</h2>
+      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="entity-form" class="modal-body">
+      <input type="hidden" name="id">
+      <div class="grid-2">
+        <label>Short code <span class="req">*</span>
+          <input name="short_code" required maxlength="16" placeholder="e.g. LIS">
+        </label>
+        <label>Registration no.
+          <input name="reg_no" maxlength="40" placeholder="e.g. PV 12345">
+        </label>
+      </div>
+      <label>Registered name <span class="req">*</span>
+        <input name="name" required maxlength="160">
+      </label>
+      <label>Notes
+        <textarea name="description" rows="3" maxlength="500"></textarea>
+      </label>
+      <label class="checkbox">
+        <input type="checkbox" name="is_active" checked> Active
+      </label>
+      <p class="form-error" id="entity-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-primary" id="btn-save-entity">Save</button>
     </footer>
   </div>
 </div>

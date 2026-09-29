@@ -29,6 +29,11 @@ needs internet access for the map to draw. Everything else works offline.
 
 ## What it does
 
+**Three things kept apart.** The register separates who *occupies* a property
+(the SBU), who *owns* it (the legal entity), and how it is *held* (tenure).
+Conflating them is the defect the blueprint flags in the current property sheet,
+where the Ownership column mixes owning companies with "Rent" and "Lease".
+
 **Properties by SBU** — every property belongs to exactly one business unit.
 SBUs are created and edited in the app (name, code, description, map colour),
 and an SBU cannot be deleted while properties still point at it.
@@ -85,8 +90,14 @@ An SBU is the sector/business unit/department that **occupies** a property and
 carries its costs. It is deliberately *not* the owning legal entity and *not* the
 tenure — see *Not in Stage 1* for the legal-entity gap.
 
+`legal_entity` — short code, registered name, registration no., notes, active
+flag. The group company that **holds title**. A property leased or rented *in*
+has none: an outside landlord owns it, and that party is recorded on the lease
+document instead. Managed from the **Owning companies** tab.
+
 `property` — property code (unique, auto-generated as `SBU-0001` if left blank),
-name, SBU, type, ownership type, status, address (line 1/2, city, district,
+name, SBU, owning company (optional), type, ownership type, status,
+address (line 1/2, city, district,
 province, postal code), **latitude, longitude**, extent value + unit
 (perch/acre/rood/hectare/m²), building area, assessment no., survey plan no.,
 lot no., acquisition date and cost, current value, currency, current use,
@@ -105,6 +116,8 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET | `/api/reference` | districts, provinces, enumerations, map bounds |
 | GET/POST | `/api/sbus` | list / create SBUs |
 | PUT/DELETE | `/api/sbus/{id}` | update / delete an SBU |
+| GET/POST | `/api/legal-entities` | list / create owning companies |
+| PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
 | GET | `/api/properties` | list, filtered by `sbu_id`, `district`, `province`, `status`, `property_type`, `q` |
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
@@ -118,7 +131,14 @@ Sri Lanka; selecting a district fills the province automatically.
 
 The first run seeds 6 placeholder SBUs, 13 properties across Sri Lanka and 9
 document records so the map and lists are not empty. **Replace these with the
-real register.** To clear them:
+real register.**
+
+It also seeds 5 owning companies — LIS, CNT, NCGE, NCGH, NSM — taken from the
+blueprint. Only their short codes were stated there, so each `name` repeats its
+code and the card shows a **name unconfirmed** badge until someone fills in the
+registered name. The list is not exhaustive.
+
+To clear everything:
 
 ```bash
 python3 -m server.reset --wipe
@@ -140,11 +160,6 @@ By design, and worth agreeing before Stage 2:
 - No document versioning or approval workflow — uploading a new lease adds a
   second document rather than superseding the first.
 - No audit trail of who changed what.
-- **No `legal_entity` table.** The blueprint separates three things the current
-  property sheet conflates: the owning company (LIS, CNT, NCGE, NCGH, NSM…), the
-  occupying SBU, and the tenure. Stage 1 models the SBU and the tenure
-  (`ownership_type`); the owning company still has nowhere to live. Add it before
-  loading the real 70 records, or the same confusion carries over.
 - No bulk import. An Excel importer is the first thing worth building next, and
   it must tolerate bad rows rather than reject the file: in the source sheet 36 of
   70 records have no property code, 32 have no usable address, and `LLKO` is used

@@ -5,9 +5,10 @@
   const state = {
     reference: null,
     sbus: [],
+    entities: [],
     properties: [],
     selectedSbus: null,          // null = all
-    filters: { q: '', district: '', status: '', property_type: '' },
+    filters: { q: '', district: '', status: '', property_type: '', legal_entity_id: '' },
     labels: {},
     currentProperty: null,
     view: 'map'
@@ -79,6 +80,7 @@
     wireEvents();
 
     await refreshSbus();
+    await refreshEntities();
     await refreshProperties();
   }
 
@@ -117,6 +119,106 @@
     fillSelect(select, state.sbus.map((s) => ({ value: s.id, label: s.code + ' — ' + s.name })),
       { placeholder: 'Select a business unit' });
     if (keep) select.value = keep;
+  }
+
+  async function refreshEntities() {
+    state.entities = await API.listEntities();
+    renderEntityCards();
+
+    const options = state.entities.map((e) => ({
+      value: e.id, label: e.short_code + ' — ' + e.name
+    }));
+
+    const filter = $('#filter-entity');
+    const keepFilter = filter.value;
+    fillSelect(filter, options.concat([{ value: 'none', label: 'Not recorded / leased in' }]),
+      { placeholder: 'Any company' });
+    filter.value = keepFilter;
+
+    const field = $('#property-form').legal_entity_id;
+    const keepField = field.value;
+    fillSelect(field, options, { placeholder: '— none (leased / rented in) —' });
+    field.value = keepField;
+  }
+
+  function renderEntityCards() {
+    const host = $('#entity-cards');
+    host.innerHTML = '';
+    if (!state.entities.length) {
+      host.innerHTML = '<p class="empty">No owning companies yet. Add the group ' +
+        'companies that hold title to your properties.</p>';
+      return;
+    }
+    state.entities.forEach(function (entity) {
+      const card = document.createElement('div');
+      card.className = 'sbu-card entity-card';
+      const unconfirmed = entity.name === entity.short_code;
+      card.innerHTML =
+        '<h3>' + Fmt.esc(entity.name) +
+          ' <span class="code">' + Fmt.esc(entity.short_code) + '</span>' +
+          (unconfirmed ? '<span class="warn-chip">name unconfirmed</span>' : '') + '</h3>' +
+        (entity.reg_no ? '<p class="sbu-sector">Reg. ' + Fmt.esc(entity.reg_no) + '</p>' : '') +
+        '<p>' + Fmt.esc(entity.description || 'No notes.') + '</p>' +
+        '<div class="sbu-foot">' +
+          '<span class="n">' + entity.property_count + ' propert' +
+            (entity.property_count === 1 ? 'y' : 'ies') + '</span>' +
+          '<span><button class="btn btn-ghost btn-sm" data-edit-entity="' + entity.id + '">Edit</button> ' +
+          '<button class="btn btn-danger btn-sm" data-delete-entity="' + entity.id + '">Delete</button></span>' +
+        '</div>';
+      host.appendChild(card);
+    });
+  }
+
+  function openEntityModal(entityId) {
+    const form = $('#entity-form');
+    form.reset();
+    $('#entity-form-error').hidden = true;
+    const entity = entityId ? state.entities.filter((e) => e.id === entityId)[0] : null;
+    $('#entity-modal-title').textContent = entity ? 'Edit owning company' : 'New owning company';
+    form.id.value = entity ? entity.id : '';
+    if (entity) {
+      form.short_code.value = entity.short_code;
+      form.name.value = entity.name;
+      form.reg_no.value = entity.reg_no || '';
+      form.description.value = entity.description || '';
+      form.is_active.checked = !!entity.is_active;
+    }
+    $('#entity-modal').hidden = false;
+    setTimeout(() => form.short_code.focus(), 50);
+  }
+
+  async function saveEntity() {
+    const form = $('#entity-form');
+    const errorBox = $('#entity-form-error');
+    errorBox.hidden = true;
+    if (!form.reportValidity()) return;
+
+    const data = collectForm(form);
+    const id = form.id.value;
+    delete data.id;
+    try {
+      if (id) await API.updateEntity(id, data);
+      else await API.createEntity(data);
+      $('#entity-modal').hidden = true;
+      await refreshEntities();
+      await refreshProperties();
+      toast(id ? 'Owning company updated.' : 'Owning company added.');
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    }
+  }
+
+  async function removeEntity(entityId) {
+    const entity = state.entities.filter((e) => e.id === entityId)[0];
+    if (!entity) return;
+    if (!window.confirm('Delete owning company "' + entity.name + '"?')) return;
+    try {
+      await API.deleteEntity(entityId);
+      await refreshEntities();
+      await refreshProperties();
+      toast('Owning company deleted.');
+    } catch (err) { toast(err.message, true); }
   }
 
   function activeFilters() {
@@ -201,6 +303,9 @@
           '<span class="prop-sub">' + Fmt.esc([p.address_line1, p.city].filter(Boolean).join(', ')) + '</span></td>' +
         '<td><span class="sbu-pill"><span class="swatch" style="background:' +
           Fmt.esc(p.sbu_color) + '"></span>' + Fmt.esc(p.sbu_code) + '</span></td>' +
+        '<td>' + (p.entity_code
+          ? '<span title="' + Fmt.esc(p.entity_name) + '">' + Fmt.esc(p.entity_code) + '</span>'
+          : '<span class="muted-inline" title="Leased or rented in — owned by an outside landlord">—</span>') + '</td>' +
         '<td>' + Fmt.esc(labelFor('propertyTypes', p.property_type)) + '</td>' +
         '<td>' + Fmt.esc(p.district || '') + '</td>' +
         '<td>' + Fmt.esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits)) + '</td>' +
@@ -297,6 +402,10 @@
       '<div class="dash-cols">' +
         '<div class="card"><h3>Properties by business unit</h3>' +
           bars(stats.bySbu, 'name', 'property_count', maxSbu, (r) => r.color) + '</div>' +
+        '<div class="card"><h3>Properties by owning company</h3>' +
+          bars(stats.byEntity, 'short_code', 'n',
+               Math.max.apply(null, stats.byEntity.map((e) => e.n).concat([1])),
+               (r) => r.short_code === 'Not recorded' ? '#9aa3ad' : '#6b4b9a') + '</div>' +
         '<div class="card"><h3>Properties by district</h3>' +
           bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#0b5d8f') + '</div>' +
         '<div class="card"><h3>By status</h3>' +
@@ -355,6 +464,9 @@
       '<section class="detail-section"><h3>Classification</h3><dl class="detail-grid">' +
         row('Business unit', '<span class="sbu-pill"><span class="swatch" style="background:' +
             Fmt.esc(p.sbu_color) + '"></span>' + Fmt.esc(p.sbu_code + ' — ' + p.sbu_name) + '</span>') +
+        row('Owned by', p.entity_code
+            ? Fmt.esc(p.entity_code + ' — ' + p.entity_name)
+            : '<span class="muted-inline">No group company — leased or rented in</span>') +
         row('Sector', Fmt.esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
             .filter(Boolean).join(' · '))) +
         row('Type', Fmt.esc(labelFor('propertyTypes', p.property_type))) +
@@ -716,9 +828,11 @@
     });
 
     $('#btn-reset-filters').addEventListener('click', function () {
-      state.filters = { q: '', district: '', status: '', property_type: '' };
+      state.filters = { q: '', district: '', status: '', property_type: '',
+                        legal_entity_id: '' };
       state.selectedSbus = null;
       $('#search').value = '';
+      $('#filter-entity').value = '';
       $('#filter-district').value = '';
       $('#filter-status').value = '';
       $('#filter-type').value = '';
@@ -734,8 +848,15 @@
 
     $('#btn-new-property').addEventListener('click', () => openPropertyModal(null));
     $('#btn-new-sbu').addEventListener('click', () => openSbuModal(null));
+    $('#btn-new-entity').addEventListener('click', () => openEntityModal(null));
     $('#btn-save-property').addEventListener('click', saveProperty);
     $('#btn-save-sbu').addEventListener('click', saveSbu);
+    $('#btn-save-entity').addEventListener('click', saveEntity);
+    $('#entity-form').addEventListener('submit', (e) => { e.preventDefault(); saveEntity(); });
+    $('#filter-entity').addEventListener('change', function (event) {
+      state.filters.legal_entity_id = event.target.value;
+      refreshProperties();
+    });
     $('#btn-save-doc').addEventListener('click', saveDocument);
     $('#btn-close-drawer').addEventListener('click', closeDrawer);
     $('#scrim').addEventListener('click', closeDrawer);
@@ -786,7 +907,8 @@
     // Delegated actions for dynamically rendered buttons.
     document.addEventListener('click', function (event) {
       const target = event.target.closest('[data-open],[data-locate],[data-edit],[data-delete],' +
-        '[data-add-doc],[data-delete-doc],[data-edit-sbu],[data-delete-sbu]');
+        '[data-add-doc],[data-delete-doc],[data-edit-sbu],[data-delete-sbu],' +
+        '[data-edit-entity],[data-delete-entity]');
       if (!target) return;
       const d = target.dataset;
 
@@ -798,6 +920,8 @@
       else if (d.deleteDoc !== undefined) removeDocument(Number(d.deleteDoc));
       else if (d.editSbu !== undefined) openSbuModal(Number(d.editSbu));
       else if (d.deleteSbu !== undefined) removeSbu(Number(d.deleteSbu));
+      else if (d.editEntity !== undefined) openEntityModal(Number(d.editEntity));
+      else if (d.deleteEntity !== undefined) removeEntity(Number(d.deleteEntity));
     });
   }
 

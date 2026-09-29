@@ -13,6 +13,16 @@ DB_PATH = os.path.join(DATA_DIR, "properties.db")
 
 _local = threading.local()
 
+INDEXES = """
+CREATE INDEX IF NOT EXISTS idx_property_sbu ON property(sbu_id);
+CREATE INDEX IF NOT EXISTS idx_property_entity ON property(legal_entity_id);
+CREATE INDEX IF NOT EXISTS idx_property_district ON property(district);
+CREATE INDEX IF NOT EXISTS idx_property_status ON property(status);
+CREATE INDEX IF NOT EXISTS idx_document_property ON document(property_id);
+CREATE INDEX IF NOT EXISTS idx_document_type ON document(doc_type);
+"""
+
+
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 
@@ -33,11 +43,26 @@ CREATE TABLE IF NOT EXISTS sbu (
     updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- The group company that holds title to the property.  Null is meaningful and
+-- common: a property we lease or rent IN is owned by an outside landlord, who is
+-- recorded on the lease document, not here.
+CREATE TABLE IF NOT EXISTS legal_entity (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    short_code  TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    reg_no      TEXT,
+    description TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS property (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     property_code     TEXT NOT NULL UNIQUE,
     name              TEXT NOT NULL,
     sbu_id            INTEGER NOT NULL REFERENCES sbu(id),
+    legal_entity_id   INTEGER REFERENCES legal_entity(id),
     property_type     TEXT NOT NULL DEFAULT 'LAND',
     ownership_type    TEXT NOT NULL DEFAULT 'FREEHOLD',
     status            TEXT NOT NULL DEFAULT 'ACTIVE',
@@ -74,9 +99,6 @@ CREATE TABLE IF NOT EXISTS property (
     updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_property_sbu ON property(sbu_id);
-CREATE INDEX IF NOT EXISTS idx_property_district ON property(district);
-CREATE INDEX IF NOT EXISTS idx_property_status ON property(status);
 
 CREATE TABLE IF NOT EXISTS document (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -100,8 +122,6 @@ CREATE TABLE IF NOT EXISTS document (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
-CREATE INDEX IF NOT EXISTS idx_document_property ON document(property_id);
-CREATE INDEX IF NOT EXISTS idx_document_type ON document(doc_type);
 """
 
 
@@ -121,6 +141,7 @@ def get_conn():
 MIGRATIONS = [
     ("sbu", "sector", "TEXT"),
     ("sbu", "cost_centre", "TEXT"),
+    ("property", "legal_entity_id", "INTEGER REFERENCES legal_entity(id)"),
 ]
 
 
@@ -131,6 +152,15 @@ def migrate(conn):
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
     conn.commit()
 
+    # Populate the owning-company master the first time it appears, and attach it
+    # to the sample rows only -- matched by their exact seed property codes, so a
+    # register holding real data is never touched.
+    if conn.execute("SELECT COUNT(*) AS n FROM legal_entity").fetchone()["n"] == 0:
+        seed_legal_entities(conn)
+        if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
+            assign_sample_entities(conn)
+        conn.commit()
+
 
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -138,7 +168,11 @@ def init_db():
     conn = get_conn()
     conn.executescript(SCHEMA)
     conn.commit()
+    # Indexes come after the migration: one of them covers a column that migrate()
+    # adds to an already-existing property table.
     migrate(conn)
+    conn.executescript(INDEXES)
+    conn.commit()
     if conn.execute("SELECT COUNT(*) AS n FROM sbu").fetchone()["n"] == 0:
         seed(conn)
 
@@ -147,6 +181,31 @@ def init_db():
 # These SBUs and properties are placeholders so the map and lists are not empty
 # on first launch.  Replace them with the real register: SBUs are fully editable
 # from the UI, and `python3 -m server.reset --wipe` clears the sample rows.
+
+# Owning companies. The short codes come from the blueprint; the full registered
+# names were not stated there, so `name` repeats the code until someone confirms
+# it. Editable from the Owning companies tab, and the list is not exhaustive.
+SEED_LEGAL_ENTITIES = [
+    ("LIS", "LIS"),
+    ("CNT", "CNT"),
+    ("NCGE", "NCGE"),
+    ("NCGH", "NCGH"),
+    ("NSM", "NSM"),
+]
+ENTITY_PLACEHOLDER_NOTE = "Short code from the blueprint - confirm the full registered name."
+
+# Which sample property belongs to which company. Properties we lease or rent IN
+# are deliberately left unassigned: an outside landlord owns those, and that party
+# belongs on the lease document instead.
+SAMPLE_PROPERTY_ENTITY = {
+    "HO-COL-001": "LIS",
+    "AGRI-NUW-001": "NCGE",
+    "AGRI-ANU-002": "NCGE",
+    "MFG-KUR-002": "CNT",
+    "LOG-COL-001": "CNT",
+    "LEI-HAM-001": "NCGH",
+    "LEI-BAD-002": "NSM",
+}
 
 SEED_SBUS = [
     ("HO", "Head Office", "Corporate head office and shared services"),
@@ -224,7 +283,25 @@ SEED_DOCUMENTS = [
 ]
 
 
+def seed_legal_entities(conn):
+    for short_code, name in SEED_LEGAL_ENTITIES:
+        conn.execute(
+            "INSERT OR IGNORE INTO legal_entity (short_code, name, description) VALUES (?,?,?)",
+            (short_code, name, ENTITY_PLACEHOLDER_NOTE))
+
+
+def assign_sample_entities(conn):
+    ids = {r["short_code"]: r["id"]
+           for r in conn.execute("SELECT id, short_code FROM legal_entity")}
+    for property_code, short_code in SAMPLE_PROPERTY_ENTITY.items():
+        if short_code in ids:
+            conn.execute(
+                "UPDATE property SET legal_entity_id = ? WHERE property_code = ?",
+                (ids[short_code], property_code))
+
+
 def seed(conn):
+    seed_legal_entities(conn)
     for i, (code, name, desc) in enumerate(SEED_SBUS):
         conn.execute(
             "INSERT INTO sbu (code, name, description, color) VALUES (?,?,?,?)",
@@ -245,6 +322,7 @@ def seed(conn):
             (code, name, sbu_ids[sbu_code], ptype, ownership, status, addr, city,
              district, province, lat, lng, extent, unit, sqft, use),
         )
+    assign_sample_entities(conn)
     prop_ids = {r["property_code"]: r["id"]
                 for r in conn.execute("SELECT id, property_code FROM property")}
 

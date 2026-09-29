@@ -192,6 +192,88 @@ def update_sbu(ctx):
     return 200, _row_to_dict(row)
 
 
+# --- legal entities (owning companies) --------------------------------------
+
+def list_legal_entities(ctx):
+    conn = db.get_conn()
+    rows = conn.execute(
+        """SELECT e.*,
+                  (SELECT COUNT(*) FROM property p WHERE p.legal_entity_id = e.id)
+                      AS property_count
+           FROM legal_entity e ORDER BY e.short_code"""
+    ).fetchall()
+    return 200, [_row_to_dict(r) for r in rows]
+
+
+def _entity_payload(ctx):
+    data = ctx.json()
+    short_code = _clean_str(data.get("short_code"))
+    name = _clean_str(data.get("name"))
+    if not short_code:
+        raise ApiError("Short code is required.", field="short_code")
+    if not name:
+        raise ApiError("Company name is required.", field="name")
+    return {
+        "short_code": short_code.upper(),
+        "name": name,
+        "reg_no": _clean_str(data.get("reg_no")),
+        "description": _clean_str(data.get("description")),
+        "is_active": 1 if data.get("is_active", True) else 0,
+    }
+
+
+def create_legal_entity(ctx):
+    payload = _entity_payload(ctx)
+    conn = db.get_conn()
+    if conn.execute("SELECT 1 FROM legal_entity WHERE short_code = ?",
+                    (payload["short_code"],)).fetchone():
+        raise ApiError("A company with short code '%s' already exists."
+                       % payload["short_code"], 409, "short_code")
+    cur = conn.execute(
+        """INSERT INTO legal_entity (short_code, name, reg_no, description, is_active)
+           VALUES (:short_code, :name, :reg_no, :description, :is_active)""", payload)
+    conn.commit()
+    row = conn.execute("SELECT * FROM legal_entity WHERE id = ?",
+                       (cur.lastrowid,)).fetchone()
+    return 201, _row_to_dict(row)
+
+
+def update_legal_entity(ctx):
+    entity_id = int(ctx.match.group("id"))
+    conn = db.get_conn()
+    if not conn.execute("SELECT 1 FROM legal_entity WHERE id = ?", (entity_id,)).fetchone():
+        raise ApiError("Owning company not found.", 404)
+    payload = _entity_payload(ctx)
+    clash = conn.execute("SELECT 1 FROM legal_entity WHERE short_code = ? AND id <> ?",
+                         (payload["short_code"], entity_id)).fetchone()
+    if clash:
+        raise ApiError("A company with short code '%s' already exists."
+                       % payload["short_code"], 409, "short_code")
+    payload["id"] = entity_id
+    conn.execute(
+        """UPDATE legal_entity SET short_code=:short_code, name=:name, reg_no=:reg_no,
+                                   description=:description, is_active=:is_active,
+                                   updated_at=datetime('now')
+           WHERE id=:id""", payload)
+    conn.commit()
+    row = conn.execute("SELECT * FROM legal_entity WHERE id = ?", (entity_id,)).fetchone()
+    return 200, _row_to_dict(row)
+
+
+def delete_legal_entity(ctx):
+    entity_id = int(ctx.match.group("id"))
+    conn = db.get_conn()
+    n = conn.execute("SELECT COUNT(*) AS n FROM property WHERE legal_entity_id = ?",
+                     (entity_id,)).fetchone()["n"]
+    if n:
+        raise ApiError(
+            "This company still owns %d propert%s. Reassign them first."
+            % (n, "y" if n == 1 else "ies"), 409)
+    conn.execute("DELETE FROM legal_entity WHERE id = ?", (entity_id,))
+    conn.commit()
+    return 200, {"deleted": entity_id}
+
+
 def delete_sbu(ctx):
     sbu_id = int(ctx.match.group("id"))
     conn = db.get_conn()
@@ -211,8 +293,11 @@ def delete_sbu(ctx):
 _PROPERTY_SELECT = """
     SELECT p.*, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
            s.sector AS sbu_sector, s.cost_centre AS sbu_cost_centre,
+           e.short_code AS entity_code, e.name AS entity_name,
            (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count
-    FROM property p JOIN sbu s ON s.id = p.sbu_id
+    FROM property p
+    JOIN sbu s ON s.id = p.sbu_id
+    LEFT JOIN legal_entity e ON e.id = p.legal_entity_id
 """
 
 
@@ -226,6 +311,12 @@ def list_properties(ctx):
         if ids:
             where.append("p.sbu_id IN (%s)" % ",".join("?" * len(ids)))
             params.extend(ids)
+    if q.get("legal_entity_id"):
+        if q["legal_entity_id"] == "none":
+            where.append("p.legal_entity_id IS NULL")
+        elif q["legal_entity_id"].isdigit():
+            where.append("p.legal_entity_id = ?")
+            params.append(int(q["legal_entity_id"]))
     if q.get("district"):
         where.append("p.district = ?")
         params.append(q["district"])
@@ -280,6 +371,21 @@ def _property_payload(ctx, conn):
     if not conn.execute("SELECT 1 FROM sbu WHERE id = ?", (sbu_id,)).fetchone():
         raise ApiError("The selected SBU does not exist.", field="sbu_id")
 
+    # Optional: a property leased or rented IN is owned by an outside landlord,
+    # who belongs on the lease document rather than in the group company master.
+    entity_id = data.get("legal_entity_id")
+    if entity_id in ("", None):
+        entity_id = None
+    else:
+        try:
+            entity_id = int(entity_id)
+        except (TypeError, ValueError):
+            raise ApiError("Owning company is not valid.", field="legal_entity_id")
+        if not conn.execute("SELECT 1 FROM legal_entity WHERE id = ?",
+                            (entity_id,)).fetchone():
+            raise ApiError("The selected owning company does not exist.",
+                           field="legal_entity_id")
+
     lat = _as_float(data.get("latitude"), "Latitude")
     lng = _as_float(data.get("longitude"), "Longitude")
     ok, message = srilanka.coordinates_in_sri_lanka(lat, lng)
@@ -295,6 +401,7 @@ def _property_payload(ctx, conn):
     payload = {
         "name": name,
         "sbu_id": sbu_id,
+        "legal_entity_id": entity_id,
         "latitude": lat,
         "longitude": lng,
         "property_type": _check_enum(data.get("property_type"),
@@ -330,7 +437,8 @@ def create_property(ctx):
         raise ApiError("Property code '%s' is already in use." % payload["property_code"],
                        409, "property_code")
 
-    columns = ["property_code", "sbu_id", "latitude", "longitude"] + PROPERTY_FIELDS
+    columns = ["property_code", "sbu_id", "legal_entity_id",
+               "latitude", "longitude"] + PROPERTY_FIELDS
     cur = conn.execute(
         "INSERT INTO property (%s) VALUES (%s)"
         % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
@@ -355,7 +463,8 @@ def update_property(ctx):
                        409, "property_code")
     payload["id"] = pid
 
-    columns = ["property_code", "sbu_id", "latitude", "longitude"] + PROPERTY_FIELDS
+    columns = ["property_code", "sbu_id", "legal_entity_id",
+               "latitude", "longitude"] + PROPERTY_FIELDS
     conn.execute(
         "UPDATE property SET %s, updated_at = datetime('now') WHERE id = :id"
         % ", ".join("%s = :%s" % (c, c) for c in columns), payload)
@@ -510,6 +619,12 @@ def get_stats(ctx):
                                     ELSE p.extent_value END), 0) AS extent_perches
            FROM sbu s LEFT JOIN property p ON p.sbu_id = s.id
            GROUP BY s.id ORDER BY property_count DESC, s.name""")]
+    by_entity = [_row_to_dict(r) for r in conn.execute(
+        """SELECT COALESCE(e.short_code, 'Not recorded') AS short_code,
+                  COALESCE(e.name, 'No group company (leased / rented in)') AS name,
+                  COUNT(p.id) AS n
+           FROM property p LEFT JOIN legal_entity e ON e.id = p.legal_entity_id
+           GROUP BY p.legal_entity_id ORDER BY n DESC""")]
     by_status = [_row_to_dict(r) for r in conn.execute(
         "SELECT status, COUNT(*) AS n FROM property GROUP BY status ORDER BY n DESC")]
     by_district = [_row_to_dict(r) for r in conn.execute(
@@ -533,14 +648,16 @@ def get_stats(ctx):
              AND d.expiry_date <= date('now', '+180 day')
            ORDER BY d.expiry_date""")]
     return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
-                 "byDistrict": by_district, "expiringSoon": expiring}
+                 "byDistrict": by_district, "byEntity": by_entity,
+                 "expiringSoon": expiring}
 
 
 def export_properties_csv(ctx):
     conn = db.get_conn()
     rows = conn.execute(_PROPERTY_SELECT + " ORDER BY s.name, p.property_code").fetchall()
     buf = io.StringIO()
-    headers = ["property_code", "name", "sbu_code", "sbu_name", "property_type",
+    headers = ["property_code", "name", "sbu_code", "sbu_name",
+               "entity_code", "entity_name", "property_type",
                "ownership_type", "status", "address_line1", "address_line2", "city",
                "district", "province", "postal_code", "latitude", "longitude",
                "extent_value", "extent_unit", "building_area_sqft", "assessment_no",
@@ -566,6 +683,10 @@ ROUTES = [
     ("POST",   r"^/api/sbus$",                           create_sbu),
     ("PUT",    r"^/api/sbus/(?P<id>\d+)$",               update_sbu),
     ("DELETE", r"^/api/sbus/(?P<id>\d+)$",               delete_sbu),
+    ("GET",    r"^/api/legal-entities$",                 list_legal_entities),
+    ("POST",   r"^/api/legal-entities$",                 create_legal_entity),
+    ("PUT",    r"^/api/legal-entities/(?P<id>\d+)$",     update_legal_entity),
+    ("DELETE", r"^/api/legal-entities/(?P<id>\d+)$",     delete_legal_entity),
     ("GET",    r"^/api/properties$",                     list_properties),
     ("POST",   r"^/api/properties$",                     create_property),
     ("GET",    r"^/api/properties/(?P<id>\d+)$",         get_property),
