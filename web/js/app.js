@@ -229,8 +229,11 @@
       const card = document.createElement('div');
       card.className = 'sbu-card';
       card.style.borderLeftColor = sbu.color;
+      const sub = [sbu.sector, sbu.cost_centre ? 'CC ' + sbu.cost_centre : '']
+        .filter(Boolean).join(' · ');
       card.innerHTML =
         '<h3>' + Fmt.esc(sbu.name) + ' <span class="code">' + Fmt.esc(sbu.code) + '</span></h3>' +
+        (sub ? '<p class="sbu-sector">' + Fmt.esc(sub) + '</p>' : '') +
         '<p>' + Fmt.esc(sbu.description || 'No description.') + '</p>' +
         '<div class="sbu-foot">' +
           '<span class="n">' + sbu.property_count + ' propert' +
@@ -352,6 +355,8 @@
       '<section class="detail-section"><h3>Classification</h3><dl class="detail-grid">' +
         row('Business unit', '<span class="sbu-pill"><span class="swatch" style="background:' +
             Fmt.esc(p.sbu_color) + '"></span>' + Fmt.esc(p.sbu_code + ' — ' + p.sbu_name) + '</span>') +
+        row('Sector', Fmt.esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
+            .filter(Boolean).join(' · '))) +
         row('Type', Fmt.esc(labelFor('propertyTypes', p.property_type))) +
         row('Ownership', Fmt.esc(labelFor('ownershipTypes', p.ownership_type))) +
         row('Status', '<span class="badge ' + Fmt.esc(p.status) + '">' +
@@ -575,6 +580,8 @@
     if (sbu) {
       form.code.value = sbu.code;
       form.name.value = sbu.name;
+      form.sector.value = sbu.sector || '';
+      form.cost_centre.value = sbu.cost_centre || '';
       form.description.value = sbu.description || '';
       form.color.value = sbu.color;
       form.is_active.checked = !!sbu.is_active;

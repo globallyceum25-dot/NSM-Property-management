@@ -16,10 +16,16 @@ _local = threading.local()
 SCHEMA = """
 PRAGMA journal_mode = WAL;
 
+-- An SBU is the sector / business unit / department that OCCUPIES a property and
+-- carries its costs.  It is deliberately not the owning legal entity (LIS, CNT,
+-- NCGE ...) and not the tenure (owned / leased / rented) -- conflating those
+-- three is the data defect the blueprint flags in the current property sheet.
 CREATE TABLE IF NOT EXISTS sbu (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     code        TEXT NOT NULL UNIQUE,
     name        TEXT NOT NULL,
+    sector      TEXT,
+    cost_centre TEXT,
     description TEXT,
     color       TEXT NOT NULL DEFAULT '#1f77b4',
     is_active   INTEGER NOT NULL DEFAULT 1,
@@ -110,12 +116,29 @@ def get_conn():
     return conn
 
 
+# Columns added after the first release.  CREATE TABLE IF NOT EXISTS will not
+# add them to a database that already exists, so apply them here.
+MIGRATIONS = [
+    ("sbu", "sector", "TEXT"),
+    ("sbu", "cost_centre", "TEXT"),
+]
+
+
+def migrate(conn):
+    for table, column, decl in MIGRATIONS:
+        existing = {r["name"] for r in conn.execute("PRAGMA table_info(%s)" % table)}
+        if column not in existing:
+            conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
+    conn.commit()
+
+
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     conn = get_conn()
     conn.executescript(SCHEMA)
     conn.commit()
+    migrate(conn)
     if conn.execute("SELECT COUNT(*) AS n FROM sbu").fetchone()["n"] == 0:
         seed(conn)
 

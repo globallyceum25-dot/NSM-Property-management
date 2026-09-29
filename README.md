@@ -80,7 +80,10 @@ property-system/
 
 ## Data model
 
-`sbu` — code, name, description, map colour, active flag.
+`sbu` — code, name, sector, cost centre, description, map colour, active flag.
+An SBU is the sector/business unit/department that **occupies** a property and
+carries its costs. It is deliberately *not* the owning legal entity and *not* the
+tenure — see *Not in Stage 1* for the legal-entity gap.
 
 `property` — property code (unique, auto-generated as `SBU-0001` if left blank),
 name, SBU, type, ownership type, status, address (line 1/2, city, district,
@@ -137,6 +140,13 @@ By design, and worth agreeing before Stage 2:
 - No document versioning or approval workflow — uploading a new lease adds a
   second document rather than superseding the first.
 - No audit trail of who changed what.
-- No bulk import. Adding a CSV/Excel importer is probably the first thing worth
-  building in Stage 2 if the register already exists in a spreadsheet.
+- **No `legal_entity` table.** The blueprint separates three things the current
+  property sheet conflates: the owning company (LIS, CNT, NCGE, NCGH, NSM…), the
+  occupying SBU, and the tenure. Stage 1 models the SBU and the tenure
+  (`ownership_type`); the owning company still has nowhere to live. Add it before
+  loading the real 70 records, or the same confusion carries over.
+- No bulk import. An Excel importer is the first thing worth building next, and
+  it must tolerate bad rows rather than reject the file: in the source sheet 36 of
+  70 records have no property code, 32 have no usable address, and `LLKO` is used
+  for both Kottawa and Kegalle.
 - Map pins are points only — no plot boundaries or polygons.

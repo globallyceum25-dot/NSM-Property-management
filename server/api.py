@@ -148,6 +148,8 @@ def _sbu_payload(ctx, require_code=True):
     return {
         "code": code.upper() if code else None,
         "name": name,
+        "sector": _clean_str(data.get("sector")),
+        "cost_centre": _clean_str(data.get("cost_centre")),
         "description": _clean_str(data.get("description")),
         "color": color,
         "is_active": 1 if data.get("is_active", True) else 0,
@@ -160,8 +162,9 @@ def create_sbu(ctx):
     if conn.execute("SELECT 1 FROM sbu WHERE code = ?", (payload["code"],)).fetchone():
         raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
     cur = conn.execute(
-        """INSERT INTO sbu (code, name, description, color, is_active)
-           VALUES (:code, :name, :description, :color, :is_active)""", payload)
+        """INSERT INTO sbu (code, name, sector, cost_centre, description, color, is_active)
+           VALUES (:code, :name, :sector, :cost_centre, :description, :color, :is_active)""",
+        payload)
     conn.commit()
     row = conn.execute("SELECT * FROM sbu WHERE id = ?", (cur.lastrowid,)).fetchone()
     return 201, _row_to_dict(row)
@@ -179,7 +182,8 @@ def update_sbu(ctx):
         raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
     payload["id"] = sbu_id
     conn.execute(
-        """UPDATE sbu SET code=:code, name=:name, description=:description,
+        """UPDATE sbu SET code=:code, name=:name, sector=:sector,
+                          cost_centre=:cost_centre, description=:description,
                           color=:color, is_active=:is_active,
                           updated_at=datetime('now')
            WHERE id=:id""", payload)
@@ -206,6 +210,7 @@ def delete_sbu(ctx):
 
 _PROPERTY_SELECT = """
     SELECT p.*, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+           s.sector AS sbu_sector, s.cost_centre AS sbu_cost_centre,
            (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count
     FROM property p JOIN sbu s ON s.id = p.sbu_id
 """
