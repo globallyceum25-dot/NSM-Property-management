@@ -7,7 +7,7 @@ import os
 import re
 import uuid
 
-from . import db, srilanka
+from . import db, errors, masters, srilanka
 from .srilanka import valid_codes
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -31,12 +31,7 @@ DOCUMENT_FIELDS = [
 ]
 
 
-class ApiError(Exception):
-    def __init__(self, message, status=400, field=None):
-        Exception.__init__(self, message)
-        self.message = message
-        self.status = status
-        self.field = field
+ApiError = errors.ApiError
 
 
 # --- helpers ----------------------------------------------------------------
@@ -699,6 +694,9 @@ ROUTES = [
     ("GET",    r"^/api/stats$",                          get_stats),
     ("GET",    r"^/api/export/properties.csv$",          export_properties_csv),
 ]
+
+# The Master sheets module registers its own routes; nothing above changes.
+ROUTES = ROUTES + masters.ROUTES
 
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]

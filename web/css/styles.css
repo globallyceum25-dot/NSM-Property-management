@@ -353,6 +353,52 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 .mini-list a { color: var(--accent); text-decoration: none; }
 .mini-list a:hover { text-decoration: underline; }
 
+/* ---------- master sheets ---------- */
+
+#view-masters.is-active { display: flex; }
+.masters-layout { display: flex; width: 100%; min-height: 0; }
+
+.masters-nav {
+  flex: 0 0 216px;
+  border-right: 1px solid var(--border);
+  background: var(--surface);
+  overflow-y: auto;
+  padding: 12px 10px 20px;
+}
+.masters-nav h3 {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .7px;
+  color: var(--text-muted); margin: 14px 6px 6px;
+}
+.masters-nav h3:first-child { margin-top: 2px; }
+
+.master-link {
+  display: flex; align-items: center; gap: 7px; width: 100%;
+  background: none; border: none; cursor: pointer;
+  font: inherit; font-size: 13px; color: var(--text); text-align: left;
+  padding: 6px 8px; border-radius: 6px;
+}
+.master-link:hover { background: var(--surface-2); }
+.master-link.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 500; }
+.master-link .ml-label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.master-link .count {
+  font-size: 11px; color: var(--text-muted);
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 10px; padding: 0 6px;
+}
+.master-link .lock { font-size: 10px; opacity: .55; }
+
+.masters-sheet { flex: 1 1 auto; display: flex; flex-direction: column; min-width: 0; padding: 16px 18px 0; }
+.masters-sheet .panel-head { align-items: flex-start; gap: 16px; }
+.masters-sheet .panel-note { margin: 4px 0 0; }
+.master-actions { display: flex; gap: 8px; align-items: center; flex: 0 0 auto; }
+.master-actions input {
+  padding: 6px 10px; border: 1px solid var(--border-strong);
+  border-radius: var(--radius); font: inherit; font-size: 13px;
+  background: var(--surface-2); width: 190px;
+}
+.master-table-wrap { border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 18px; }
+#master-grid { font-size: 12.5px; }
+
 /* ---------- drawer ---------- */
 
 .drawer {

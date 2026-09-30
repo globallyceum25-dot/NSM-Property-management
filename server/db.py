@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS idx_property_district ON property(district);
 CREATE INDEX IF NOT EXISTS idx_property_status ON property(status);
 CREATE INDEX IF NOT EXISTS idx_document_property ON document(property_id);
 CREATE INDEX IF NOT EXISTS idx_document_type ON document(doc_type);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_location_name ON location(name);
+CREATE INDEX IF NOT EXISTS idx_location_code_loc ON location_code(location_id);
 """
 
 
@@ -100,6 +102,36 @@ CREATE TABLE IF NOT EXISTS property (
 );
 
 
+-- Master sheets ------------------------------------------------------------
+-- A physical place where the group operates.  Kept as its own master so the
+-- same town is spelled one way everywhere.
+CREATE TABLE IF NOT EXISTS location (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT NOT NULL,
+    city        TEXT,
+    district    TEXT,
+    province    TEXT,
+    latitude    REAL,
+    longitude   REAL,
+    notes       TEXT,
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- The short code used on documents and in the property sheet.  `code` is UNIQUE,
+-- which is precisely what stops one code standing for two places -- the defect
+-- the blueprint reports, where LLKO means both Kottawa and Kegalle.
+CREATE TABLE IF NOT EXISTS location_code (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    code         TEXT NOT NULL UNIQUE,
+    location_id  INTEGER NOT NULL REFERENCES location(id),
+    description  TEXT,
+    is_active    INTEGER NOT NULL DEFAULT 1,
+    created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at   TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS document (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     property_id   INTEGER NOT NULL REFERENCES property(id) ON DELETE CASCADE,
@@ -161,6 +193,13 @@ def migrate(conn):
             assign_sample_entities(conn)
         conn.commit()
 
+    # The location master arrives with the Master sheets module; fill it on the
+    # first run that has it, so the sheet is not empty on an existing database.
+    if conn.execute("SELECT COUNT(*) AS n FROM location").fetchone()["n"] == 0:
+        if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
+            seed_locations(conn)
+            conn.commit()
+
 
 def init_db():
     os.makedirs(DATA_DIR, exist_ok=True)
@@ -206,6 +245,25 @@ SAMPLE_PROPERTY_ENTITY = {
     "LEI-HAM-001": "NCGH",
     "LEI-BAD-002": "NSM",
 }
+
+# Sample location master: one row per place used by the sample properties, each
+# with a single unique code. Replace with the real location list.
+SEED_LOCATIONS = [
+    # (code, name, city, district)
+    ("LCOL", "Colombo 01", "Colombo 01", "Colombo"),
+    ("LORU", "Orugodawatta", "Orugodawatta", "Colombo"),
+    ("LYAK", "Yakkala", "Yakkala", "Gampaha"),
+    ("LBIY", "Biyagama", "Biyagama", "Gampaha"),
+    ("LKAN", "Kandy", "Kandy", "Kandy"),
+    ("LNUW", "Nuwara Eliya", "Nuwara Eliya", "Nuwara Eliya"),
+    ("LGAL", "Galle", "Galle", "Galle"),
+    ("LHAM", "Hambantota", "Hambantota", "Hambantota"),
+    ("LJAF", "Jaffna", "Jaffna", "Jaffna"),
+    ("LTRI", "Trincomalee", "Trincomalee", "Trincomalee"),
+    ("LANU", "Anuradhapura", "Anuradhapura", "Anuradhapura"),
+    ("LKUR", "Kurunegala", "Kurunegala", "Kurunegala"),
+    ("LBAD", "Badulla", "Badulla", "Badulla"),
+]
 
 SEED_SBUS = [
     ("HO", "Head Office", "Corporate head office and shared services"),
@@ -300,8 +358,25 @@ def assign_sample_entities(conn):
                 (ids[short_code], property_code))
 
 
+def seed_locations(conn):
+    for code, name, city, district in SEED_LOCATIONS:
+        info = srilanka.DISTRICT_BY_NAME.get(district)
+        conn.execute(
+            """INSERT OR IGNORE INTO location
+               (name, city, district, province, latitude, longitude)
+               VALUES (?,?,?,?,?,?)""",
+            (name, city, district, info["province"] if info else None,
+             info["lat"] if info else None, info["lng"] if info else None))
+        row = conn.execute("SELECT id FROM location WHERE name = ?", (name,)).fetchone()
+        if row:
+            conn.execute(
+                "INSERT OR IGNORE INTO location_code (code, location_id) VALUES (?,?)",
+                (code, row["id"]))
+
+
 def seed(conn):
     seed_legal_entities(conn)
+    seed_locations(conn)
     for i, (code, name, desc) in enumerate(SEED_SBUS):
         conn.execute(
             "INSERT INTO sbu (code, name, description, color) VALUES (?,?,?,?)",

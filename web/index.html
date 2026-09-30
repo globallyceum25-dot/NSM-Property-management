@@ -66,6 +66,7 @@
       <button class="tab" data-view="list">Properties</button>
       <button class="tab" data-view="sbus">Business units</button>
       <button class="tab" data-view="entities">Owning companies</button>
+      <button class="tab" data-view="masters">Master sheets</button>
       <button class="tab" data-view="dashboard">Dashboard</button>
     </nav>
 
@@ -111,6 +112,31 @@
         on the lease document instead.
       </p>
       <div id="entity-cards" class="sbu-cards"></div>
+    </section>
+
+    <section class="view" id="view-masters">
+      <div class="masters-layout">
+        <nav class="masters-nav" id="masters-nav"></nav>
+        <div class="masters-sheet">
+          <div class="panel-head">
+            <div>
+              <h2 id="master-title">Master sheets</h2>
+              <p class="panel-note" id="master-description"></p>
+            </div>
+            <div class="master-actions">
+              <input type="search" id="master-search" placeholder="Filter rows&hellip;">
+              <button class="btn btn-primary" id="btn-new-master-row">+ New row</button>
+            </div>
+          </div>
+          <div class="table-wrap master-table-wrap">
+            <table class="grid" id="master-grid">
+              <thead><tr id="master-head"></tr></thead>
+              <tbody id="master-rows"></tbody>
+            </table>
+            <p class="empty" id="master-empty" hidden></p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <section class="view" id="view-dashboard">
@@ -401,11 +427,31 @@
   </div>
 </div>
 
+<!-- Master row modal: fields are generated from the sheet's column metadata -->
+<div class="modal" id="master-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="master-modal-title">New row</h2>
+      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+    </header>
+    <form id="master-form" class="modal-body">
+      <input type="hidden" name="id">
+      <div id="master-fields"></div>
+      <p class="form-error" id="master-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-primary" id="btn-save-master">Save</button>
+    </footer>
+  </div>
+</div>
+
 <div id="toast" class="toast" hidden></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="js/api.js"></script>
 <script src="js/map.js"></script>
+<script src="js/masters.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

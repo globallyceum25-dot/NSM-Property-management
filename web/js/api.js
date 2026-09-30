@@ -56,6 +56,12 @@ window.API = (function () {
       request('POST', '/api/properties/' + propertyId + '/documents', formData, true),
     deleteDocument: (id) => request('DELETE', '/api/documents/' + id),
 
+    listMasters: () => request('GET', '/api/masters'),
+    getMaster: (key) => request('GET', '/api/masters/' + key),
+    createMaster: (key, data) => request('POST', '/api/masters/' + key, data),
+    updateMaster: (key, id, data) => request('PUT', '/api/masters/' + key + '/' + id, data),
+    deleteMaster: (key, id) => request('DELETE', '/api/masters/' + key + '/' + id),
+
     stats: () => request('GET', '/api/stats')
   };
 })();

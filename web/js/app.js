@@ -73,6 +73,8 @@
       });
 
     buildStaticSelects();
+    window.__districts = state.reference.districts;   // used by the masters form
+    Masters.init(toast);
     MapView.init('map', state.reference, {
       onSelect: openDrawer,
       onEdit: (id) => openPropertyModal(id)
@@ -790,6 +792,7 @@
       section.classList.toggle('is-active', section.id === 'view-' + view));
     if (view === 'map') MapView.invalidate();
     if (view === 'dashboard') renderDashboard();
+    if (view === 'masters') Masters.show();
   }
 
   async function locate(propertyId) {

@@ -60,7 +60,26 @@ picker there.
 **Dashboard** — counts per SBU, district and status; properties with no deed or
 title recorded; and leases, policies and permits expiring within 180 days.
 
-**CSV export** — the full register, 30 columns, from the *Export CSV* button.
+**Master sheets** — one module holding every reference list the system uses, so
+codes and place names are maintained in a single place rather than retyped.
+
+*Editable:* **Locations** (every place the group operates, with district, province
+and coordinates), **Location codes**, **Business units (SBU)** and **Owning
+companies**. A location code is `UNIQUE`, so one code can never stand for two
+places — the LLKO-means-both-Kottawa-and-Kegalle defect the blueprint reports is
+impossible by construction. A row cannot be deleted while something still points
+at it.
+
+*System lists* (read-only in Stage 1): provinces, districts, property types,
+ownership/tenure types, property statuses, document types and extent units.
+These are compiled into the application; the sheet shows exactly what each
+drop-down offers.
+
+The module is registry-driven: adding a new master sheet is one entry in
+`MASTERS` in `server/masters.py`. No new endpoint or screen is needed — the grid,
+the form and the validation are all generated from the column metadata.
+
+**CSV export** — the full register, 32 columns, from the *Export CSV* button.
 
 ## Layout
 
@@ -71,13 +90,15 @@ property-system/
 │   ├── app.py              HTTP server, routing, static files
 │   ├── api.py              REST handlers and validation
 │   ├── db.py               schema + first-run sample data
+│   ├── masters.py          master sheets: registry, generic CRUD
+│   ├── errors.py           shared ApiError
 │   ├── srilanka.py         districts, provinces, bounds, enumerations
 │   ├── multipart.py        file-upload parsing
 │   └── reset.py            clear or reload the register
 ├── web/
 │   ├── index.html
 │   ├── css/styles.css
-│   └── js/{api,map,app}.js
+│   └── js/{api,map,masters,app}.js
 └── data/                   created at runtime
     ├── properties.db       SQLite database
     └── uploads/            uploaded document files
@@ -124,6 +145,10 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |
 | GET | `/api/documents/{id}/file` | view; add `?disposition=attachment` to download |
 | DELETE | `/api/documents/{id}` | remove document and its file |
+| GET | `/api/masters` | list the master sheets |
+| GET | `/api/masters/{key}` | one sheet: columns, rows and reference options |
+| POST | `/api/masters/{key}` | add a row (editable sheets only) |
+| PUT/DELETE | `/api/masters/{key}/{id}` | update / delete a row |
 | GET | `/api/stats` | dashboard figures |
 | GET | `/api/export/properties.csv` | CSV export |
 
@@ -160,6 +185,11 @@ By design, and worth agreeing before Stage 2:
 - No document versioning or approval workflow — uploading a new lease adds a
   second document rather than superseding the first.
 - No audit trail of who changed what.
+- **Properties are not yet linked to the location master.** The location and
+  location-code sheets exist and are ready to load, but a property still records
+  its address as free text. Adding `property.location_id` is the obvious next
+  step; it was left out deliberately so the Master sheets module changed nothing
+  in the property register.
 - No bulk import. An Excel importer is the first thing worth building next, and
   it must tolerate bad rows rather than reject the file: in the source sheet 36 of
   70 records have no property code, 32 have no usable address, and `LLKO` is used
