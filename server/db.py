@@ -22,6 +22,7 @@ CREATE INDEX IF NOT EXISTS idx_document_property ON document(property_id);
 CREATE INDEX IF NOT EXISTS idx_document_type ON document(doc_type);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_location_name ON location(name);
 CREATE INDEX IF NOT EXISTS idx_location_code_loc ON location_code(location_id);
+CREATE INDEX IF NOT EXISTS idx_property_location ON property(location_id);
 """
 
 
@@ -65,6 +66,7 @@ CREATE TABLE IF NOT EXISTS property (
     name              TEXT NOT NULL,
     sbu_id            INTEGER NOT NULL REFERENCES sbu(id),
     legal_entity_id   INTEGER REFERENCES legal_entity(id),
+    location_id       INTEGER REFERENCES location(id),
     property_type     TEXT NOT NULL DEFAULT 'LAND',
     ownership_type    TEXT NOT NULL DEFAULT 'FREEHOLD',
     status            TEXT NOT NULL DEFAULT 'ACTIVE',
@@ -174,6 +176,7 @@ MIGRATIONS = [
     ("sbu", "sector", "TEXT"),
     ("sbu", "cost_centre", "TEXT"),
     ("property", "legal_entity_id", "INTEGER REFERENCES legal_entity(id)"),
+    ("property", "location_id", "INTEGER REFERENCES location(id)"),
 ]
 
 
@@ -199,6 +202,14 @@ def migrate(conn):
         if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
             seed_locations(conn)
             conn.commit()
+
+    # Link the sample properties to the location master the first time that
+    # column exists. Only the known seed property codes are matched.
+    if conn.execute(
+            "SELECT COUNT(*) AS n FROM property WHERE location_id IS NOT NULL"
+    ).fetchone()["n"] == 0:
+        assign_sample_locations(conn)
+        conn.commit()
 
 
 def init_db():
@@ -264,6 +275,23 @@ SEED_LOCATIONS = [
     ("LKUR", "Kurunegala", "Kurunegala", "Kurunegala"),
     ("LBAD", "Badulla", "Badulla", "Badulla"),
 ]
+
+# Which sample property sits at which location.
+SAMPLE_PROPERTY_LOCATION = {
+    "HO-COL-001": "Colombo 01",
+    "HO-GAM-002": "Yakkala",
+    "AGRI-NUW-001": "Nuwara Eliya",
+    "AGRI-ANU-002": "Anuradhapura",
+    "MFG-GAM-001": "Biyagama",
+    "MFG-KUR-002": "Kurunegala",
+    "RET-KAN-001": "Kandy",
+    "RET-GAL-002": "Galle",
+    "RET-JAF-003": "Jaffna",
+    "LOG-COL-001": "Orugodawatta",
+    "LOG-TRI-002": "Trincomalee",
+    "LEI-HAM-001": "Hambantota",
+    "LEI-BAD-002": "Badulla",
+}
 
 SEED_SBUS = [
     ("HO", "Head Office", "Corporate head office and shared services"),
@@ -374,6 +402,19 @@ def seed_locations(conn):
                 (code, row["id"]))
 
 
+def assign_sample_locations(conn):
+    """Point the sample properties at the sample locations.
+
+    Matched on the exact seed property codes, so a register holding real data is
+    never touched.
+    """
+    ids = {r["name"]: r["id"] for r in conn.execute("SELECT id, name FROM location")}
+    for property_code, location_name in SAMPLE_PROPERTY_LOCATION.items():
+        if location_name in ids:
+            conn.execute("UPDATE property SET location_id = ? WHERE property_code = ?",
+                         (ids[location_name], property_code))
+
+
 def seed(conn):
     seed_legal_entities(conn)
     seed_locations(conn)
@@ -398,6 +439,7 @@ def seed(conn):
              district, province, lat, lng, extent, unit, sqft, use),
         )
     assign_sample_entities(conn)
+    assign_sample_locations(conn)
     prop_ids = {r["property_code"]: r["id"]
                 for r in conn.execute("SELECT id, property_code FROM property")}
 

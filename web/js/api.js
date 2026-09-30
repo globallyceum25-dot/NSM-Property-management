@@ -46,6 +46,7 @@ window.API = (function () {
     updateEntity: (id, data) => request('PUT', '/api/legal-entities/' + id, data),
     deleteEntity: (id) => request('DELETE', '/api/legal-entities/' + id),
 
+    listLocations: () => request('GET', '/api/locations'),
     listProperties: (filters) => request('GET', '/api/properties' + qs(filters || {})),
     getProperty: (id) => request('GET', '/api/properties/' + id),
     createProperty: (data) => request('POST', '/api/properties', data),

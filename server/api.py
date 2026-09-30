@@ -283,16 +283,43 @@ def delete_sbu(ctx):
     return 200, {"deleted": sbu_id}
 
 
+# --- locations (for the property form) --------------------------------------
+
+def list_locations(ctx):
+    """Slim list for the property form's location picker.
+
+    The full master sheet lives at /api/masters/location; this returns only what
+    the picker needs, with each location's primary code.
+    """
+    conn = db.get_conn()
+    rows = conn.execute(
+        """SELECT l.id, l.name, l.city, l.district, l.province,
+                  l.latitude, l.longitude, l.is_active,
+                  (SELECT lc.code FROM location_code lc
+                    WHERE lc.location_id = l.id AND lc.is_active = 1
+                    ORDER BY lc.code LIMIT 1) AS code,
+                  (SELECT COUNT(*) FROM property p WHERE p.location_id = l.id)
+                      AS property_count
+           FROM location l ORDER BY l.name"""
+    ).fetchall()
+    return 200, [_row_to_dict(r) for r in rows]
+
+
 # --- properties -------------------------------------------------------------
 
 _PROPERTY_SELECT = """
     SELECT p.*, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
            s.sector AS sbu_sector, s.cost_centre AS sbu_cost_centre,
            e.short_code AS entity_code, e.name AS entity_name,
+           loc.name AS location_name,
+           (SELECT lc.code FROM location_code lc
+             WHERE lc.location_id = loc.id AND lc.is_active = 1
+             ORDER BY lc.code LIMIT 1) AS location_code,
            (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count
     FROM property p
     JOIN sbu s ON s.id = p.sbu_id
     LEFT JOIN legal_entity e ON e.id = p.legal_entity_id
+    LEFT JOIN location loc ON loc.id = p.location_id
 """
 
 
@@ -312,6 +339,12 @@ def list_properties(ctx):
         elif q["legal_entity_id"].isdigit():
             where.append("p.legal_entity_id = ?")
             params.append(int(q["legal_entity_id"]))
+    if q.get("location_id"):
+        if q["location_id"] == "none":
+            where.append("p.location_id IS NULL")
+        elif q["location_id"].isdigit():
+            where.append("p.location_id = ?")
+            params.append(int(q["location_id"]))
     if q.get("district"):
         where.append("p.district = ?")
         params.append(q["district"])
@@ -381,6 +414,20 @@ def _property_payload(ctx, conn):
             raise ApiError("The selected owning company does not exist.",
                            field="legal_entity_id")
 
+    # Optional link to the location master. Free-text address lines stay for the
+    # street detail; the location is the canonical place.
+    location_id = data.get("location_id")
+    if location_id in ("", None):
+        location_id = None
+    else:
+        try:
+            location_id = int(location_id)
+        except (TypeError, ValueError):
+            raise ApiError("Location is not valid.", field="location_id")
+        if not conn.execute("SELECT 1 FROM location WHERE id = ?",
+                            (location_id,)).fetchone():
+            raise ApiError("The selected location does not exist.", field="location_id")
+
     lat = _as_float(data.get("latitude"), "Latitude")
     lng = _as_float(data.get("longitude"), "Longitude")
     ok, message = srilanka.coordinates_in_sri_lanka(lat, lng)
@@ -397,6 +444,7 @@ def _property_payload(ctx, conn):
         "name": name,
         "sbu_id": sbu_id,
         "legal_entity_id": entity_id,
+        "location_id": location_id,
         "latitude": lat,
         "longitude": lng,
         "property_type": _check_enum(data.get("property_type"),
@@ -432,7 +480,7 @@ def create_property(ctx):
         raise ApiError("Property code '%s' is already in use." % payload["property_code"],
                        409, "property_code")
 
-    columns = ["property_code", "sbu_id", "legal_entity_id",
+    columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
                "latitude", "longitude"] + PROPERTY_FIELDS
     cur = conn.execute(
         "INSERT INTO property (%s) VALUES (%s)"
@@ -458,7 +506,7 @@ def update_property(ctx):
                        409, "property_code")
     payload["id"] = pid
 
-    columns = ["property_code", "sbu_id", "legal_entity_id",
+    columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
                "latitude", "longitude"] + PROPERTY_FIELDS
     conn.execute(
         "UPDATE property SET %s, updated_at = datetime('now') WHERE id = :id"
@@ -652,7 +700,8 @@ def export_properties_csv(ctx):
     rows = conn.execute(_PROPERTY_SELECT + " ORDER BY s.name, p.property_code").fetchall()
     buf = io.StringIO()
     headers = ["property_code", "name", "sbu_code", "sbu_name",
-               "entity_code", "entity_name", "property_type",
+               "entity_code", "entity_name",
+               "location_code", "location_name", "property_type",
                "ownership_type", "status", "address_line1", "address_line2", "city",
                "district", "province", "postal_code", "latitude", "longitude",
                "extent_value", "extent_unit", "building_area_sqft", "assessment_no",
@@ -682,6 +731,7 @@ ROUTES = [
     ("POST",   r"^/api/legal-entities$",                 create_legal_entity),
     ("PUT",    r"^/api/legal-entities/(?P<id>\d+)$",     update_legal_entity),
     ("DELETE", r"^/api/legal-entities/(?P<id>\d+)$",     delete_legal_entity),
+    ("GET",    r"^/api/locations$",                      list_locations),
     ("GET",    r"^/api/properties$",                     list_properties),
     ("POST",   r"^/api/properties$",                     create_property),
     ("GET",    r"^/api/properties/(?P<id>\d+)$",         get_property),

@@ -47,7 +47,8 @@ MASTERS = [
         "table": "location",
         "order_by": "name",
         "display": "name",
-        "blocked_by": [("location_code", "location_id", "location code")],
+        "blocked_by": [("location_code", "location_id", "location code"),
+                       ("property", "location_id", "property")],
         "columns": [
             {"name": "name", "label": "Location name", "type": "text",
              "required": True, "unique": True, "maxlength": 120},
@@ -370,6 +371,12 @@ def _validate(sheet, data, row_id=None):
     return payload
 
 
+def _plural(word, n):
+    if n == 1:
+        return word
+    return word[:-1] + "ies" if word.endswith("y") else word + "s"
+
+
 def _require_editable(sheet):
     if not sheet["editable"]:
         raise ApiError("'%s' is a system list and cannot be edited here."
@@ -417,13 +424,16 @@ def delete_row(ctx):
     _require_editable(sheet)
     row_id = int(ctx.match.group("id"))
     conn = db.get_conn()
+    blockers = []
     for table, fk, label in sheet.get("blocked_by", []):
         n = conn.execute("SELECT COUNT(*) AS n FROM %s WHERE %s = ?" % (table, fk),
                          (row_id,)).fetchone()["n"]
         if n:
-            raise ApiError(
-                "This row is used by %d %s%s. Reassign %s first."
-                % (n, label, "" if n == 1 else "s", "it" if n == 1 else "them"), 409)
+            blockers.append("%d %s" % (n, _plural(label, n)))
+    if blockers:
+        raise ApiError(
+            "This row is still used by %s. Reassign or remove %s first."
+            % (" and ".join(blockers), "that" if len(blockers) == 1 else "those"), 409)
     conn.execute("DELETE FROM %s WHERE id = ?" % sheet["table"], (row_id,))
     conn.commit()
     return 200, {"deleted": row_id}

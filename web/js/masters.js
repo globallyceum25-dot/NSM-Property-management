@@ -14,9 +14,11 @@ window.Masters = (function () {
   let filter = '';
   let loaded = false;
   let notify = function () {};
+  let onChange = function () {};       // lets the host app re-read the masters
 
-  function init(toastFn) {
+  function init(toastFn, changeFn) {
     notify = toastFn || notify;
+    onChange = changeFn || onChange;
 
     $('#btn-new-master-row').addEventListener('click', () => openRow(null));
     $('#btn-save-master').addEventListener('click', saveRow);
@@ -270,6 +272,7 @@ window.Masters = (function () {
     current = await API.getMaster(key);
     renderNav();
     renderGrid();
+    try { await onChange(key); } catch (e) { /* host refresh is best-effort */ }
   }
 
   return { init: init, show: show };

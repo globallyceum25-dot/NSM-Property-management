@@ -41,6 +41,9 @@
       <label>District
         <select id="filter-district"><option value="">All districts</option></select>
       </label>
+      <label>Location
+        <select id="filter-location"><option value="">All locations</option></select>
+      </label>
       <label>Owning company
         <select id="filter-entity"><option value="">Any company</option></select>
       </label>
@@ -81,7 +84,7 @@
           <thead>
             <tr>
               <th>Code</th><th>Property</th><th>SBU</th><th>Owned by</th><th>Type</th>
-              <th>District</th><th>Extent</th><th>Status</th>
+              <th>Location</th><th>District</th><th>Extent</th><th>Status</th>
               <th>Docs</th><th>Coordinates</th><th></th>
             </tr>
           </thead>
@@ -199,6 +202,12 @@
 
       <fieldset>
         <legend>Location</legend>
+        <label>Location (from the master list)
+          <select name="location_id"></select>
+          <span class="hint">Picking a location fills the district, province and
+            &mdash; if blank &mdash; the coordinates. Leave the address lines for the
+            street detail. Add missing places under Master sheets &rsaquo; Locations.</span>
+        </label>
         <div class="grid-2">
           <label>Address line 1
             <input name="address_line1" maxlength="160">

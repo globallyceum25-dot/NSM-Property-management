@@ -68,7 +68,13 @@ and coordinates), **Location codes**, **Business units (SBU)** and **Owning
 companies**. A location code is `UNIQUE`, so one code can never stand for two
 places — the LLKO-means-both-Kottawa-and-Kegalle defect the blueprint reports is
 impossible by construction. A row cannot be deleted while something still points
-at it.
+at it, and the message names every blocker.
+
+Each property links to a location. Choosing one on the property form fills the
+district and province, and seeds the coordinates from the location centroid *only
+when they are still blank* — a pin you have already placed is never overwritten.
+The address lines stay free text for the street detail. Locations added under
+Master sheets appear in the property form immediately.
 
 *System lists* (read-only in Stage 1): provinces, districts, property types,
 ownership/tenure types, property statuses, document types and extent units.
@@ -117,7 +123,8 @@ has none: an outside landlord owns it, and that party is recorded on the lease
 document instead. Managed from the **Owning companies** tab.
 
 `property` — property code (unique, auto-generated as `SBU-0001` if left blank),
-name, SBU, owning company (optional), type, ownership type, status,
+name, SBU, owning company (optional), **location** (optional, from the location
+master), type, ownership type, status,
 address (line 1/2, city, district,
 province, postal code), **latitude, longitude**, extent value + unit
 (perch/acre/rood/hectare/m²), building area, assessment no., survey plan no.,
@@ -139,7 +146,8 @@ Sri Lanka; selecting a district fills the province automatically.
 | PUT/DELETE | `/api/sbus/{id}` | update / delete an SBU |
 | GET/POST | `/api/legal-entities` | list / create owning companies |
 | PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
-| GET | `/api/properties` | list, filtered by `sbu_id`, `district`, `province`, `status`, `property_type`, `q` |
+| GET | `/api/locations` | slim location list for the property form |
+| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `district`, `province`, `status`, `property_type`, `q` |
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |
@@ -185,11 +193,6 @@ By design, and worth agreeing before Stage 2:
 - No document versioning or approval workflow — uploading a new lease adds a
   second document rather than superseding the first.
 - No audit trail of who changed what.
-- **Properties are not yet linked to the location master.** The location and
-  location-code sheets exist and are ready to load, but a property still records
-  its address as free text. Adding `property.location_id` is the obvious next
-  step; it was left out deliberately so the Master sheets module changed nothing
-  in the property register.
 - No bulk import. An Excel importer is the first thing worth building next, and
   it must tolerate bad rows rather than reject the file: in the source sheet 36 of
   70 records have no property code, 32 have no usable address, and `LLKO` is used

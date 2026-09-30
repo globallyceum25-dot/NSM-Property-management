@@ -6,9 +6,11 @@
     reference: null,
     sbus: [],
     entities: [],
+    locations: [],
     properties: [],
     selectedSbus: null,          // null = all
-    filters: { q: '', district: '', status: '', property_type: '', legal_entity_id: '' },
+    filters: { q: '', district: '', status: '', property_type: '',
+               legal_entity_id: '', location_id: '' },
     labels: {},
     currentProperty: null,
     view: 'map'
@@ -74,7 +76,14 @@
 
     buildStaticSelects();
     window.__districts = state.reference.districts;   // used by the masters form
-    Masters.init(toast);
+    Masters.init(toast, async function (key) {
+      // Keep the sidebar filters and the property form in step with edits made
+      // in the Master sheets module.
+      if (key === 'location' || key === 'location_code') await refreshLocations();
+      if (key === 'sbu') await refreshSbus();
+      if (key === 'legal_entity') await refreshEntities();
+      await refreshProperties();
+    });
     MapView.init('map', state.reference, {
       onSelect: openDrawer,
       onEdit: (id) => openPropertyModal(id)
@@ -83,7 +92,28 @@
 
     await refreshSbus();
     await refreshEntities();
+    await refreshLocations();
     await refreshProperties();
+  }
+
+  async function refreshLocations() {
+    state.locations = await API.listLocations();
+    const options = state.locations.map((l) => ({
+      value: l.id,
+      label: (l.code ? l.code + ' — ' : '') + l.name +
+             (l.district ? ' (' + l.district + ')' : '')
+    }));
+
+    const filter = $('#filter-location');
+    const keepFilter = filter.value;
+    fillSelect(filter, options.concat([{ value: 'none', label: 'No location set' }]),
+      { placeholder: 'All locations' });
+    filter.value = keepFilter;
+
+    const field = $('#property-form').location_id;
+    const keepField = field.value;
+    fillSelect(field, options, { placeholder: '— not set —' });
+    field.value = keepField;
   }
 
   function buildStaticSelects() {
@@ -309,6 +339,10 @@
           ? '<span title="' + Fmt.esc(p.entity_name) + '">' + Fmt.esc(p.entity_code) + '</span>'
           : '<span class="muted-inline" title="Leased or rented in — owned by an outside landlord">—</span>') + '</td>' +
         '<td>' + Fmt.esc(labelFor('propertyTypes', p.property_type)) + '</td>' +
+        '<td>' + (p.location_name
+          ? (p.location_code ? '<span class="loc-code">' + Fmt.esc(p.location_code) +
+              '</span> ' : '') + Fmt.esc(p.location_name)
+          : '<span class="muted-inline" title="No location from the master list">—</span>') + '</td>' +
         '<td>' + Fmt.esc(p.district || '') + '</td>' +
         '<td>' + Fmt.esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits)) + '</td>' +
         '<td><span class="badge ' + Fmt.esc(p.status) + '">' +
@@ -479,6 +513,10 @@
       '</dl></section>' +
 
       '<section class="detail-section"><h3>Location</h3><dl class="detail-grid">' +
+        row('Location', p.location_name
+            ? (p.location_code ? '<span class="loc-code">' + Fmt.esc(p.location_code) +
+                '</span> ' : '') + Fmt.esc(p.location_name)
+            : '<span class="muted-inline">Not linked to the location master</span>') +
         row('Address', address) +
         row('District', Fmt.esc(p.district)) +
         row('Province', Fmt.esc(p.province)) +
@@ -832,9 +870,10 @@
 
     $('#btn-reset-filters').addEventListener('click', function () {
       state.filters = { q: '', district: '', status: '', property_type: '',
-                        legal_entity_id: '' };
+                        legal_entity_id: '', location_id: '' };
       state.selectedSbus = null;
       $('#search').value = '';
+      $('#filter-location').value = '';
       $('#filter-entity').value = '';
       $('#filter-district').value = '';
       $('#filter-status').value = '';
@@ -880,6 +919,38 @@
       } else if (district) {
         MapView.centerPicker(district.lat, district.lng, 11);
       }
+    });
+
+    propertyForm.location_id.addEventListener('change', function (event) {
+      const location = state.locations
+        .filter((l) => String(l.id) === event.target.value)[0];
+      if (!location) return;
+
+      if (location.district) {
+        propertyForm.district.value = location.district;
+        propertyForm.province.value = location.province || '';
+      }
+      if (location.city && !propertyForm.city.value) {
+        propertyForm.city.value = location.city;
+      }
+      // The location centroid is a starting point, not the property's own pin:
+      // only fill coordinates that are still blank, then let the user drag it.
+      const hasCoords = propertyForm.latitude.value && propertyForm.longitude.value;
+      if (!hasCoords && location.latitude && location.longitude) {
+        propertyForm.latitude.value = Number(location.latitude).toFixed(6);
+        propertyForm.longitude.value = Number(location.longitude).toFixed(6);
+        validateCoords();
+        MapView.setPickerPoint(location.latitude, location.longitude, true);
+        toast('Coordinates set to the ' + location.name +
+              ' centroid — drag the pin to the exact spot.');
+      } else if (location.latitude && location.longitude) {
+        MapView.centerPicker(location.latitude, location.longitude, 13);
+      }
+    });
+
+    $('#filter-location').addEventListener('change', function (event) {
+      state.filters.location_id = event.target.value;
+      refreshProperties();
     });
 
     $('#btn-paste-coords').addEventListener('click', function () {
