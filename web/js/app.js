@@ -955,6 +955,177 @@
     return POPOVERS.some((pair) => !$(pair[1]).hidden);
   }
 
+  /* ---------- dashboard charts ---------- */
+
+  // Fixed slot per category, so a category keeps its colour whatever is
+  // filtered (colour follows the entity, never its rank).
+  const TENURE_SLOTS = ['FREEHOLD', 'LEASEHOLD', 'RENTED_IN', 'LEASED_OUT', 'STATE_GRANT'];
+  const DOC_SLOTS = ['DEED', 'LEASE_AGREEMENT', 'TITLE_CERTIFICATE', 'SURVEY_PLAN',
+                     'VALUATION_REPORT', 'INSURANCE_POLICY'];
+  // Document types at legend size ("Rent / lease agreement" must not become "Rent").
+  const DOC_SHORT = {
+    DEED: 'Deed', LEASE_AGREEMENT: 'Lease / rent', TITLE_CERTIFICATE: 'Title certificate',
+    SURVEY_PLAN: 'Survey plan', VALUATION_REPORT: 'Valuation', INSURANCE_POLICY: 'Insurance'
+  };
+  const RENEWAL_LABELS = {
+    expired: 'Expired', m3: 'Within 3 mo', m6: '3–6 mo', m9: '6–9 mo', m12: '9–12 mo', later: 'Later'
+  };
+
+  function chartCard(opts) {
+    return '<section class="chart-card span-' + opts.span + '">' +
+      '<header class="chart-head"><div><h3>' + esc(opts.title) + '</h3>' +
+        (opts.sub ? '<p class="chart-sub">' + esc(opts.sub) + '</p>' : '') + '</div></header>' +
+      opts.body + '</section>';
+  }
+
+  function tenureDonut(stats) {
+    const count = {};
+    stats.byTenure.forEach((t) => { count[t.ownership_type] = t.n; });
+    const items = TENURE_SLOTS.map((code, i) => ({
+      label: TENURE_SHORT[code], value: count[code] || 0, color: Charts.SLOTS[i]
+    }));
+    if (count.OTHER) items.push({ label: 'Other tenure', value: count.OTHER, color: Charts.OTHER });
+    return Charts.donut({ items: items, centerLabel: 'properties',
+                          ariaLabel: 'Properties by tenure', emptyText: 'No properties match' });
+  }
+
+  function documentsDonut(stats) {
+    const count = {};
+    stats.byDocType.forEach((d) => { count[d.doc_type] = d.n; });
+    let items = DOC_SLOTS
+      .map((code, i) => ({ code: code, label: DOC_SHORT[code],
+                           value: count[code] || 0, color: Charts.SLOTS[i] }))
+      .filter((i) => i.value > 0);
+    let other = Object.keys(count)
+      .filter((code) => DOC_SLOTS.indexOf(code) === -1)
+      .reduce((s, code) => s + count[code], 0);
+    // At most six segments: past that, the smallest named type joins "Other".
+    while (items.length + (other ? 1 : 0) > 6) {
+      const smallest = items.reduce((a, b) => (b.value < a.value ? b : a));
+      other += smallest.value;
+      items = items.filter((i) => i !== smallest);
+    }
+    if (other) items.push({ label: 'Other documents', value: other, color: Charts.OTHER });
+    return Charts.donut({ items: items, centerLabel: 'documents',
+                          ariaLabel: 'Documents by type', emptyText: 'No documents recorded' });
+  }
+
+  function deedGauge(stats) {
+    const n = stats.totals.properties;
+    if (!n) return '<div class="chart-empty">No properties match</div>';
+    const withDeed = n - stats.totals.without_deed;
+    const pctCovered = withDeed / n * 100;
+    const status = pctCovered >= 80 ? 'good' : (pctCovered >= 50 ? 'warning' : 'critical');
+    return Charts.gauge({
+      percent: pctCovered,
+      status: status,
+      statusLabel: { good: 'Good coverage.', warning: 'Partial coverage.', critical: 'Low coverage.' }[status],
+      detail: stats.totals.without_deed
+        ? plural(stats.totals.without_deed, 'property has', 'properties have') + ' no deed or title on file.'
+        : 'Every property has a deed or title on file.',
+      caption: 'with a deed or title',
+      ariaLabel: Math.round(pctCovered) + '% of properties have a deed or title on file',
+      tipLabel: 'Deed or title on file',
+      tipValue: withDeed + ' of ' + plural(n, 'property', 'properties')
+    });
+  }
+
+  function renewalColumns(stats) {
+    const total = stats.renewals.reduce((s, r) => s + r.n, 0);
+    if (!total) return '<div class="chart-empty">No documents carry an expiry date</div>';
+    return Charts.columns({
+      height: 250,
+      items: stats.renewals.map((r) => ({
+        label: RENEWAL_LABELS[r.bucket],
+        value: r.n,
+        // Expired is a status, shown by its label as well as its colour;
+        // "later" is context beyond the reminder ladder, so it recedes.
+        color: r.bucket === 'expired' ? '#d03b3b' : (r.bucket === 'later' ? Charts.OTHER : Charts.SERIES),
+        note: r.bucket === 'later' ? 'beyond 12 months' : (r.bucket === 'expired' ? 'past expiry' : 'renewal due')
+      }))
+    });
+  }
+
+  function landBars(stats) {
+    const rows = stats.bySbu
+      .filter((s) => s.extent_perches > 0)
+      .sort((a, b) => b.extent_perches - a.extent_perches)
+      .map(function (s) {
+        const acres = s.extent_perches / 160;
+        return { label: s.name, value: acres, dot: s.color,
+                 display: Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac' };
+      });
+    return Charts.hbars({ items: rows, emptyText: stats.totals.properties
+      ? 'No land extent recorded' : 'No properties match' });
+  }
+
+  function provinceColumns(stats) {
+    const rows = stats.byProvince.slice()
+      .sort((a, b) => b.n - a.n || a.province.localeCompare(b.province));
+    // Nine columns need width; on a phone the same data reads better as bars.
+    return '<div class="only-wide">' + Charts.columns({
+        height: 220,
+        items: rows.map((p) => ({ label: p.province, value: p.n, note: p.province + ' Province' }))
+      }) + '</div>' +
+      '<div class="only-narrow">' + Charts.hbars({
+        items: rows.map((p) => ({ label: p.province, value: p.n }))
+      }) + '</div>';
+  }
+
+  function typeBars(stats) {
+    return Charts.hbars({
+      items: stats.byType.map((t) => ({ label: shortLabel('propertyTypes', t.property_type), value: t.n })),
+      emptyText: 'No properties match'
+    });
+  }
+
+  function largestHoldings() {
+    const ranked = state.properties
+      .map((p) => ({ p: p, perches: toPerches(p.extent_value, p.extent_unit) }))
+      .filter((x) => x.perches > 0)
+      .sort((a, b) => b.perches - a.perches);
+    if (!ranked.length) {
+      return '<div class="chart-empty">' +
+        (state.properties.length ? 'No land extent recorded' : 'No properties match') + '</div>';
+    }
+    const totalLand = ranked.reduce((s, x) => s + x.perches, 0);
+    return '<ul class="holdings">' + ranked.slice(0, 5).map(function (x) {
+      const acres = x.perches / 160;
+      const share = Math.round(x.perches / totalLand * 100);
+      return '<li data-open="' + x.p.id + '" tabindex="0">' +
+        '<span class="lh-thumb">' + coverHtml(x.p, 0.78) + '</span>' +
+        '<span class="lh-text"><b>' + esc(x.p.name) + '</b>' +
+          '<span>' + esc(x.p.property_code) + ' · ' + esc(x.p.sbu_code) + '</span></span>' +
+        '<span class="lh-figs"><b>' + Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac</b>' +
+          '<span class="lh-share">' + share + '% of land</span></span>' +
+      '</li>';
+    }).join('') + '</ul>';
+  }
+
+  function chartsHtml(stats) {
+    return '<h2 class="dash-section">Portfolio at a glance</h2>' +
+      '<div class="chart-grid">' +
+        chartCard({ span: 4, title: 'Tenure mix', sub: 'How the properties are held',
+                    body: tenureDonut(stats) }) +
+        chartCard({ span: 4, title: 'Deed & title coverage', sub: 'Properties with a deed or title certificate on file',
+                    body: deedGauge(stats) }) +
+        chartCard({ span: 4, title: 'Documents by type', sub: 'Every document recorded against these properties',
+                    body: documentsDonut(stats) }) +
+        chartCard({ span: 5, title: 'Renewal pipeline',
+                    sub: 'Documents by expiry, on the 3 / 6 / 9 / 12-month reminder ladder',
+                    body: renewalColumns(stats) }) +
+        chartCard({ span: 4, title: 'Land extent by business unit', sub: 'Acres, largest first',
+                    body: landBars(stats) }) +
+        chartCard({ span: 3, title: 'Largest holdings', sub: 'By land extent · click to open',
+                    body: largestHoldings() }) +
+        chartCard({ span: 7, title: 'Properties by province', sub: 'All nine provinces, including any with none',
+                    body: provinceColumns(stats) }) +
+        chartCard({ span: 5, title: 'Property types', sub: 'Number of properties of each type',
+                    body: typeBars(stats) }) +
+      '</div>' +
+      '<h2 class="dash-section">Breakdowns</h2>';
+  }
+
   /* ---------- dashboard ---------- */
 
   async function renderDashboard() {
@@ -1007,6 +1178,7 @@
     // the breakdowns.
     host.innerHTML =
       filterBannerHtml(stats) +
+      chartsHtml(stats) +
       '<div class="dash-cols">' +
         '<div class="card"><h3>Properties by business unit</h3>' +
           bars(stats.bySbu, 'name', 'property_count', maxSbu, (r) => r.color) + '</div>' +
@@ -1029,6 +1201,7 @@
 
     const clear = $('#btn-clear-from-dashboard');
     if (clear) clear.addEventListener('click', resetFilters);
+    Charts.bindTooltips(host);
   }
 
   /* ---------- property drawer ---------- */
@@ -1624,6 +1797,13 @@
       button.addEventListener('click', function () {
         button.closest('.modal').hidden = true;
       }));
+
+    // Enter on a focusable row that opens a property (dashboard lists).
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      const row = event.target.closest('li[data-open][tabindex]');
+      if (row && event.target === row) openDrawer(Number(row.dataset.open));
+    });
 
     // Escape unwinds one layer at a time: popover, modal, drawer, map card.
     document.addEventListener('keydown', function (event) {

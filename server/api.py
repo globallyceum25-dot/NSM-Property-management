@@ -709,6 +709,35 @@ def get_stats(ctx):
     by_tenure = [_row_to_dict(r) for r in run(
         "SELECT ownership_type, COUNT(*) AS n FROM (%s) GROUP BY ownership_type ORDER BY n DESC"
         % subset)]
+    by_type = [_row_to_dict(r) for r in run(
+        "SELECT property_type, COUNT(*) AS n FROM (%s) GROUP BY property_type ORDER BY n DESC"
+        % subset)]
+    # Every province, including those with nothing in them: gaps are information.
+    province_counts = {r["province"]: r["n"] for r in run(
+        "SELECT province, COUNT(*) AS n FROM (%s) WHERE province IS NOT NULL GROUP BY province"
+        % subset)}
+    by_province = [{"province": name, "n": province_counts.get(name, 0)}
+                   for name in srilanka.PROVINCE_NAMES]
+    by_doc_type = [_row_to_dict(r) for r in run(
+        """SELECT d.doc_type, COUNT(*) AS n FROM document d
+           WHERE d.property_id IN (SELECT id FROM (%s))
+           GROUP BY d.doc_type ORDER BY n DESC""" % subset)]
+    # Renewal pipeline on the blueprint's 3 / 6 / 9 / 12-month reminder ladder.
+    renewal_counts = {r["bucket"]: r["n"] for r in run(
+        """SELECT CASE
+                    WHEN d.expiry_date <  date('now')              THEN 'expired'
+                    WHEN d.expiry_date <= date('now', '+3 months')  THEN 'm3'
+                    WHEN d.expiry_date <= date('now', '+6 months')  THEN 'm6'
+                    WHEN d.expiry_date <= date('now', '+9 months')  THEN 'm9'
+                    WHEN d.expiry_date <= date('now', '+12 months') THEN 'm12'
+                    ELSE 'later' END AS bucket,
+                  COUNT(*) AS n
+           FROM document d
+           WHERE d.expiry_date IS NOT NULL
+             AND d.property_id IN (SELECT id FROM (%s))
+           GROUP BY bucket""" % subset)}
+    renewals = [{"bucket": key, "n": renewal_counts.get(key, 0)}
+                for key in ("expired", "m3", "m6", "m9", "m12", "later")]
     by_district = [_row_to_dict(r) for r in run(
         """SELECT district, province, COUNT(*) AS n FROM (%s)
            WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""" % subset)]
@@ -755,7 +784,8 @@ def get_stats(ctx):
 
     return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
                  "byDistrict": by_district, "byEntity": by_entity,
-                 "byTenure": by_tenure,
+                 "byTenure": by_tenure, "byType": by_type, "byProvince": by_province,
+                 "byDocType": by_doc_type, "renewals": renewals,
                  "expiringSoon": expiring, "filtered": bool(where)}
 
 

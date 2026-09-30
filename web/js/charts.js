@@ -1,0 +1,212 @@
+/* Dashboard charts: donut, gauge, horizontal bars and columns, as plain SVG/HTML.
+ *
+ * Built to the data-viz method the dashboard follows:
+ *   - categorical hues come from one validated palette, assigned by entity in a
+ *     fixed order (never by rank), so a filter never repaints a category;
+ *   - thin marks, a 2px surface gap between touching marks, rounded data ends;
+ *   - every value is also visible as text (legend or bar label), so the
+ *     tooltip enhances but never gates;
+ *   - text stays in text colours; identity comes from the swatch beside it.
+ */
+window.Charts = (function () {
+  'use strict';
+
+  // Validated in this order against the white card surface (CVD dE 9.1,
+  // normal-vision dE 19.6). Three slots sit under 3:1 contrast, which is why
+  // every donut legend prints its values.
+  const SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
+  const OTHER = '#a1a1aa';
+  const SERIES = '#f25c2a';          // single-series bars and columns
+  const STATUS = {
+    critical: { fill: '#d03b3b', track: '#f8dcdc' },
+    warning:  { fill: '#fab219', track: '#fdefcc' },
+    good:     { fill: '#0ca30c', track: '#d6f0d6' }
+  };
+
+  const esc = (v) => Fmt.esc(v);
+  const fmt = (n) => Fmt.num(n);
+
+  function tipAttrs(label, value) {
+    return ' tabindex="0" data-tip-label="' + esc(label) + '" data-tip-value="' + esc(value) + '"';
+  }
+
+  /* ---------- donut: part-to-whole, at most six segments ---------- */
+
+  // items: [{ label, value, color }] in their fixed slot order.
+  function donut(opts) {
+    const items = opts.items.filter((i) => i.value > 0);
+    const total = items.reduce((s, i) => s + i.value, 0);
+    const size = 172, cx = size / 2, cy = size / 2, r = 70, width = 22;
+    const C = 2 * Math.PI * r;
+    const gap = items.length > 1 ? 2 : 0;   // 2px surface gap between segments
+
+    let offset = 0;
+    const segments = items.map(function (item) {
+      const len = item.value / total * C;
+      const dash = Math.max(len - gap, 0.01);
+      const pct = Math.round(item.value / total * 100);
+      const seg = '<circle class="donut-seg" cx="' + cx + '" cy="' + cy + '" r="' + r + '" ' +
+        'fill="none" stroke="' + item.color + '" stroke-width="' + width + '" ' +
+        'stroke-dasharray="' + dash.toFixed(2) + ' ' + C.toFixed(2) + '" ' +
+        'stroke-dashoffset="' + (-offset).toFixed(2) + '"' +
+        tipAttrs(item.label, fmt(item.value) + ' · ' + pct + '%') + '></circle>';
+      offset += len;
+      return seg;
+    }).join('');
+
+    const svg = total
+      ? '<svg class="donut" viewBox="0 0 ' + size + ' ' + size + '" role="img" ' +
+          'aria-label="' + esc(opts.ariaLabel || '') + '">' +
+          '<g transform="rotate(-90 ' + cx + ' ' + cy + ')">' + segments + '</g>' +
+          '<text x="' + cx + '" y="' + (cy - 2) + '" class="donut-total">' + fmt(total) + '</text>' +
+          '<text x="' + cx + '" y="' + (cy + 18) + '" class="donut-caption">' + esc(opts.centerLabel || '') + '</text>' +
+        '</svg>'
+      : '<div class="chart-empty">' + esc(opts.emptyText || 'Nothing to show') + '</div>';
+
+    // The legend is the always-visible twin of the chart: every value, in text.
+    const legend = '<ul class="legend">' + opts.items.map(function (item) {
+      const pct = total ? Math.round(item.value / total * 100) : 0;
+      return '<li' + (item.value ? '' : ' class="is-zero"') + '>' +
+        '<span class="swatch" style="background:' + item.color + '"></span>' +
+        '<span class="legend-label">' + esc(item.label) + '</span>' +
+        '<span class="legend-value">' + fmt(item.value) + '</span>' +
+        '<span class="legend-pct">' + pct + '%</span></li>';
+    }).join('') + '</ul>';
+
+    return '<div class="donut-wrap">' + svg + legend + '</div>';
+  }
+
+  /* ---------- gauge: one ratio against the whole ---------- */
+
+  function gauge(opts) {
+    const pct = Math.max(0, Math.min(100, opts.percent));
+    const tone = STATUS[opts.status] || STATUS.good;
+    const w = 240, h = 132, cx = w / 2, cy = 120, r = 96, stroke = 18;
+    const point = (t) => [cx + r * Math.cos(t), cy - r * Math.sin(t)];
+    const start = point(Math.PI);
+    const end = point(0);
+    const arc = (to) => 'M ' + start[0].toFixed(2) + ' ' + start[1].toFixed(2) +
+      ' A ' + r + ' ' + r + ' 0 0 1 ' + to[0].toFixed(2) + ' ' + to[1].toFixed(2);
+    const fillTo = point(Math.PI * (1 - pct / 100));
+
+    return '<div class="gauge-wrap">' +
+      '<svg class="gauge" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(opts.ariaLabel) + '">' +
+        '<path d="' + arc(end) + '" fill="none" stroke="' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"/>' +
+        (pct > 0
+          ? '<path class="gauge-fill" d="' + arc(fillTo) + '" fill="none" stroke="' + tone.fill + '" ' +
+              'stroke-width="' + stroke + '" stroke-linecap="round"' +
+              tipAttrs(opts.tipLabel, opts.tipValue) + '/>'
+          : '') +
+        '<text x="' + cx + '" y="' + (cy - 26) + '" class="gauge-value">' + Math.round(pct) + '%</text>' +
+        '<text x="' + cx + '" y="' + (cy - 4) + '" class="gauge-caption">' + esc(opts.caption) + '</text>' +
+      '</svg>' +
+      // Status never rides on colour alone: icon + words.
+      '<div class="gauge-status s-' + esc(opts.status) + '">' +
+        '<svg class="ic"><use href="#i-' + (opts.status === 'good' ? 'verified' : 'shield') + '"/></svg>' +
+        '<span><b>' + esc(opts.statusLabel) + '</b> ' + esc(opts.detail) + '</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  /* ---------- horizontal bars: compare magnitude across named items ---------- */
+
+  // items: [{ label, value, display?, dot? }]; one series, one colour.
+  function hbars(opts) {
+    const items = opts.items;
+    if (!items.length || !items.some((i) => i.value > 0)) {
+      return '<div class="chart-empty">' + esc(opts.emptyText || 'Nothing to show') + '</div>';
+    }
+    const max = Math.max.apply(null, items.map((i) => i.value)) || 1;
+    return '<div class="hbars" role="list">' + items.map(function (item) {
+      const width = item.value > 0 ? Math.max(1.5, item.value / max * 100) : 0;
+      const shown = item.display !== undefined ? item.display : fmt(item.value);
+      return '<div class="hbar-row" role="listitem"' + tipAttrs(item.label, shown) + '>' +
+        '<span class="hbar-label">' +
+          (item.dot ? '<span class="swatch round" style="background:' + esc(item.dot) + '"></span>' : '') +
+          '<span>' + esc(item.label) + '</span></span>' +
+        '<span class="hbar-track"><span class="hbar" style="width:' + width.toFixed(1) + '%;' +
+          'background:' + (item.color || opts.color || SERIES) + '"></span>' +
+          '<span class="hbar-value">' + esc(shown) + '</span></span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  /* ---------- columns: magnitude across an ordered or short axis ---------- */
+
+  // items: [{ label, value, color?, note? }]
+  function columns(opts) {
+    const items = opts.items;
+    const max = Math.max.apply(null, items.map((i) => i.value).concat([1]));
+    const height = opts.height || 170;
+    return '<div class="cols" style="--plot:' + height + 'px">' + items.map(function (item) {
+      const h = item.value > 0 ? Math.max(4, item.value / max * (height - 26)) : 0;
+      return '<div class="col"' + tipAttrs(item.label, fmt(item.value) + (item.note ? ' · ' + item.note : '')) + '>' +
+        '<div class="col-plot">' +
+          '<span class="col-value">' + fmt(item.value) + '</span>' +
+          '<span class="col-bar" style="height:' + h.toFixed(1) + 'px;background:' +
+            (item.color || opts.color || SERIES) + '"></span>' +
+        '</div>' +
+        '<span class="col-label">' + esc(item.label) + '</span>' +
+      '</div>';
+    }).join('') + '</div>';
+  }
+
+  /* ---------- the shared tooltip ---------- */
+
+  let tip = null;
+
+  function ensureTip() {
+    if (tip) return tip;
+    tip = document.createElement('div');
+    tip.className = 'chart-tip';
+    tip.hidden = true;
+    tip.setAttribute('role', 'status');
+    const value = document.createElement('strong');
+    const label = document.createElement('span');
+    tip.appendChild(value);
+    tip.appendChild(label);
+    document.body.appendChild(tip);
+    return tip;
+  }
+
+  function show(el, x, y) {
+    const t = ensureTip();
+    // Labels come from the database: set as text, never as markup.
+    t.firstChild.textContent = el.getAttribute('data-tip-value');
+    t.lastChild.textContent = el.getAttribute('data-tip-label');
+    t.hidden = false;
+    const box = t.getBoundingClientRect();
+    const left = Math.min(window.innerWidth - box.width - 8, Math.max(8, x - box.width / 2));
+    const top = y - box.height - 14 < 8 ? y + 18 : y - box.height - 14;
+    t.style.left = left + 'px';
+    t.style.top = top + 'px';
+  }
+
+  function hide() { if (tip) tip.hidden = true; }
+
+  // One set of listeners for a container; charts inside can be re-rendered freely.
+  function bindTooltips(container) {
+    if (container.__chartTips) return;
+    container.__chartTips = true;
+    container.addEventListener('pointermove', function (event) {
+      const el = event.target.closest('[data-tip-label]');
+      if (el && container.contains(el)) show(el, event.clientX, event.clientY);
+      else hide();
+    });
+    container.addEventListener('pointerleave', hide);
+    container.addEventListener('focusin', function (event) {
+      const el = event.target.closest('[data-tip-label]');
+      if (!el) return;
+      const r = el.getBoundingClientRect();
+      show(el, r.left + r.width / 2, r.top);
+    });
+    container.addEventListener('focusout', hide);
+    window.addEventListener('scroll', hide, true);
+  }
+
+  return {
+    SLOTS: SLOTS, OTHER: OTHER, SERIES: SERIES,
+    donut: donut, gauge: gauge, hbars: hbars, columns: columns,
+    bindTooltips: bindTooltips
+  };
+})();

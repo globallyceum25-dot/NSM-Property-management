@@ -108,9 +108,29 @@ coordinates, paste a `6.927079, 79.861244` pair copied from Google Maps, or clic
 the map to drop a pin and drag it to fine-tune. Choosing a district recentres the
 picker there.
 
-**Dashboard** — the breakdowns: properties by business unit, owning company,
-district and status, plus leases, policies and permits expiring within 180
-days. The headline figures live in the Portfolio summary.
+**Dashboard** — two sections, both following the search and filters.
+
+*Portfolio at a glance* — charts:
+
+- **Tenure mix** and **Documents by type** — donut charts with a legend that
+  prints every count and share, so no value depends on colour or hover.
+- **Deed & title coverage** — a gauge of the share of properties with a deed or
+  title on file, coloured and labelled by status (low / partial / good).
+- **Renewal pipeline** — documents by expiry, bucketed on the 3 / 6 / 9 /
+  12-month reminder ladder from the review points, with expired and later.
+- **Land extent by business unit** (acres), **Properties by province** (all
+  nine, including any with none; bars instead of columns on a phone) and
+  **Property types**.
+- **Largest holdings** — the five biggest properties by land, with their share
+  of the total; click one to open it.
+
+Every mark has a tooltip on hover and on keyboard focus. Chart colours come
+from one validated colour-blind-safe palette and are assigned per category in
+a fixed order, so a category keeps its colour whatever is filtered.
+
+*Breakdowns* — properties by business unit, owning company, district and
+status, plus the list of documents expiring within 180 days. The headline
+figures live in the Portfolio summary.
 
 **The dashboard follows the filters.** Search or filter anything and every figure
 — the tiles, all four breakdowns and the expiry list — recomputes over just the
@@ -162,7 +182,7 @@ property-system/
 ├── web/
 │   ├── index.html
 │   ├── css/styles.css
-│   └── js/{api,map,masters,app}.js
+│   └── js/{api,map,masters,charts,app}.js
 └── data/                   created at runtime
     ├── properties.db       SQLite database
     └── uploads/            uploaded document files
@@ -215,7 +235,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET | `/api/masters/{key}` | one sheet: columns, rows and reference options |
 | POST | `/api/masters/{key}` | add a row (editable sheets only) |
 | PUT/DELETE | `/api/masters/{key}/{id}` | update / delete a row |
-| GET | `/api/stats` | dashboard figures; accepts the same filters as `/api/properties` |
+| GET | `/api/stats` | summary and chart figures (totals, tenure, types, provinces, document types, renewal buckets, breakdowns); accepts the same filters as `/api/properties` |
 | GET | `/api/export/properties.csv` | CSV export |
 
 ## Sample data
