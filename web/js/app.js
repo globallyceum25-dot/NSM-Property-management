@@ -1125,10 +1125,106 @@
   };
 
   function chartCard(opts) {
-    return '<section class="chart-card span-' + opts.span + '">' +
+    return '<section class="chart-card span-' + opts.span + (opts.cls ? ' ' + opts.cls : '') + '">' +
       '<header class="chart-head"><div><h3>' + esc(opts.title) + '</h3>' +
-        (opts.sub ? '<p class="chart-sub">' + esc(opts.sub) + '</p>' : '') + '</div></header>' +
-      opts.body + '</section>';
+        (opts.sub ? '<p class="chart-sub">' + esc(opts.sub) + '</p>' : '') + '</div>' +
+        (opts.link
+          ? '<button type="button" class="chart-link" data-dash-go="' + opts.link.go + '">' +
+              esc(opts.link.label) + icon('open') + '</button>'
+          : '') +
+      '</header>' + opts.body + '</section>';
+  }
+
+  function sectionHead(title) {
+    return '<div class="dash-section"><h2>' + esc(title) + '</h2></div>';
+  }
+
+  /* The dashboard opens on what needs doing: each signal is a shortcut to the
+     list behind it, and its state is carried by icon and words, not colour alone. */
+  function signalHtml(o) {
+    return '<button type="button" class="signal s-' + o.tone + '" data-dash-go="' + o.go + '" ' +
+        'aria-label="' + esc(o.value + ' ' + o.label + '. ' + o.sub + '. ' + o.hint) + '" title="' + esc(o.hint) + '">' +
+      '<span class="sig-top"><span class="sig-icon">' + icon(o.icon) + '</span>' +
+        '<span class="sig-go" aria-hidden="true">' + icon('open') + '</span></span>' +
+      '<span class="sig-value">' + Fmt.num(o.value) + '</span>' +
+      '<span class="sig-label">' + esc(o.label) + '</span>' +
+      '<span class="sig-sub">' + esc(o.sub) + '</span>' +
+    '</button>';
+  }
+
+  function dashHeroHtml(stats) {
+    const t = stats.totals;
+    const n = t.properties;
+    const expired = (stats.renewals.filter((r) => r.bucket === 'expired')[0] || { n: 0 }).n;
+    const due = stats.expiringSoon;
+    const noFile = Math.max(0, t.documents - t.files);
+    const missing = pct(t.without_deed, n);
+    const today = new Date().toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    const scope = stats.filtered
+      ? 'A filtered view: ' + n + ' of ' + plural(t.allProperties, 'property', 'properties') +
+        '. Every figure on this page follows the filters.'
+      : plural(n, 'property', 'properties') + ' across ' +
+        plural(t.sbus, 'business unit', 'business units') + ' and ' +
+        plural(stats.byDistrict.length, 'district', 'districts') + ', holding ' +
+        plural(t.documents, 'document', 'documents') + '.';
+
+    const signals = [
+      { go: 'deed', icon: t.without_deed ? 'shield' : 'verified', value: t.without_deed,
+        tone: !n || !t.without_deed ? 'good' : (missing > 50 ? 'critical' : 'warning'),
+        label: 'Without deed or title',
+        sub: !n ? 'No properties' : (t.without_deed ? missing + '% of properties' : 'All covered'),
+        hint: 'List the properties with no deed or title on file' },
+      { go: 'expired', icon: 'clock', value: expired, tone: expired ? 'critical' : 'good',
+        label: 'Expired documents',
+        sub: expired ? 'Past their expiry date' : 'None past expiry',
+        hint: 'Open the expired documents' },
+      { go: 'expiring', icon: 'bell', value: due.length, tone: due.length ? 'warning' : 'good',
+        label: 'Due within 180 days',
+        sub: due.length ? 'Next on ' + Fmt.date(due[0].expiry_date) : 'Nothing due',
+        hint: 'Open the documents expiring within 180 days' },
+      { go: 'nofile', icon: 'paperclip', value: noFile, tone: noFile ? 'info' : 'good',
+        label: 'Documents without a file',
+        sub: t.documents ? pct(t.files, t.documents) + '% scanned' : 'No documents yet',
+        hint: 'Open the documents that have no scan attached' }
+    ];
+
+    return '<section class="dash-hero">' +
+      '<div class="dh-intro">' +
+        '<p class="dh-eyebrow">As of ' + esc(today) + '</p>' +
+        '<h1>Portfolio dashboard</h1>' +
+        '<p class="dh-scope">' + esc(scope) + '</p>' +
+      '</div>' +
+      '<div class="dh-signals" role="group" aria-label="Needs attention">' +
+        signals.map(signalHtml).join('') +
+      '</div>' +
+    '</section>';
+  }
+
+  // Leases, policies and permits coming up, soonest first: the renewal
+  // pipeline's companion list.
+  function upcomingHtml(stats) {
+    const rows = stats.expiringSoon;
+    if (!rows.length) {
+      return '<div class="chart-empty">No leases, policies or permits expire in the next 180 days' +
+        (stats.filtered ? ' among the filtered properties' : '') + '.</div>';
+    }
+    const shown = rows.slice(0, 5);
+    return '<ul class="upcoming">' + shown.map(function (d) {
+      const days = Fmt.daysUntil(d.expiry_date);
+      const date = new Date(d.expiry_date + 'T00:00:00');
+      return '<li data-open="' + d.property_id + '" tabindex="0" title="Expires ' + esc(Fmt.date(d.expiry_date)) + '">' +
+        '<span class="up-date"><b>' + date.getDate() + '</b>' +
+          '<span>' + esc(date.toLocaleDateString('en-GB', { month: 'short' })) + '</span></span>' +
+        '<span class="up-text"><b>' + esc(d.title) + '</b>' +
+          '<span><i class="swatch round" style="background:' + esc(d.sbu_color || '#8c8c8c') + '"></i>' +
+            esc(d.property_code + ' · ' + d.property_name) + '</span></span>' +
+        '<span class="exp-badge ' + (days <= 90 ? 'is-soon' : 'is-upcoming') + '">' +
+          (days === 0 ? 'Today' : plural(days, 'day', 'days')) + '</span>' +
+      '</li>';
+    }).join('') + '</ul>' +
+    (rows.length > shown.length
+      ? '<p class="chart-foot">and ' + (rows.length - shown.length) + ' more in Documents</p>' : '');
   }
 
   function tenureDonut(stats) {
@@ -1187,29 +1283,40 @@
     const total = stats.renewals.reduce((s, r) => s + r.n, 0);
     if (!total) return '<div class="chart-empty">No documents carry an expiry date</div>';
     return Charts.columns({
-      height: 250,
+      height: 220,
       items: stats.renewals.map((r) => ({
         label: RENEWAL_LABELS[r.bucket],
         value: r.n,
         // Expired is a status, shown by its label as well as its colour;
         // "later" is context beyond the reminder ladder, so it recedes.
-        color: r.bucket === 'expired' ? '#d03b3b' : (r.bucket === 'later' ? Charts.OTHER : Charts.SERIES),
-        note: r.bucket === 'later' ? 'beyond 12 months' : (r.bucket === 'expired' ? 'past expiry' : 'renewal due')
+        color: r.bucket === 'expired' ? Charts.STATUS.critical.fill
+          : r.bucket === 'm3' ? Charts.STATUS.warning.fill
+          : (r.bucket === 'later' ? Charts.OTHER : Charts.SERIES),
+        note: r.bucket === 'later' ? 'beyond 12 months'
+          : r.bucket === 'expired' ? 'past expiry'
+          : r.bucket === 'm3' ? 'renewal due soon' : 'renewal due'
       }))
     });
   }
 
   function landBars(stats) {
-    const rows = stats.bySbu
-      .filter((s) => s.extent_perches > 0)
+    const withLand = stats.bySbu.filter((s) => s.extent_perches > 0);
+    const total = withLand.reduce((sum, s) => sum + s.extent_perches, 0);
+    const rows = withLand
       .sort((a, b) => b.extent_perches - a.extent_perches)
       .map(function (s) {
         const acres = s.extent_perches / 160;
+        const share = s.extent_perches / total * 100;
         return { label: s.name, value: acres, dot: s.color,
-                 display: Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac' };
+                 display: Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac · ' +
+                   (share < 1 ? '<1' : Math.round(share)) + '%' };
       });
-    return Charts.hbars({ items: rows, emptyText: stats.totals.properties
+    const chart = Charts.hbars({ items: rows, className: 'wide-val', emptyText: stats.totals.properties
       ? 'No land extent recorded' : 'No properties match' });
+    // The exact figures, in the unit the register records.
+    const perches = stats.bySbu.filter((s) => s.extent_perches > 0)
+      .map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join(' · ');
+    return chart + (perches ? '<p class="chart-foot">In perches: ' + esc(perches) + '</p>' : '');
   }
 
   function provinceColumns(stats) {
@@ -1256,27 +1363,87 @@
   }
 
   function chartsHtml(stats) {
-    return '<h2 class="dash-section">Portfolio at a glance</h2>' +
+    return sectionHead('Portfolio at a glance') +
       '<div class="chart-grid">' +
         chartCard({ span: 4, title: 'Tenure mix', sub: 'How the properties are held',
                     body: tenureDonut(stats) }) +
         chartCard({ span: 4, title: 'Deed & title coverage', sub: 'Properties with a deed or title certificate on file',
                     body: deedGauge(stats) }) +
         chartCard({ span: 4, title: 'Documents by type', sub: 'Every document recorded against these properties',
-                    body: documentsDonut(stats) }) +
-        chartCard({ span: 5, title: 'Renewal pipeline',
+                    body: documentsDonut(stats), link: { go: 'all', label: 'Documents' } }) +
+      '</div>' +
+      sectionHead('Renewals') +
+      '<div class="chart-grid">' +
+        chartCard({ span: 7, title: 'Renewal pipeline',
                     sub: 'Documents by expiry, on the 3 / 6 / 9 / 12-month reminder ladder',
                     body: renewalColumns(stats) }) +
-        chartCard({ span: 4, title: 'Land extent by business unit', sub: 'Acres, largest first',
+        chartCard({ span: 5, title: 'Expiring within 180 days', sub: 'Soonest first · click to open the property',
+                    body: upcomingHtml(stats), link: { go: 'expiring', label: 'View all' } }) +
+      '</div>' +
+      sectionHead('Land & location') +
+      '<div class="chart-grid">' +
+        chartCard({ span: 7, title: 'Land extent by business unit', sub: 'Acres and share of all land, largest first',
                     body: landBars(stats) }) +
-        chartCard({ span: 3, title: 'Largest holdings', sub: 'By land extent · click to open',
-                    body: largestHoldings() }) +
+        chartCard({ span: 5, title: 'Largest holdings', sub: 'By land extent · click to open',
+                    body: largestHoldings(), link: { go: 'register', label: 'Register' } }) +
         chartCard({ span: 7, title: 'Properties by province', sub: 'All nine provinces, including any with none',
                     body: provinceColumns(stats) }) +
         chartCard({ span: 5, title: 'Property types', sub: 'Number of properties of each type',
                     body: typeBars(stats) }) +
-      '</div>' +
-      '<h2 class="dash-section">Breakdowns</h2>';
+      '</div>';
+  }
+
+  function breakdownBars(rows, labelKey, valueKey, colorFor, emptyNote) {
+    if (!rows.length) return emptyNote;
+    const max = Math.max.apply(null, rows.map((r) => r[valueKey]).concat([1]));
+    return rows.map(function (row) {
+      const width = Math.max(4, Math.round((row[valueKey] / max) * 100));
+      return '<div class="bar-row">' +
+        '<span class="label" title="' + esc(row[labelKey]) + '">' + esc(row[labelKey]) + '</span>' +
+        '<span class="bar-track"><span class="bar-fill" style="width:' + width + '%;background:' +
+          esc(colorFor(row)) + '"></span></span>' +
+        '<span class="n">' + row[valueKey] + '</span>' +
+      '</div>';
+    }).join('');
+  }
+
+  function breakdownsHtml(stats) {
+    // Under a filter an empty card means "nothing matched", not "nothing exists".
+    const emptyNote = stats.filtered
+      ? '<p class="muted">No properties match the current filters.</p>'
+      : '<p class="muted">Nothing recorded yet.</p>';
+    const series = () => Charts.SERIES;
+    return sectionHead('Breakdowns') +
+      '<div class="chart-grid breakdowns">' +
+        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour',
+                    body: breakdownBars(stats.bySbu, 'name', 'property_count', (r) => r.color, emptyNote) }) +
+        chartCard({ span: 4, title: 'Properties by owning company', sub: 'The group company holding title',
+                    body: breakdownBars(stats.byEntity, 'short_code', 'n',
+                      (r) => (r.short_code === 'Not recorded' ? Charts.OTHER : Charts.SERIES), emptyNote) }) +
+        chartCard({ span: 4, title: 'By status', sub: 'How each property is being used',
+                    body: breakdownBars(stats.byStatus.map((x) => ({ label: labelFor('statuses', x.status), n: x.n })),
+                      'label', 'n', series, emptyNote) }) +
+        chartCard({ span: 12, title: 'Properties by district', sub: 'Every district with at least one property',
+                    body: '<div class="bar-cols">' +
+                      breakdownBars(stats.byDistrict, 'district', 'n', series, emptyNote) + '</div>' }) +
+      '</div>';
+  }
+
+  function goFromDashboard(action) {
+    if (action === 'deed') {
+      state.filters.has_deed = '0';
+      switchView('portfolio');
+      refreshProperties();
+      return;
+    }
+    if (action === 'register') {
+      switchView('portfolio');
+      setMode('table');
+      return;
+    }
+    state.docs.status = action === 'all' ? '' : action;
+    state.docs.type = '';
+    switchView('documents');
   }
 
   /* ---------- dashboard ---------- */
@@ -1295,63 +1462,19 @@
       }
     }
 
-    const maxSbu = Math.max.apply(null, stats.bySbu.map((s) => s.property_count).concat([1]));
-    const maxDistrict = Math.max.apply(null, stats.byDistrict.map((d) => d.n).concat([1]));
-
-    // Under a filter an empty card means "nothing matched", not "nothing exists".
-    const emptyNote = stats.filtered
-      ? '<p class="muted">No properties match the current filters.</p>'
-      : '<p class="muted">Nothing recorded yet.</p>';
-
-    function bars(rows, labelKey, valueKey, max, colorFor) {
-      if (!rows.length) return emptyNote;
-      return rows.map(function (row) {
-        const width = Math.max(4, Math.round((row[valueKey] / max) * 100));
-        return '<div class="bar-row">' +
-          '<span class="label" title="' + esc(row[labelKey]) + '">' + esc(row[labelKey]) + '</span>' +
-          '<span class="bar-track"><span class="bar-fill" style="width:' + width + '%;background:' +
-            esc(colorFor(row)) + '"></span></span>' +
-          '<span class="n">' + row[valueKey] + '</span>' +
-        '</div>';
-      }).join('');
-    }
-
-    const expiring = stats.expiringSoon.length
-      ? '<ul class="mini-list">' + stats.expiringSoon.map(function (d) {
-          const days = Fmt.daysUntil(d.expiry_date);
-          return '<li><span><a href="#" data-open="' + d.property_id + '">' +
-            esc(d.property_code) + '</a> — ' + esc(d.title) + '</span>' +
-            '<span class="when">' + Fmt.date(d.expiry_date) +
-            (days !== null ? ' · ' + days + 'd' : '') + '</span></li>';
-        }).join('') + '</ul>'
-      : '<p class="muted">No leases, policies or permits expire in the next 180 days' +
-        (stats.filtered ? ' among the filtered properties' : '') + '.</p>';
-
-    // The headline figures live in the Portfolio summary; the dashboard keeps
-    // the breakdowns.
     host.innerHTML =
+      dashHeroHtml(stats) +
       filterBannerHtml(stats) +
       chartsHtml(stats) +
-      '<div class="dash-cols">' +
-        '<div class="card"><h3>Properties by business unit</h3>' +
-          bars(stats.bySbu, 'name', 'property_count', maxSbu, (r) => r.color) + '</div>' +
-        '<div class="card"><h3>Properties by owning company</h3>' +
-          bars(stats.byEntity, 'short_code', 'n',
-               Math.max.apply(null, stats.byEntity.map((e) => e.n).concat([1])),
-               (r) => r.short_code === 'Not recorded' ? '#d2dcdc' : '#04524d') + '</div>' +
-        '<div class="card"><h3>Properties by district</h3>' +
-          bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#00a69a') + '</div>' +
-        '<div class="card"><h3>By status</h3>' +
-          bars(stats.byStatus.map((s) => ({ label: labelFor('statuses', s.status), n: s.n })),
-               'label', 'n',
-               Math.max.apply(null, stats.byStatus.map((s) => s.n).concat([1])),
-               () => '#063734') + '</div>' +
-        '<div class="card"><h3>Expiring within 180 days</h3>' + expiring + '</div>' +
-      '</div>' +
-      '<p class="dash-note">Land extent per business unit, in perches: ' +
-        esc(stats.bySbu.map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join('  ·  ')) +
-      '</p>';
+      breakdownsHtml(stats);
 
+    if (!host.__dashGo) {
+      host.__dashGo = true;
+      host.addEventListener('click', function (event) {
+        const target = event.target.closest('[data-dash-go]');
+        if (target) goFromDashboard(target.dataset.dashGo);
+      });
+    }
     const clear = $('#btn-clear-from-dashboard');
     if (clear) clear.addEventListener('click', resetFilters);
     Charts.bindTooltips(host);

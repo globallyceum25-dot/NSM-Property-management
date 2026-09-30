@@ -861,8 +861,10 @@ def get_stats(ctx):
 
     expiring = [_row_to_dict(r) for r in run(
         """SELECT d.id, d.title, d.doc_type, d.expiry_date, d.counterparty,
-                  f.id AS property_id, f.property_code, f.name AS property_name
+                  f.id AS property_id, f.property_code, f.name AS property_name,
+                  s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color
            FROM document d JOIN (%s) f ON f.id = d.property_id
+           LEFT JOIN sbu s ON s.id = f.sbu_id
            WHERE d.expiry_date IS NOT NULL
              AND d.expiry_date >= date('now')
              AND d.expiry_date <= date('now', '+180 day')

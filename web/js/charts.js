@@ -117,7 +117,7 @@ window.Charts = (function () {
       return '<div class="chart-empty">' + esc(opts.emptyText || 'Nothing to show') + '</div>';
     }
     const max = Math.max.apply(null, items.map((i) => i.value)) || 1;
-    return '<div class="hbars" role="list">' + items.map(function (item) {
+    return '<div class="hbars' + (opts.className ? ' ' + opts.className : '') + '" role="list">' + items.map(function (item) {
       const width = item.value > 0 ? Math.max(1.5, item.value / max * 100) : 0;
       const shown = item.display !== undefined ? item.display : fmt(item.value);
       return '<div class="hbar-row" role="listitem"' + tipAttrs(item.label, shown) + '>' +
@@ -205,7 +205,7 @@ window.Charts = (function () {
   }
 
   return {
-    SLOTS: SLOTS, OTHER: OTHER, SERIES: SERIES,
+    SLOTS: SLOTS, OTHER: OTHER, SERIES: SERIES, STATUS: STATUS,
     donut: donut, gauge: gauge, hbars: hbars, columns: columns,
     bindTooltips: bindTooltips
   };

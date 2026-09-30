@@ -151,32 +151,48 @@ coordinates, paste a `6.927079, 79.861244` pair copied from Google Maps, or clic
 the map to drop a pin and drag it to fine-tune. Choosing a district recentres the
 picker there.
 
-**Dashboard** — two sections, both following the search and filters.
+**Dashboard** — opens on a dark **attention band**: today's date, a one-line
+scope of what is covered, and four signals, each a shortcut to the list behind it:
 
-*Portfolio at a glance* — charts:
+- **Without deed or title** opens those properties in the portfolio.
+- **Expired documents** opens the Documents module on its *Expired* tab.
+- **Due within 180 days** opens the Documents module on its *Expiring soon* tab.
+- **Documents without a file** opens the Documents module on its *No file* tab.
 
-- **Tenure mix** and **Documents by type** — donut charts with a legend that
-  prints every count and share, so no value depends on colour or hover.
-- **Deed & title coverage** — a gauge of the share of properties with a deed or
-  title on file, coloured and labelled by status (low / partial / good).
-- **Renewal pipeline** — documents by expiry, bucketed on the 3 / 6 / 9 /
-  12-month reminder ladder from the review points, with expired and later.
-- **Land extent by business unit** (acres), **Properties by province** (all
-  nine, including any with none; bars instead of columns on a phone) and
-  **Property types**.
-- **Largest holdings** — the five biggest properties by land, with their share
-  of the total; click one to open it.
+Each signal shows its state with an icon and words (critical, due, clear), not
+colour alone. Below the band come four sections, each headed by a rule:
 
-Every mark has a tooltip on hover and on keyboard focus. Chart colours come
-from one validated colour-blind-safe palette and are assigned per category in
-a fixed order, so a category keeps its colour whatever is filtered.
+- *Portfolio at a glance*:
+  - **Tenure mix** and **Documents by type** — donut charts with a legend that
+    prints every count and share, so no value depends on colour or hover.
+  - **Deed & title coverage** — a gauge of the share of properties with a deed
+    or title on file, coloured and labelled by status (low / partial / good).
+- *Renewals*:
+  - **Renewal pipeline** — documents by expiry, bucketed on the 3 / 6 / 9 /
+    12-month reminder ladder from the review points. Expired is red, within
+    3 months amber, and "later" recedes to grey.
+  - Beside it, **Expiring within 180 days** — the documents coming up, soonest
+    first, each with its date, business-unit dot and days left. Click one to
+    open its property.
+- *Land & location*:
+  - **Land extent by business unit** — acres and share of all land, with the
+    exact perches beneath.
+  - **Largest holdings** — the five biggest properties by land.
+  - **Properties by province** — all nine provinces, shown as bars instead of
+    columns on a phone.
+  - **Property types**.
+- *Breakdowns* — properties by business unit (in each unit's map colour), by
+  owning company and by status. Properties by district runs in columns across
+  one wide card.
 
-*Breakdowns* — properties by business unit, owning company, district and
-status, plus the list of documents expiring within 180 days. The headline
-figures live in the Portfolio summary.
+Card headers carry shortcuts where there is a list to go to: *Documents*,
+*View all* and *Register*. Every chart mark has a tooltip on hover and on
+keyboard focus. Chart colours come from one validated colour-blind-safe palette
+and are assigned per category in a fixed order, so a category keeps its colour
+whatever is filtered.
 
 **The dashboard follows the filters.** Search or filter anything and every figure
-— the tiles, all four breakdowns and the expiry list — recomputes over just the
+— the attention signals, every chart, the breakdowns and the expiry list — recomputes over just the
 matching properties, so the dashboard can never disagree with the list beside it.
 A banner names the active filters and says how many of the register they cover
 ("these 2 of 13 properties"), with a button to clear them.
