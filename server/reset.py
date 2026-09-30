@@ -20,10 +20,13 @@ def wipe(reload_sample=False):
     conn.executescript("""
         DELETE FROM document;
         DELETE FROM property;
+        DELETE FROM location_code;
+        DELETE FROM location;
         DELETE FROM sbu;
         DELETE FROM legal_entity;
         DELETE FROM sqlite_sequence
-         WHERE name IN ('document','property','sbu','legal_entity');
+         WHERE name IN ('document','property','sbu','legal_entity',
+                        'location','location_code');
     """)
     conn.commit()
     if os.path.isdir(db.UPLOAD_DIR):
