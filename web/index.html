@@ -62,6 +62,7 @@
 
   <nav class="nav-pill" role="tablist" aria-label="Sections">
     <button class="tab is-active" data-view="portfolio" title="Portfolio"><svg class="ic"><use href="#i-map"/></svg><span class="tab-label">Portfolio</span></button>
+    <button class="tab" data-view="documents" title="Documents"><svg class="ic"><use href="#i-file"/></svg><span class="tab-label">Documents</span></button>
     <button class="tab" data-view="dashboard" title="Dashboard"><svg class="ic"><use href="#i-chart"/></svg><span class="tab-label">Dashboard</span></button>
     <button class="tab" data-view="sbus" title="Business units"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Business units</span></button>
     <button class="tab" data-view="entities" title="Owning companies"><svg class="ic"><use href="#i-landmark"/></svg><span class="tab-label">Owning companies</span></button>
@@ -202,6 +203,59 @@
           </table>
           <p class="empty" id="list-empty" hidden>No properties match the current filters.</p>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-documents">
+    <div class="page docs-page">
+      <div class="page-head">
+        <div>
+          <h1>Documents</h1>
+          <p class="found" id="docs-summary"></p>
+        </div>
+        <button class="btn btn-dark" id="btn-new-doc"><svg class="ic"><use href="#i-plus"/></svg>Attach document</button>
+      </div>
+      <div class="filter-banner" id="docs-banner" hidden></div>
+      <div class="docs-bar">
+        <div class="doc-tabs" id="doc-tabs" role="tablist" aria-label="Document status">
+          <button class="is-active" data-doc-status="">All <b data-count="all"></b></button>
+          <button data-doc-status="file">With file <b data-count="file"></b></button>
+          <button data-doc-status="nofile">No file <b data-count="nofile"></b></button>
+          <button data-doc-status="expiring">Expiring soon <b data-count="expiring"></b></button>
+          <button data-doc-status="expired">Expired <b data-count="expired"></b></button>
+        </div>
+        <div class="docs-controls">
+          <label class="plain-select">
+            <span>Type:</span>
+            <select id="doc-type-filter"></select>
+            <svg class="ic"><use href="#i-chevron"/></svg>
+          </label>
+          <label class="plain-select">
+            <span>Sort by:</span>
+            <select id="doc-sort">
+              <option value="newest">Latest</option>
+              <option value="expiry">Expiry, soonest</option>
+              <option value="sbu">Business unit</option>
+              <option value="property">Property</option>
+              <option value="title">Title</option>
+            </select>
+            <svg class="ic"><use href="#i-chevron"/></svg>
+          </label>
+        </div>
+      </div>
+      <div class="table-wrap docs-table-wrap">
+        <table class="grid docs-grid">
+          <thead>
+            <tr>
+              <th>Document</th><th>Business unit</th><th>Property</th><th>Issued</th>
+              <th>Expiry</th><th>Counterparty</th><th class="num">Amount</th>
+              <th class="row-actions"><span class="sr-only">Actions</span></th>
+            </tr>
+          </thead>
+          <tbody id="doc-rows"></tbody>
+        </table>
+        <p class="empty" id="docs-empty" hidden></p>
       </div>
     </div>
   </section>
@@ -518,6 +572,9 @@
     </header>
     <form id="doc-form" class="modal-body" novalidate>
       <input type="hidden" name="property_id">
+      <label id="doc-property-row" hidden>Property <span class="req">*</span>
+        <select name="property_pick" required disabled></select>
+      </label>
       <div class="grid-2">
         <label>Document type <span class="req">*</span>
           <select name="doc_type"></select>

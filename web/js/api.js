@@ -56,6 +56,7 @@ window.API = (function () {
     addDocument: (propertyId, formData) =>
       request('POST', '/api/properties/' + propertyId + '/documents', formData, true),
     deleteDocument: (id) => request('DELETE', '/api/documents/' + id),
+    listDocuments: (filters) => request('GET', '/api/documents' + qs(filters || {})),
 
     listMasters: () => request('GET', '/api/masters'),
     getMaster: (key) => request('GET', '/api/masters/' + key),

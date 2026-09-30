@@ -53,7 +53,7 @@ maps go blank and the text falls back to the system font.
 
 ![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
 
-More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property's detail panel and the dashboard.
+More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property’s detail panel, the dashboard and the Documents module.
 
 **Three things kept apart.** The register separates who *occupies* a property
 (the SBU), who *owns* it (the legal entity), and how it is *held* (tenure).
@@ -77,8 +77,13 @@ leased or rented in), business units (across how many districts), documents
 (how many expire within 180 days), files stored (share of documents scanned)
 and properties **without a deed or title** (share of the portfolio). Every
 figure covers exactly what is on screen, so a search or filter narrows the
-summary too. Click the deed card to list just the properties missing one;
-click again to clear.
+summary too. Every card is a shortcut, marked with a ↗ arrow:
+
+- **Properties** opens the register table.
+- **Business units** opens the business-unit list.
+- **Documents** opens the Documents module.
+- **Files stored** opens the Documents module on the *With file* tab.
+- **Without deed / title** lists just the properties missing one. Click it again to clear.
 
 Below the summary, three layouts:
 
@@ -103,6 +108,23 @@ business units, location, owning company, district, tenure, status and type.
 Every active filter shows as a removable chip under the heading, and the count
 reads "2 of 13" while any filter is on. Sort by latest, code, name, largest
 extent or most documents.
+
+**Documents module** — every document in the register on one page, whichever
+property it belongs to. Each row is marked with its **business unit**: the
+unit's colour dot, code and name. The row also shows:
+
+- the property
+- the issue and expiry dates, with anything expired or due within 90 or 180 days badged
+- the counterparty and the amount
+- the attached file, which you can view or download
+
+Tabs split the list into All · With file · No file · Expiring soon ·
+Expired, each with its count. You can narrow it by document type and sort it by
+latest, expiry, business unit, property or title. The toolbar's search, tenure
+tabs and filters apply here too, so searching "Colombo" lists only documents on
+properties in Colombo. **Attach document** records a new one: you pick the
+property in the form, and you stay on the list afterwards. Clicking a row opens
+its property.
 
 **Alerts** — the bell counts documents expiring within 180 days across the whole
 register, whatever is filtered, and lists them; click one to open its property.
@@ -251,6 +273,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |
+| GET | `/api/documents` | every document with its property and SBU; takes the property filters above plus `doc_status` (`file`, `nofile`, `expiring`, `expired`), `doc_type` and `sort` (`newest`, `expiry`, `sbu`, `property`, `title`), and returns per-tab counts |
 | GET | `/api/documents/{id}/file` | view; add `?disposition=attachment` to download |
 | DELETE | `/api/documents/{id}` | remove document and its file |
 | GET | `/api/masters` | list the master sheets |

@@ -14,6 +14,7 @@
     locations: [],
     properties: [],
     stats: null,                 // /api/stats for the current filters
+    docs: { status: '', type: '', sort: 'newest', fromModule: false },
     alerts: [],
     selectedSbus: null,          // null = all
     filters: emptyFilters(),
@@ -279,11 +280,12 @@
 
   /* ---------- links: #dashboard, #portfolio/grid, #property/12 ... ---------- */
 
-  const VIEWS = ['portfolio', 'dashboard', 'sbus', 'entities', 'masters'];
+  const VIEWS = ['portfolio', 'documents', 'dashboard', 'sbus', 'entities', 'masters'];
   const MODES = ['map', 'grid', 'table'];
 
   function writeHash() {
-    let hash = state.view + (state.view === 'portfolio' && state.mode !== 'map' ? '/' + state.mode : '');
+    let hash = state.view + (state.view === 'portfolio' && state.mode !== 'map' ? '/' + state.mode : '') +
+      (state.view === 'documents' && state.docs.status ? '/' + state.docs.status : '');
     if (state.currentProperty) hash = 'property/' + state.currentProperty.id;
     if (location.hash !== '#' + hash) history.replaceState(null, '', '#' + hash);
   }
@@ -298,6 +300,13 @@
     }
     if (VIEWS.indexOf(parts[0]) === -1) return;
     if (parts[0] === 'portfolio') setMode(MODES.indexOf(parts[1]) !== -1 ? parts[1] : 'map');
+    if (parts[0] === 'documents') {
+      const status = DOC_STATUSES.indexOf(parts[1]) !== -1 ? parts[1] : '';
+      if (status !== state.docs.status) {
+        state.docs.status = status;
+        if (state.view === 'documents') renderDocuments();
+      }
+    }
     if (!$('#drawer').hidden) closeDrawer();
     if (state.view !== parts[0]) switchView(parts[0]);
   }
@@ -429,6 +438,7 @@
       'Show ' + shown + (shown === 1 ? ' property' : ' properties');
     // The dashboard describes the same set, so keep it in step with the filters.
     if (state.view === 'dashboard') await renderDashboard();
+    if (state.view === 'documents') await renderDocuments();
   }
 
   function sortedProperties() {
@@ -627,18 +637,22 @@
       .filter(Boolean).join(' · ');
   }
 
+  // Every card is a shortcut: the arrow mark says so, the whole card is the target.
   function kpiHtml(opts) {
-    const tag = opts.action ? 'button' : 'div';
-    return '<' + tag + ' class="kpi ' + opts.cls + (opts.active ? ' is-active' : '') + '"' +
-        (opts.action ? ' type="button" data-kpi="' + opts.action + '" aria-pressed="' + !!opts.active + '"' : '') +
-        (opts.title ? ' title="' + esc(opts.title) + '"' : '') + '>' +
+    return '<button type="button" class="kpi ' + opts.cls + (opts.active ? ' is-active' : '') + '" ' +
+        'data-kpi="' + opts.action + '"' +
+        (opts.pressed !== undefined ? ' aria-pressed="' + opts.pressed + '"' : '') +
+        ' aria-label="' + esc(opts.label + ': ' + opts.value + '. ' + opts.go) + '"' +
+        ' title="' + esc(opts.go) + '">' +
       '<div class="kpi-top"><span class="kpi-value">' + opts.value + '</span>' +
         '<span class="kpi-icon">' + icon(opts.icon) + '</span></div>' +
       '<div class="kpi-label"><span>' + esc(opts.label) + '</span>' +
-        (opts.cta ? '<span class="kpi-cta">' + esc(opts.cta) + '</span>' : '') + '</div>' +
+        (opts.active
+          ? '<span class="kpi-cta">Clear</span>'
+          : '<span class="kpi-go" aria-hidden="true">' + icon('open') + '</span>') + '</div>' +
       '<div class="kpi-sub">' + opts.sub + '</div>' +
       (opts.bar !== undefined ? '<span class="kpi-bar"><i style="width:' + opts.bar + '%"></i></span>' : '') +
-    '</' + tag + '>';
+    '</button>';
   }
 
   function renderKpis() {
@@ -656,25 +670,44 @@
 
     $('#kpi-strip').innerHTML = [
       kpiHtml({ cls: 'hero', icon: 'home', value: t.properties, label: 'Properties',
+                action: 'properties', go: 'Open the property list',
                 sub: esc(tenureSplit(s.byTenure)) }),
       kpiHtml({ cls: 't-units', icon: 'building', value: t.sbus, label: 'Business units',
+                action: 'sbus', go: 'Open business units',
                 sub: sub(districts ? 'across ' + plural(districts, 'district', 'districts') : 'No districts recorded') }),
       kpiHtml({ cls: 't-docs', icon: 'file', value: t.documents, label: 'Documents',
+                action: 'documents', go: 'Open all documents',
                 sub: sub(expiring ? '<b>' + expiring + ' expiring</b> within 180 days'
                                   : 'None expiring within 180 days') }),
       kpiHtml({ cls: 't-files', icon: 'paperclip', value: t.files, label: 'Files stored',
+                action: 'files', go: 'Open the documents that have a stored file',
                 sub: sub(t.documents ? scanned + '% of documents scanned' : 'No documents yet'),
-                bar: scanned,
-                title: t.files + ' of ' + plural(t.documents, 'document has', 'documents have') +
-                       ' a scanned file attached' }),
+                bar: scanned }),
       kpiHtml({ cls: 't-deed', icon: 'shield', value: t.without_deed, label: 'Without deed / title',
+                action: 'deed', active: showingMissing, pressed: showingMissing,
+                go: showingMissing ? 'Show every property again'
+                                   : 'List the properties with no deed or title on file',
                 sub: t.properties ? missing + '% of the portfolio' : '—',
-                bar: missing,
-                action: 'deed', active: showingMissing,
-                cta: showingMissing ? 'Clear' : 'View list',
-                title: showingMissing ? 'Show every property again'
-                                      : 'List the properties with no deed or title on file' })
+                bar: missing })
     ].join('');
+  }
+
+  // Where each summary card leads.
+  function goFromKpi(action) {
+    if (action === 'deed') { toggleMissingDeeds(); return; }
+    if (action === 'sbus') { switchView('sbus'); return; }
+    if (action === 'documents' || action === 'files') {
+      state.docs.status = action === 'files' ? 'file' : '';
+      state.docs.type = '';
+      switchView('documents');
+      return;
+    }
+    if (action === 'properties') {
+      if (state.view !== 'portfolio') switchView('portfolio');
+      setMode('table');
+      const table = $('#table-panel');
+      if (table) table.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
   }
 
   function toggleMissingDeeds() {
@@ -957,6 +990,122 @@
 
   function anyPopoverOpen() {
     return POPOVERS.some((pair) => !$(pair[1]).hidden);
+  }
+
+  /* ---------- documents module ---------- */
+
+  const DOC_STATUSES = ['file', 'nofile', 'expiring', 'expired'];
+  let docsRequest = 0;
+
+  function sbuTag(d) {
+    return '<span class="sbu-tag" style="--c:' + esc(d.sbu_color || '#8c8c8c') + '" ' +
+        'title="' + esc(d.sbu_code + ' — ' + d.sbu_name) + '">' +
+      '<i></i><b>' + esc(d.sbu_code) + '</b><span>' + esc(d.sbu_name) + '</span></span>';
+  }
+
+  function expiryHtml(date) {
+    const days = Fmt.daysUntil(date);
+    if (days === null) return '<span class="muted-inline">No expiry</span>';
+    if (days < 0) {
+      return '<span class="exp-badge is-expired">Expired ' + esc(Fmt.date(date)) + '</span>';
+    }
+    if (days <= 90) {
+      return '<span class="exp-badge is-soon">' + esc(Fmt.date(date)) + ' · ' + days + 'd</span>';
+    }
+    if (days <= 180) {
+      return '<span class="exp-badge is-upcoming">' + esc(Fmt.date(date)) + ' · ' + days + 'd</span>';
+    }
+    return '<span>' + esc(Fmt.date(date)) + '</span>';
+  }
+
+  function docRowHtml(d) {
+    const file = d.stored_name
+      ? '<span class="file-line" title="' + esc(d.file_name) + '">' + icon('file') +
+          '<span>' + esc(d.file_name) + '</span><small>' + esc(Fmt.fileSize(d.size_bytes)) + '</small></span>'
+      : '<span class="file-line is-none">No file attached</span>';
+    const fileButtons = d.stored_name
+      ? '<a class="circle-btn sm" href="/api/documents/' + d.id + '/file" target="_blank" rel="noopener" ' +
+          'title="View the file" aria-label="View ' + esc(d.file_name) + '">' + icon('open') + '</a>' +
+        '<a class="circle-btn sm" href="/api/documents/' + d.id + '/file?disposition=attachment" ' +
+          'title="Download the file" aria-label="Download ' + esc(d.file_name) + '">' + icon('download') + '</a>'
+      : '';
+    return '<tr data-doc-property="' + d.property_id + '">' +
+      '<td class="doc-cell">' +
+        '<span class="doc-type ' + esc(d.doc_type) + '">' + esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
+        '<span class="doc-title">' + esc(d.title) + '</span>' +
+        '<span class="only-narrow doc-sbu">' + sbuTag(d) + '</span>' +
+        (d.reference_no ? '<span class="prop-sub">Ref ' + esc(d.reference_no) + '</span>' : '') +
+        file +
+      '</td>' +
+      '<td>' + sbuTag(d) + '</td>' +
+      '<td class="prop-cell"><span class="prop-name">' + esc(d.property_name) + '</span>' +
+        '<span class="prop-sub">' + esc([d.property_code, d.location_name || d.city].filter(Boolean).join(' · ')) + '</span></td>' +
+      '<td>' + (d.issue_date ? esc(Fmt.date(d.issue_date)) : '<span class="muted-inline">—</span>') + '</td>' +
+      '<td>' + expiryHtml(d.expiry_date) + '</td>' +
+      '<td class="wrap-cell">' + (d.counterparty ? esc(d.counterparty) : '<span class="muted-inline">—</span>') + '</td>' +
+      '<td class="num">' + (d.amount ? esc(Fmt.money(d.amount, d.currency)) : '<span class="muted-inline">—</span>') + '</td>' +
+      '<td class="row-actions">' + fileButtons +
+        '<button class="circle-btn sm" data-open="' + d.property_id + '" title="Open the property" ' +
+          'aria-label="Open ' + esc(d.property_name) + '">' + icon('home') + '</button>' +
+      '</td></tr>';
+  }
+
+  async function renderDocuments() {
+    const seq = ++docsRequest;
+    let data;
+    if (state.selectedSbus && state.selectedSbus.length === 0) {
+      data = { documents: [], properties: 0,
+               counts: { all: 0, file: 0, nofile: 0, expiring: 0, expired: 0 } };
+    } else {
+      try {
+        data = await API.listDocuments(Object.assign({}, activeFilters(), {
+          doc_status: state.docs.status, doc_type: state.docs.type, sort: state.docs.sort
+        }));
+      } catch (err) {
+        toast('Could not load documents: ' + err.message, true);
+        return;
+      }
+    }
+    if (seq !== docsRequest) return;          // a newer request has taken over
+
+    $$('#doc-tabs button').forEach(function (b) {
+      const on = b.dataset.docStatus === state.docs.status;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on);
+    });
+    Object.keys(data.counts).forEach(function (key) {
+      const el = $('#doc-tabs [data-count="' + key + '"]');
+      if (el) el.textContent = data.counts[key];
+    });
+    $('#doc-type-filter').value = state.docs.type;
+    $('#doc-sort').value = state.docs.sort;
+
+    const rows = data.documents;
+    const c = data.counts;
+    $('#docs-summary').textContent = state.docs.status || state.docs.type
+      ? 'Showing ' + rows.length + ' of ' + plural(c.all, 'document', 'documents') +
+        ' · on ' + plural(data.properties, 'property', 'properties')
+      : plural(c.all, 'document', 'documents') + ' across ' +
+        plural(data.properties, 'property', 'properties') + ' · ' +
+        plural(c.file, 'file', 'files') + ' stored';
+
+    // The portfolio filters scope this list too; say so, and offer the way out.
+    const chips = activeChips();
+    const banner = $('#docs-banner');
+    banner.hidden = !chips.length;
+    if (chips.length) {
+      banner.innerHTML = '<div><strong>Filtered</strong> — only documents of properties matching ' +
+        esc(chips.map((x) => x.label).join(' · ')) + '.</div>' +
+        '<button class="btn btn-ghost btn-sm" data-clear-filters>Clear filters</button>';
+    }
+
+    $('#doc-rows').innerHTML = rows.map(docRowHtml).join('');
+    const empty = $('#docs-empty');
+    empty.hidden = rows.length > 0;
+    empty.textContent = c.all
+      ? 'No documents in this view. Try another tab or type.'
+      : (chips.length ? 'No documents match the current filters.'
+                      : 'No documents recorded yet. Use Attach document to add the first.');
   }
 
   /* ---------- dashboard charts ---------- */
@@ -1646,15 +1795,39 @@
 
   /* ---------- document form ---------- */
 
-  function openDocModal(propertyId) {
+  // With a property id the document goes on that property; without one (from
+  // the Documents module) the form asks which property it belongs to.
+  async function openDocModal(propertyId) {
     const form = $('#doc-form');
     form.reset();
+    clearFieldErrors(form);
     $('#doc-form-error').hidden = true;
     fillSelect(form.doc_type, optionsFrom(state.reference.documentTypes), { value: 'DEED' });
-    form.property_id.value = propertyId;
+    form.property_id.value = propertyId || '';
+    state.docs.fromModule = !propertyId;
+
+    const row = $('#doc-property-row');
+    const pick = form.property_pick;
+    row.hidden = !!propertyId;
+    pick.disabled = !!propertyId;
+    if (!propertyId) {
+      let list;
+      try {
+        list = (await API.listProperties({})) || [];
+      } catch (err) {
+        toast('Could not load properties: ' + err.message, true);
+        return;
+      }
+      list.sort((a, b) => String(a.property_code).localeCompare(String(b.property_code)));
+      fillSelect(pick, list.map((p) => ({
+        value: p.id,
+        label: p.property_code + ' — ' + p.name + (p.sbu_code ? '  (' + p.sbu_code + ')' : '')
+      })), { placeholder: 'Choose a property…', value: '' });
+    }
+
     renderFileState();
     $('#doc-modal').hidden = false;
-    setTimeout(() => form.doc_type.focus(), 50);
+    setTimeout(() => (propertyId ? form.doc_type : pick).focus(), 50);
   }
 
   async function saveDocument() {
@@ -1679,7 +1852,7 @@
       return;
     }
 
-    const propertyId = form.property_id.value;
+    const propertyId = form.property_id.value || form.property_pick.value;
     const formData = new FormData();
     ['doc_type', 'title', 'reference_no', 'issue_date', 'expiry_date',
      'counterparty', 'notes'].forEach(function (name) {
@@ -1695,7 +1868,8 @@
     try {
       await API.addDocument(propertyId, formData);
       $('#doc-modal').hidden = true;
-      await openDrawer(propertyId);
+      // From the Documents module, stay on the list; elsewhere show the property.
+      if (!state.docs.fromModule) await openDrawer(propertyId);
       await refreshProperties();
       loadAlerts();
       toast(file ? 'Document and file attached.' : 'Document recorded.');
@@ -1803,6 +1977,7 @@
       section.classList.toggle('is-active', section.id === 'view-' + view));
     if (view === 'portfolio' && state.mode === 'map') MapView.invalidate();
     if (view === 'dashboard') renderDashboard();
+    if (view === 'documents') renderDocuments();
     if (view === 'masters') Masters.show();
     writeHash();
   }
@@ -1903,8 +2078,8 @@
     });
 
     $('#kpi-strip').addEventListener('click', function (event) {
-      const card = event.target.closest('[data-kpi="deed"]');
-      if (card) toggleMissingDeeds();
+      const card = event.target.closest('[data-kpi]');
+      if (card) goFromKpi(card.dataset.kpi);
     });
 
     $('#map-legend').addEventListener('click', function (event) {
@@ -1945,6 +2120,35 @@
     $('#btn-save-entity').addEventListener('click', saveEntity);
     $('#entity-form').addEventListener('submit', (e) => { e.preventDefault(); saveEntity(); });
     $('#btn-save-doc').addEventListener('click', saveDocument);
+
+    // Documents module controls.
+    $('#btn-new-doc').addEventListener('click', () => openDocModal(null));
+    fillSelect($('#doc-type-filter'), optionsFrom(state.reference.documentTypes),
+      { placeholder: 'All types', value: '' });
+    $('#doc-tabs').addEventListener('click', function (event) {
+      const tab = event.target.closest('[data-doc-status]');
+      if (!tab) return;
+      state.docs.status = tab.dataset.docStatus;
+      writeHash();
+      renderDocuments();
+    });
+    $('#doc-type-filter').addEventListener('change', function (event) {
+      state.docs.type = event.target.value;
+      renderDocuments();
+    });
+    $('#doc-sort').addEventListener('change', function (event) {
+      state.docs.sort = event.target.value;
+      renderDocuments();
+    });
+    $('#docs-banner').addEventListener('click', function (event) {
+      if (event.target.closest('[data-clear-filters]')) resetFilters();
+    });
+    // A row opens its property; its links and buttons do their own thing.
+    $('#doc-rows').addEventListener('click', function (event) {
+      if (event.target.closest('button, a')) return;
+      const row = event.target.closest('tr[data-doc-property]');
+      if (row) openDrawer(Number(row.dataset.docProperty));
+    });
     wireDropzone();
 
     // Typing into a flagged field clears its error.

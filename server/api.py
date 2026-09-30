@@ -659,6 +659,75 @@ def create_document(ctx):
     return 201, _row_to_dict(row)
 
 
+# --- the documents register -------------------------------------------------
+
+_DOC_STATUS = {
+    "file":     "d.stored_name IS NOT NULL",
+    "nofile":   "d.stored_name IS NULL",
+    "expiring": "d.expiry_date >= date('now') AND d.expiry_date <= date('now', '+180 day')",
+    "expired":  "d.expiry_date < date('now')",
+}
+
+_DOC_SORT = {
+    "newest":   "d.id DESC",
+    "expiry":   "d.expiry_date IS NULL, d.expiry_date ASC, d.id DESC",
+    "title":    "d.title COLLATE NOCASE ASC",
+    "property": "p.property_code ASC, d.doc_type ASC",
+    "sbu":      "s.name COLLATE NOCASE ASC, p.property_code ASC",
+}
+
+
+def list_all_documents(ctx):
+    """Every document, with its property and business unit.
+
+    Scoped by the same property filters as the portfolio (so the Documents
+    card and this list agree), plus document filters: type, status, and a
+    search that matches the document or the property it belongs to.
+    """
+    conn = db.get_conn()
+    q = dict(ctx.query)
+    text = (q.pop("q", "") or "").strip()
+    where, params = _property_filters(q)
+
+    if text:
+        term = "%" + text + "%"
+        where.append("""(d.title LIKE ? OR d.reference_no LIKE ? OR d.counterparty LIKE ?
+                         OR d.notes LIKE ? OR d.file_name LIKE ?
+                         OR p.name LIKE ? OR p.property_code LIKE ? OR p.city LIKE ?
+                         OR p.district LIKE ? OR s.name LIKE ? OR s.code LIKE ?)""")
+        params.extend([term] * 11)
+    if q.get("doc_type"):
+        where.append("d.doc_type = ?")
+        params.append(q["doc_type"])
+
+    base = """FROM document d
+              JOIN property p ON p.id = d.property_id
+              JOIN sbu s ON s.id = p.sbu_id
+              LEFT JOIN location loc ON loc.id = p.location_id"""
+
+    # Tab counts ignore the status filter, so each tab shows what it would hold.
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    counts = {"all": conn.execute("SELECT COUNT(*) AS n " + base + clause, params).fetchone()["n"]}
+    for key, condition in _DOC_STATUS.items():
+        counts[key] = conn.execute(
+            "SELECT COUNT(*) AS n " + base + " WHERE " + " AND ".join(where + [condition]),
+            params).fetchone()["n"]
+
+    # `doc_status`, not `status`: plain `status` is the property-status filter.
+    status = q.get("doc_status")
+    if status in _DOC_STATUS:
+        where.append(_DOC_STATUS[status])
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    order = _DOC_SORT.get(q.get("sort"), _DOC_SORT["newest"])
+    rows = conn.execute(
+        """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
+                  s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+                  loc.name AS location_name
+           """ + base + clause + " ORDER BY " + order, params).fetchall()
+    return 200, {"documents": [_row_to_dict(r) for r in rows], "counts": counts,
+                 "properties": len({r["property_id"] for r in rows})}
+
+
 def delete_document(ctx):
     conn = db.get_conn()
     doc_id = int(ctx.match.group("id"))
@@ -854,6 +923,7 @@ ROUTES = [
     ("DELETE", r"^/api/properties/(?P<id>\d+)$",         delete_property),
     ("GET",    r"^/api/properties/(?P<id>\d+)/documents$", list_documents),
     ("POST",   r"^/api/properties/(?P<id>\d+)/documents$", create_document),
+    ("GET",    r"^/api/documents$",                      list_all_documents),
     ("GET",    r"^/api/documents/(?P<id>\d+)/file$",     download_document),
     ("DELETE", r"^/api/documents/(?P<id>\d+)$",          delete_document),
     ("GET",    r"^/api/stats$",                          get_stats),
