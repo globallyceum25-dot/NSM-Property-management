@@ -367,6 +367,10 @@ def _property_filters(q):
     if q.get("ownership_type"):
         where.append("p.ownership_type = ?")
         params.append(q["ownership_type"])
+    if q.get("has_deed") in ("0", "1"):
+        where.append(("" if q["has_deed"] == "1" else "NOT ") +
+                     """EXISTS (SELECT 1 FROM document dd WHERE dd.property_id = p.id
+                                AND dd.doc_type IN ('DEED', 'TITLE_CERTIFICATE'))""")
     if q.get("property_type"):
         where.append("p.property_type = ?")
         params.append(q["property_type"])
@@ -702,6 +706,9 @@ def get_stats(ctx):
     by_status = [_row_to_dict(r) for r in run(
         "SELECT status, COUNT(*) AS n FROM (%s) GROUP BY status ORDER BY n DESC"
         % subset)]
+    by_tenure = [_row_to_dict(r) for r in run(
+        "SELECT ownership_type, COUNT(*) AS n FROM (%s) GROUP BY ownership_type ORDER BY n DESC"
+        % subset)]
     by_district = [_row_to_dict(r) for r in run(
         """SELECT district, province, COUNT(*) AS n FROM (%s)
            WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""" % subset)]
@@ -748,6 +755,7 @@ def get_stats(ctx):
 
     return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
                  "byDistrict": by_district, "byEntity": by_entity,
+                 "byTenure": by_tenure,
                  "expiringSoon": expiring, "filtered": bool(where)}
 
 

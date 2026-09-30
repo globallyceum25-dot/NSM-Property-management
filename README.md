@@ -58,7 +58,16 @@ issue and expiry dates, counterparty (notary, lessor, insurer), amount, notes,
 and an optional uploaded file (PDF, image, Word, Excel, ZIP — up to 25 MB).
 You can record a document reference now and attach the scan later.
 
-**Portfolio** — the main screen, in three layouts:
+**Portfolio** — the main screen. It opens with a **summary strip** of five
+figures, each with context rather than a bare number: properties (owned vs
+leased or rented in), business units (across how many districts), documents
+(how many expire within 180 days), files stored (share of documents scanned)
+and properties **without a deed or title** (share of the portfolio). Every
+figure covers exactly what is on screen, so a search or filter narrows the
+summary too. Click the deed card to list just the properties missing one;
+click again to clear.
+
+Below the summary, three layouts:
 
 - **Map** — property cards beside a light-grey map of Sri Lanka. Pins are coloured
   by business unit and labelled with their property code wherever there is room;
@@ -99,9 +108,9 @@ coordinates, paste a `6.927079, 79.861244` pair copied from Google Maps, or clic
 the map to drop a pin and drag it to fine-tune. Choosing a district recentres the
 picker there.
 
-**Dashboard** — counts per SBU, owning company, district and status; properties
-with no deed or title recorded; and leases, policies and permits expiring within
-180 days.
+**Dashboard** — the breakdowns: properties by business unit, owning company,
+district and status, plus leases, policies and permits expiring within 180
+days. The headline figures live in the Portfolio summary.
 
 **The dashboard follows the filters.** Search or filter anything and every figure
 — the tiles, all four breakdowns and the expiry list — recomputes over just the
@@ -196,7 +205,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/legal-entities` | list / create owning companies |
 | PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
 | GET | `/api/locations` | slim location list for the property form |
-| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `ownership_type`, `district`, `province`, `status`, `property_type`, `q` |
+| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `ownership_type`, `has_deed` (`0`/`1`), `district`, `province`, `status`, `property_type`, `q` |
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |

@@ -32,8 +32,11 @@ window.MapView = (function () {
     panelEl = document.getElementById(elementId).parentElement;
     cardEl = document.getElementById('map-card');
 
-    map = L.map(elementId, { zoomControl: false, attributionControl: false })
-      .setView(reference.mapCenter, reference.mapZoom);
+    // Quarter-step zoom lets "fit all" use the panel fully instead of dropping
+    // a whole level; the + / - buttons still move one full level.
+    map = L.map(elementId, {
+      zoomControl: false, attributionControl: false, zoomSnap: 0.25, zoomDelta: 1
+    }).setView(reference.mapCenter, reference.mapZoom);
     tileLayer().addTo(map);
     L.control.attribution({ position: 'bottomright' }).addTo(map);
     L.control.scale({ imperial: false, position: 'bottomleft' }).addTo(map);
@@ -147,11 +150,25 @@ window.MapView = (function () {
 
   /* Show a code pill over every pin that has room for one, north first, so the
      map reads like a labelled plan at any zoom without pills overlapping. */
+  // Controls, legend and floating card that sit over the map, as boxes in map
+  // coordinates, so no code pill is drawn underneath them.
+  function overlayBoxes() {
+    const origin = map.getContainer().getBoundingClientRect();
+    return Array.prototype.slice.call(
+      panelEl.querySelectorAll('.map-ctl, .map-ctl-stack, .legend-chip, .map-card:not([hidden])'))
+      .map(function (el) {
+        const r = el.getBoundingClientRect();
+        return { x1: r.left - origin.left, x2: r.right - origin.left,
+                 y1: r.top - origin.top, y2: r.bottom - origin.top };
+      })
+      .filter((b) => b.x2 > b.x1 && b.y2 > b.y1);
+  }
+
   function declutter() {
     if (!map) return;
     const size = map.getSize();
     if (!size.x || !size.y) return;
-    const placed = [];
+    const placed = overlayBoxes();
 
     Object.keys(markers)
       .sort((a, b) => data[b].latitude - data[a].latitude)
@@ -186,6 +203,7 @@ window.MapView = (function () {
     cardEl.innerHTML = handlers.cardHtml(p);
     cardEl.hidden = false;
     panelEl.classList.add('card-open');
+    declutter();
   }
 
   function hideCard() {
@@ -196,6 +214,7 @@ window.MapView = (function () {
     const was = selectedId;
     selectedId = null;
     paintHot();
+    declutter();
     if (handlers.onPick && was !== null) handlers.onPick(null);
   }
 
@@ -226,7 +245,11 @@ window.MapView = (function () {
     if (!hasSize()) { pendingFit = true; return; }
     const latlngs = Object.keys(markers).map((id) => markers[id].getLatLng());
     if (latlngs.length > 1) {
-      map.fitBounds(L.latLngBounds(latlngs), { padding: [70, 70], maxZoom: 13 });
+      // Extra room at the bottom and right keeps pins clear of the legend
+      // and the zoom controls.
+      map.fitBounds(L.latLngBounds(latlngs), {
+        paddingTopLeft: [70, 70], paddingBottomRight: [80, 84], maxZoom: 13
+      });
     } else if (latlngs.length === 1) {
       map.setView(latlngs[0], 14);
     }

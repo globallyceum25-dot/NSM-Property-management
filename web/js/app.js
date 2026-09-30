@@ -4,7 +4,7 @@
 
   function emptyFilters() {
     return { q: '', district: '', status: '', property_type: '',
-             legal_entity_id: '', location_id: '', ownership_type: '' };
+             legal_entity_id: '', location_id: '', ownership_type: '', has_deed: '' };
   }
 
   const state = {
@@ -13,6 +13,7 @@
     entities: [],
     locations: [],
     properties: [],
+    stats: null,                 // /api/stats for the current filters
     alerts: [],
     selectedSbus: null,          // null = all
     filters: emptyFilters(),
@@ -388,12 +389,33 @@
     return filters;
   }
 
+  function registerTotal() {
+    // The SBU list is never filtered, so its counts give the register total.
+    return state.sbus.reduce((sum, s) => sum + s.property_count, 0);
+  }
+
+  // Every business unit switched off: nothing can match, so don't ask the
+  // server (an empty sbu_id would mean "no filter" to it).
+  function emptyStats() {
+    return {
+      totals: { properties: 0, sbus: 0, documents: 0, files: 0, without_deed: 0,
+                allProperties: registerTotal() },
+      bySbu: [], byStatus: [], byDistrict: [], byEntity: [], byTenure: [],
+      expiringSoon: [], filtered: true
+    };
+  }
+
   async function refreshProperties() {
     if (state.selectedSbus && state.selectedSbus.length === 0) {
       state.properties = [];
+      state.stats = emptyStats();
     } else {
-      state.properties = await API.listProperties(activeFilters());
+      const filters = activeFilters();
+      const results = await Promise.all([API.listProperties(filters), API.stats(filters)]);
+      state.properties = results[0];
+      state.stats = results[1];
     }
+    renderKpis();
     renderCount();
     renderHeading();
     renderActiveChips();
@@ -464,9 +486,15 @@
       $(selector).value = '';
     };
 
+    // `popover: false` marks filters that are not set from the filter popover,
+    // so they do not count towards its badge.
     if (f.q) {
-      chips.push({ label: 'Search: ' + f.q,
+      chips.push({ label: 'Search: ' + f.q, popover: false,
                    clear: () => { state.filters.q = ''; $('#search').value = ''; } });
+    }
+    if (f.has_deed) {
+      chips.push({ label: f.has_deed === '0' ? 'No deed or title on file' : 'Deed or title on file',
+                   popover: false, clear: () => { state.filters.has_deed = ''; } });
     }
     if (state.selectedSbus) {
       const names = state.sbus
@@ -520,8 +548,8 @@
   }
 
   function renderFilterBadge() {
-    // Everything in the popover counts; the search box shows itself.
-    const n = activeChips().filter((c) => c.label.indexOf('Search:') !== 0).length;
+    // Only filters set from the popover count towards its badge.
+    const n = activeChips().filter((c) => c.popover !== false).length;
     const badge = $('#filter-count');
     badge.textContent = n;
     badge.hidden = n === 0;
@@ -565,8 +593,7 @@
 
   function renderCount() {
     const shown = state.properties.length;
-    // The SBU list is never filtered, so its counts give the register total.
-    const total = state.sbus.reduce((sum, s) => sum + s.property_count, 0);
+    const total = registerTotal();
     const filtered = activeChips().length > 0;
 
     $('#result-count').textContent = shown;
@@ -574,6 +601,85 @@
       ? 'of ' + total + (total === 1 ? ' property' : ' properties')
       : (shown === 1 ? 'property' : 'properties') + ' in the register';
     $('#result-caption').classList.toggle('is-filtered', filtered);
+  }
+
+  /* ---------- summary strip ---------- */
+
+  function pct(part, whole) {
+    return whole ? Math.round(part / whole * 100) : 0;
+  }
+
+  function plural(n, one, many) {
+    return n + ' ' + (n === 1 ? one : many);
+  }
+
+  // Owned vs leased or rented in: the split the blueprint's dashboard asks for.
+  function tenureSplit(byTenure) {
+    const count = {};
+    (byTenure || []).forEach((t) => { count[t.ownership_type] = t.n; });
+    const owned = (count.FREEHOLD || 0) + (count.LEASED_OUT || 0);
+    const leased = (count.LEASEHOLD || 0) + (count.RENTED_IN || 0);
+    const total = (byTenure || []).reduce((sum, t) => sum + t.n, 0);
+    const other = total - owned - leased;
+    if (!total) return 'None match the filters';
+    return [owned ? owned + ' owned' : '', leased ? leased + ' leased' : '',
+            other ? other + ' other' : '']
+      .filter(Boolean).join(' · ');
+  }
+
+  function kpiHtml(opts) {
+    const tag = opts.action ? 'button' : 'div';
+    return '<' + tag + ' class="kpi ' + opts.cls + (opts.active ? ' is-active' : '') + '"' +
+        (opts.action ? ' type="button" data-kpi="' + opts.action + '" aria-pressed="' + !!opts.active + '"' : '') +
+        (opts.title ? ' title="' + esc(opts.title) + '"' : '') + '>' +
+      '<div class="kpi-top"><span class="kpi-value">' + opts.value + '</span>' +
+        '<span class="kpi-icon">' + icon(opts.icon) + '</span></div>' +
+      '<div class="kpi-label"><span>' + esc(opts.label) + '</span>' +
+        (opts.cta ? '<span class="kpi-cta">' + esc(opts.cta) + '</span>' : '') + '</div>' +
+      '<div class="kpi-sub">' + opts.sub + '</div>' +
+      (opts.bar !== undefined ? '<span class="kpi-bar"><i style="width:' + opts.bar + '%"></i></span>' : '') +
+    '</' + tag + '>';
+  }
+
+  function renderKpis() {
+    const s = state.stats || emptyStats();
+    const t = s.totals;
+    const districts = s.byDistrict.length;
+    const expiring = s.expiringSoon.length;
+    const scanned = pct(t.files, t.documents);
+    const missing = pct(t.without_deed, t.properties);
+    const showingMissing = state.filters.has_deed === '0';
+    // Nothing matches: say so once, rather than "no documents yet" etc., which
+    // would read as an empty register.
+    const none = t.properties === 0 && s.filtered;
+    const sub = (text) => (none ? '—' : text);
+
+    $('#kpi-strip').innerHTML = [
+      kpiHtml({ cls: 'hero', icon: 'home', value: t.properties, label: 'Properties',
+                sub: esc(tenureSplit(s.byTenure)) }),
+      kpiHtml({ cls: 't-units', icon: 'building', value: t.sbus, label: 'Business units',
+                sub: sub(districts ? 'across ' + plural(districts, 'district', 'districts') : 'No districts recorded') }),
+      kpiHtml({ cls: 't-docs', icon: 'file', value: t.documents, label: 'Documents',
+                sub: sub(expiring ? '<b>' + expiring + ' expiring</b> within 180 days'
+                                  : 'None expiring within 180 days') }),
+      kpiHtml({ cls: 't-files', icon: 'paperclip', value: t.files, label: 'Files stored',
+                sub: sub(t.documents ? scanned + '% of documents scanned' : 'No documents yet'),
+                bar: scanned,
+                title: t.files + ' of ' + plural(t.documents, 'document has', 'documents have') +
+                       ' a scanned file attached' }),
+      kpiHtml({ cls: 't-deed', icon: 'shield', value: t.without_deed, label: 'Without deed / title',
+                sub: t.properties ? missing + '% of the portfolio' : '—',
+                bar: missing,
+                action: 'deed', active: showingMissing,
+                cta: showingMissing ? 'Clear' : 'View list',
+                title: showingMissing ? 'Show every property again'
+                                      : 'List the properties with no deed or title on file' })
+    ].join('');
+  }
+
+  function toggleMissingDeeds() {
+    state.filters.has_deed = state.filters.has_deed === '0' ? '' : '0';
+    refreshProperties();
   }
 
   function renderHeading() {
@@ -854,15 +960,17 @@
   async function renderDashboard() {
     const host = $('#dashboard');
     if (!host.innerHTML) host.innerHTML = '<p class="empty">Loading…</p>';
-    let stats;
-    try {
-      stats = await API.stats(activeFilters());
-    } catch (err) {
-      host.innerHTML = '<p class="empty">Could not load statistics: ' + esc(err.message) + '</p>';
-      return;
+    // Same figures the Portfolio summary shows, already loaded for these filters.
+    let stats = state.stats;
+    if (!stats) {
+      try {
+        stats = await API.stats(activeFilters());
+      } catch (err) {
+        host.innerHTML = '<p class="empty">Could not load statistics: ' + esc(err.message) + '</p>';
+        return;
+      }
     }
 
-    const t = stats.totals;
     const maxSbu = Math.max.apply(null, stats.bySbu.map((s) => s.property_count).concat([1]));
     const maxDistrict = Math.max.apply(null, stats.byDistrict.map((d) => d.n).concat([1]));
 
@@ -895,16 +1003,10 @@
       : '<p class="muted">No leases, policies or permits expire in the next 180 days' +
         (stats.filtered ? ' among the filtered properties' : '') + '.</p>';
 
+    // The headline figures live in the Portfolio summary; the dashboard keeps
+    // the breakdowns.
     host.innerHTML =
       filterBannerHtml(stats) +
-      '<div class="stat-row">' +
-        '<div class="stat hero"><div class="v">' + t.properties + '</div><div class="k">Properties</div></div>' +
-        '<div class="stat"><div class="v">' + t.sbus + '</div><div class="k">Business units</div></div>' +
-        '<div class="stat"><div class="v">' + t.documents + '</div><div class="k">Documents</div></div>' +
-        '<div class="stat"><div class="v">' + t.files + '</div><div class="k">Files stored</div></div>' +
-        '<div class="stat' + (t.without_deed ? ' alert' : '') + '"><div class="v">' +
-          t.without_deed + '</div><div class="k">Without deed / title</div></div>' +
-      '</div>' +
       '<div class="dash-cols">' +
         '<div class="card"><h3>Properties by business unit</h3>' +
           bars(stats.bySbu, 'name', 'property_count', maxSbu, (r) => r.color) + '</div>' +
@@ -1416,6 +1518,11 @@
     $('#sbu-filters').addEventListener('click', function (event) {
       const chip = event.target.closest('[data-sbu-chip]');
       if (chip) toggleSbu(Number(chip.dataset.sbuChip));
+    });
+
+    $('#kpi-strip').addEventListener('click', function (event) {
+      const card = event.target.closest('[data-kpi="deed"]');
+      if (card) toggleMissingDeeds();
     });
 
     $('#map-legend').addEventListener('click', function (event) {
