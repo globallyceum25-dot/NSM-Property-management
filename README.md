@@ -38,6 +38,10 @@ maps go blank and the text falls back to the system font.
 
 ## What it does
 
+![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
+
+More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property's detail panel and the dashboard.
+
 **Three things kept apart.** The register separates who *occupies* a property
 (the SBU), who *owns* it (the legal entity), and how it is *held* (tenure).
 Conflating them is the defect the blueprint flags in the current property sheet,
