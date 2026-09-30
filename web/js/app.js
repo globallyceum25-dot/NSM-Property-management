@@ -137,7 +137,7 @@
         'aria-label="Street map around ' + esc(p.name) + '">' +
       '<div class="mosaic" style="top:' + top.toFixed(2) + '%">' + tiles + '</div>' +
       '<span class="cover-pin" style="left:' + (px * 100).toFixed(2) + '%;top:' +
-        pinTop.toFixed(2) + '%;--c:' + esc(p.sbu_color || '#f25c2a') + '"></span>' +
+        pinTop.toFixed(2) + '%;--c:' + esc(p.sbu_color || '#00a69a') + '"></span>' +
     '</div>';
   }
 
@@ -831,7 +831,7 @@
       return;
     }
     host.innerHTML = state.entities.map((entity) => tileHtml({
-      color: '#3f3f46',
+      color: '#04524d',
       code: entity.short_code,
       name: entity.name,
       sub: entity.reg_no ? 'Reg. ' + entity.reg_no : '',
@@ -1185,14 +1185,14 @@
         '<div class="card"><h3>Properties by owning company</h3>' +
           bars(stats.byEntity, 'short_code', 'n',
                Math.max.apply(null, stats.byEntity.map((e) => e.n).concat([1])),
-               (r) => r.short_code === 'Not recorded' ? '#d4d4d8' : '#3f3f46') + '</div>' +
+               (r) => r.short_code === 'Not recorded' ? '#d2dcdc' : '#04524d') + '</div>' +
         '<div class="card"><h3>Properties by district</h3>' +
-          bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#f25c2a') + '</div>' +
+          bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#00a69a') + '</div>' +
         '<div class="card"><h3>By status</h3>' +
           bars(stats.byStatus.map((s) => ({ label: labelFor('statuses', s.status), n: s.n })),
                'label', 'n',
                Math.max.apply(null, stats.byStatus.map((s) => s.n).concat([1])),
-               () => '#18181b') + '</div>' +
+               () => '#063734') + '</div>' +
         '<div class="card"><h3>Expiring within 180 days</h3>' + expiring + '</div>' +
       '</div>' +
       '<p class="dash-note">Land extent per business unit, in perches: ' +

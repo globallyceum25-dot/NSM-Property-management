@@ -15,8 +15,8 @@ window.Charts = (function () {
   // normal-vision dE 19.6). Three slots sit under 3:1 contrast, which is why
   // every donut legend prints its values.
   const SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
-  const OTHER = '#a1a1aa';
-  const SERIES = '#f25c2a';          // single-series bars and columns
+  const OTHER = '#b3bfbd';          // teal-tinted grey for "Other" and context
+  const SERIES = '#00a69a';          // the logo teal: single-series bars and columns (3.0:1)
   const STATUS = {
     critical: { fill: '#d03b3b', track: '#f8dcdc' },
     warning:  { fill: '#fab219', track: '#fdefcc' },

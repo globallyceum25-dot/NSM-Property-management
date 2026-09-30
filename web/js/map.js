@@ -90,7 +90,7 @@ window.MapView = (function () {
       className: 'pin-icon',
       iconSize: [16, 16],
       iconAnchor: [8, 8],
-      html: '<div class="pin" style="--c:' + esc(p.sbu_color || '#f25c2a') + '">' +
+      html: '<div class="pin" style="--c:' + esc(p.sbu_color || '#00a69a') + '">' +
               '<span class="pin-label">' + esc(p.property_code) + '</span>' +
               '<span class="pin-dot"></span>' +
             '</div>'

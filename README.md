@@ -7,6 +7,19 @@ property plotted on a map of Sri Lanka by latitude/longitude.
 Stage 1 deliberately stops at the register. Tenancy billing, maintenance,
 workflow and user accounts are later stages — see *Not in Stage 1* below.
 
+## Brand
+
+The interface carries the **Serengeti Property Management** logo and takes its
+colours from it. One teal hue from the logo (`#00A69A`) is stepped light to dark:
+the logo teal itself for marks, fills and charts; a deeper step (`#006E66`,
+6.1:1) for teal text and primary buttons so both pass WCAG AA; the darkest steps
+for deep surfaces such as the hero card and map labels. Greys carry a faint teal
+tint. All of it lives as CSS variables at the top of `web/css/styles.css`.
+
+Logo files are in `web/img/`: `serengeti-logo.png` (header), `serengeti-mark.png`
+(the building mark, used on narrow screens) and `favicon.png`, all with
+transparent backgrounds, cut from the original in `docs/brand/`.
+
 ## Running it
 
 No installation, no dependencies. Python 3.7+ and a browser are all you need.
@@ -182,6 +195,7 @@ property-system/
 ├── web/
 │   ├── index.html
 │   ├── css/styles.css
+│   ├── img/                logo, building mark, favicon
 │   └── js/{api,map,masters,charts,app}.js
 └── data/                   created at runtime
     ├── properties.db       SQLite database
