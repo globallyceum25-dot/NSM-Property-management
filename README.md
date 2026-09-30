@@ -46,8 +46,9 @@ and an optional uploaded file (PDF, image, Word, Excel, ZIP — up to 25 MB).
 You can record a document reference now and attach the scan later.
 
 **Map** — properties appear as pins over Sri Lanka coloured by SBU. The sidebar
-filters (SBU, district, status, type, free-text search) drive the map, the table
-and the dashboard together. Clicking a pin opens the property.
+filters (SBU, location, owning company, district, status, type, free-text search)
+drive the map, the table and the dashboard together. Clicking a pin opens the
+property.
 
 **Coordinate quality** — coordinates are validated server-side and in the browser
 against Sri Lanka's bounding box (lat 5.80–9.95, lng 79.40–82.05). Values outside
@@ -57,8 +58,16 @@ coordinates, paste a `6.927079, 79.861244` pair copied from Google Maps, or clic
 the map to drop a pin and drag it to fine-tune. Choosing a district recentres the
 picker there.
 
-**Dashboard** — counts per SBU, district and status; properties with no deed or
-title recorded; and leases, policies and permits expiring within 180 days.
+**Dashboard** — counts per SBU, owning company, district and status; properties
+with no deed or title recorded; and leases, policies and permits expiring within
+180 days.
+
+**The dashboard follows the filters.** Search or filter anything and every figure
+— the tiles, all four breakdowns and the expiry list — recomputes over just the
+matching properties, so the dashboard can never disagree with the list beside it.
+A banner names the active filters and says how many of the register they cover
+("these 2 of 13 properties"), with a button to clear them. The sidebar count
+reads "2 of 13" whenever a filter is on.
 
 **Master sheets** — one module holding every reference list the system uses, so
 codes and place names are maintained in a single place rather than retyped.
@@ -85,7 +94,7 @@ The module is registry-driven: adding a new master sheet is one entry in
 `MASTERS` in `server/masters.py`. No new endpoint or screen is needed — the grid,
 the form and the validation are all generated from the column metadata.
 
-**CSV export** — the full register, 32 columns, from the *Export CSV* button.
+**CSV export** — the full register, 34 columns, from the *Export CSV* button.
 
 ## Layout
 
@@ -115,7 +124,7 @@ property-system/
 `sbu` — code, name, sector, cost centre, description, map colour, active flag.
 An SBU is the sector/business unit/department that **occupies** a property and
 carries its costs. It is deliberately *not* the owning legal entity and *not* the
-tenure — see *Not in Stage 1* for the legal-entity gap.
+tenure; those are `legal_entity` and `ownership_type`.
 
 `legal_entity` — short code, registered name, registration no., notes, active
 flag. The group company that **holds title**. A property leased or rented *in*
@@ -157,7 +166,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET | `/api/masters/{key}` | one sheet: columns, rows and reference options |
 | POST | `/api/masters/{key}` | add a row (editable sheets only) |
 | PUT/DELETE | `/api/masters/{key}/{id}` | update / delete a row |
-| GET | `/api/stats` | dashboard figures |
+| GET | `/api/stats` | dashboard figures; accepts the same filters as `/api/properties` |
 | GET | `/api/export/properties.csv` | CSV export |
 
 ## Sample data

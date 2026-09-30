@@ -323,10 +323,13 @@ _PROPERTY_SELECT = """
 """
 
 
-def list_properties(ctx):
-    conn = db.get_conn()
+def _property_filters(q):
+    """Build the WHERE clauses shared by the property list and the dashboard.
+
+    Every condition refers only to `p.`, so the same fragment can be dropped into
+    any query that selects FROM property p.
+    """
     where, params = [], []
-    q = ctx.query
 
     if q.get("sbu_id"):
         ids = [int(x) for x in q["sbu_id"].split(",") if x.strip().isdigit()]
@@ -364,6 +367,12 @@ def list_properties(ctx):
                          OR p.assessment_no LIKE ? OR p.current_use LIKE ?)""")
         params.extend([term] * 7)
 
+    return where, params
+
+
+def list_properties(ctx):
+    conn = db.get_conn()
+    where, params = _property_filters(ctx.query)
     sql = _PROPERTY_SELECT
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -651,48 +660,85 @@ def download_document(ctx):
 # --- dashboard & export -----------------------------------------------------
 
 def get_stats(ctx):
+    """Dashboard figures, scoped to the same filters as the property list.
+
+    With no filters this covers the whole register; with a search or a filter
+    active every figure describes only the matching properties, so the dashboard
+    never disagrees with the list next to it.
+    """
     conn = db.get_conn()
-    by_sbu = [_row_to_dict(r) for r in conn.execute(
+    where, params = _property_filters(ctx.query)
+    clause = (" WHERE " + " AND ".join(where)) if where else ""
+    # The set every figure below is computed over.
+    subset = "SELECT p.* FROM property p" + clause
+
+    def run(sql, extra=()):
+        return conn.execute(sql, list(params) + list(extra)).fetchall()
+
+    by_sbu = [_row_to_dict(r) for r in run(
         """SELECT s.id, s.code, s.name, s.color,
-                  COUNT(p.id) AS property_count,
-                  COALESCE(SUM(CASE WHEN p.extent_unit='ACRE' THEN p.extent_value*160
-                                    WHEN p.extent_unit='ROOD' THEN p.extent_value*40
-                                    WHEN p.extent_unit='HECTARE' THEN p.extent_value*395.37
-                                    WHEN p.extent_unit='SQ_M' THEN p.extent_value*0.0395369
-                                    ELSE p.extent_value END), 0) AS extent_perches
-           FROM sbu s LEFT JOIN property p ON p.sbu_id = s.id
-           GROUP BY s.id ORDER BY property_count DESC, s.name""")]
-    by_entity = [_row_to_dict(r) for r in conn.execute(
+                  COUNT(f.id) AS property_count,
+                  COALESCE(SUM(CASE WHEN f.extent_unit='ACRE' THEN f.extent_value*160
+                                    WHEN f.extent_unit='ROOD' THEN f.extent_value*40
+                                    WHEN f.extent_unit='HECTARE' THEN f.extent_value*395.37
+                                    WHEN f.extent_unit='SQ_M' THEN f.extent_value*0.0395369
+                                    ELSE f.extent_value END), 0) AS extent_perches
+           FROM sbu s LEFT JOIN (%s) f ON f.sbu_id = s.id
+           GROUP BY s.id ORDER BY property_count DESC, s.name""" % subset)]
+    if where:
+        # Under a filter, business units with nothing matching are just noise.
+        by_sbu = [row for row in by_sbu if row["property_count"]]
+
+    by_status = [_row_to_dict(r) for r in run(
+        "SELECT status, COUNT(*) AS n FROM (%s) GROUP BY status ORDER BY n DESC"
+        % subset)]
+    by_district = [_row_to_dict(r) for r in run(
+        """SELECT district, province, COUNT(*) AS n FROM (%s)
+           WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""" % subset)]
+    by_entity = [_row_to_dict(r) for r in run(
         """SELECT COALESCE(e.short_code, 'Not recorded') AS short_code,
                   COALESCE(e.name, 'No group company (leased / rented in)') AS name,
-                  COUNT(p.id) AS n
-           FROM property p LEFT JOIN legal_entity e ON e.id = p.legal_entity_id
-           GROUP BY p.legal_entity_id ORDER BY n DESC""")]
-    by_status = [_row_to_dict(r) for r in conn.execute(
-        "SELECT status, COUNT(*) AS n FROM property GROUP BY status ORDER BY n DESC")]
-    by_district = [_row_to_dict(r) for r in conn.execute(
-        """SELECT district, province, COUNT(*) AS n FROM property
-           WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""")]
-    totals = _row_to_dict(conn.execute(
-        """SELECT (SELECT COUNT(*) FROM property) AS properties,
-                  (SELECT COUNT(*) FROM sbu) AS sbus,
-                  (SELECT COUNT(*) FROM document) AS documents,
-                  (SELECT COUNT(*) FROM document WHERE stored_name IS NOT NULL) AS files,
-                  (SELECT COUNT(*) FROM property p WHERE NOT EXISTS
-                      (SELECT 1 FROM document d WHERE d.property_id = p.id
-                       AND d.doc_type IN ('DEED','TITLE_CERTIFICATE'))) AS without_deed
-        """).fetchone())
-    expiring = [_row_to_dict(r) for r in conn.execute(
+                  COUNT(f.id) AS n
+           FROM (%s) f LEFT JOIN legal_entity e ON e.id = f.legal_entity_id
+           GROUP BY f.legal_entity_id ORDER BY n DESC""" % subset)]
+
+    # Each figure is its own query: the filtered subset appears once per
+    # statement, so the bound parameters line up exactly.
+    def scalar(sql):
+        return run(sql)[0]["n"]
+
+    totals = {
+        "properties": scalar("SELECT COUNT(*) AS n FROM (%s)" % subset),
+        "sbus": scalar("SELECT COUNT(DISTINCT sbu_id) AS n FROM (%s)" % subset),
+        "documents": scalar(
+            """SELECT COUNT(*) AS n FROM document d
+               WHERE d.property_id IN (SELECT id FROM (%s))""" % subset),
+        "files": scalar(
+            """SELECT COUNT(*) AS n FROM document d
+               WHERE d.stored_name IS NOT NULL
+                 AND d.property_id IN (SELECT id FROM (%s))""" % subset),
+        "without_deed": scalar(
+            """SELECT COUNT(*) AS n FROM (%s) f WHERE NOT EXISTS
+                 (SELECT 1 FROM document d WHERE d.property_id = f.id
+                  AND d.doc_type IN ('DEED','TITLE_CERTIFICATE'))""" % subset),
+    }
+
+    expiring = [_row_to_dict(r) for r in run(
         """SELECT d.id, d.title, d.doc_type, d.expiry_date, d.counterparty,
-                  p.id AS property_id, p.property_code, p.name AS property_name
-           FROM document d JOIN property p ON p.id = d.property_id
+                  f.id AS property_id, f.property_code, f.name AS property_name
+           FROM document d JOIN (%s) f ON f.id = d.property_id
            WHERE d.expiry_date IS NOT NULL
              AND d.expiry_date >= date('now')
              AND d.expiry_date <= date('now', '+180 day')
-           ORDER BY d.expiry_date""")]
+           ORDER BY d.expiry_date""" % subset)]
+
+    # So the front end can say "showing 2 of 13".
+    totals["allProperties"] = conn.execute(
+        "SELECT COUNT(*) AS n FROM property").fetchone()["n"]
+
     return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
                  "byDistrict": by_district, "byEntity": by_entity,
-                 "expiringSoon": expiring}
+                 "expiringSoon": expiring, "filtered": bool(where)}
 
 
 def export_properties_csv(ctx):

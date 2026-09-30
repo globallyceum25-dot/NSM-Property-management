@@ -326,6 +326,17 @@ h1, h2, h3 { margin: 0; font-weight: 600; }
 
 /* ---------- dashboard ---------- */
 
+.filter-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  background: var(--accent-soft); border: 1px solid #b7d4e8;
+  border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px;
+  font-size: 12.5px; color: var(--text); line-height: 1.5;
+}
+.filter-banner strong { color: var(--accent); }
+.filter-banner button { flex: 0 0 auto; }
+
+.muted.is-filtered { color: var(--accent); font-weight: 500; }
+
 .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 18px; }
 .stat {
   background: var(--surface); border: 1px solid var(--border);

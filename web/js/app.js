@@ -271,6 +271,67 @@
     renderTable();
     renderLegend();
     MapView.render(state.properties);
+    // The dashboard describes the same set, so keep it in step with the filters.
+    if (state.view === 'dashboard') await renderDashboard();
+  }
+
+  function resetFilters() {
+    state.filters = { q: '', district: '', status: '', property_type: '',
+                      legal_entity_id: '', location_id: '' };
+    state.selectedSbus = null;
+    $('#search').value = '';
+    $('#filter-location').value = '';
+    $('#filter-entity').value = '';
+    $('#filter-district').value = '';
+    $('#filter-status').value = '';
+    $('#filter-type').value = '';
+    renderSbuFilters();
+    return refreshProperties();
+  }
+
+  /* ---------- describing the active filters ---------- */
+
+  function filterDescriptions() {
+    const parts = [];
+    if (state.filters.q) parts.push('search “' + state.filters.q + '”');
+
+    if (state.selectedSbus) {
+      const names = state.sbus
+        .filter((s) => state.selectedSbus.indexOf(s.id) !== -1)
+        .map((s) => s.code);
+      parts.push(names.length
+        ? 'business unit' + (names.length === 1 ? ' ' : 's ') + names.join(', ')
+        : 'no business unit selected');
+    }
+    if (state.filters.location_id) {
+      const location = state.locations
+        .filter((l) => String(l.id) === state.filters.location_id)[0];
+      parts.push('location ' + (location ? location.name : 'not set'));
+    }
+    if (state.filters.legal_entity_id) {
+      const entity = state.entities
+        .filter((e) => String(e.id) === state.filters.legal_entity_id)[0];
+      parts.push('owned by ' + (entity ? entity.short_code : 'nobody recorded'));
+    }
+    if (state.filters.district) parts.push('district ' + state.filters.district);
+    if (state.filters.status) {
+      parts.push('status ' + labelFor('statuses', state.filters.status).toLowerCase());
+    }
+    if (state.filters.property_type) {
+      parts.push('type ' + labelFor('propertyTypes', state.filters.property_type).toLowerCase());
+    }
+    return parts;
+  }
+
+  function filterBannerHtml(stats) {
+    const parts = filterDescriptions();
+    if (!parts.length) return '';
+    return '<div class="filter-banner">' +
+      '<div><strong>Filtered view</strong> — ' + Fmt.esc(parts.join(' · ')) + '. ' +
+        'Every figure below covers these ' + stats.totals.properties +
+        ' of ' + stats.totals.allProperties + ' properties.</div>' +
+      '<button class="btn btn-ghost btn-sm" id="btn-clear-from-dashboard">Clear filters</button>' +
+      '</div>';
   }
 
   /* ---------- sidebar ---------- */
@@ -299,9 +360,16 @@
   }
 
   function renderCount() {
-    $('#result-count').textContent = state.properties.length;
-    $('#result-caption').textContent =
-      state.properties.length === 1 ? 'property' : 'properties';
+    const shown = state.properties.length;
+    // The SBU list is never filtered, so its counts give the register total.
+    const total = state.sbus.reduce((sum, s) => sum + s.property_count, 0);
+    const filtered = filterDescriptions().length > 0;
+
+    $('#result-count').textContent = shown;
+    $('#result-caption').textContent = filtered
+      ? 'of ' + total + (total === 1 ? ' property' : ' properties')
+      : (shown === 1 ? 'property' : 'properties');
+    $('#result-caption').classList.toggle('is-filtered', filtered);
   }
 
   function renderLegend() {
@@ -393,7 +461,7 @@
     host.innerHTML = '<p class="empty">Loading…</p>';
     let stats;
     try {
-      stats = await API.stats();
+      stats = await API.stats(activeFilters());
     } catch (err) {
       host.innerHTML = '<p class="empty">Could not load statistics: ' + Fmt.esc(err.message) + '</p>';
       return;
@@ -403,8 +471,13 @@
     const maxSbu = Math.max.apply(null, stats.bySbu.map((s) => s.property_count).concat([1]));
     const maxDistrict = Math.max.apply(null, stats.byDistrict.map((d) => d.n).concat([1]));
 
+    // Under a filter an empty card means "nothing matched", not "nothing exists".
+    const emptyNote = stats.filtered
+      ? '<p class="muted">No properties match the current filters.</p>'
+      : '<p class="muted">Nothing recorded yet.</p>';
+
     function bars(rows, labelKey, valueKey, max, colorFor) {
-      if (!rows.length) return '<p class="muted">Nothing recorded yet.</p>';
+      if (!rows.length) return emptyNote;
       return rows.map(function (row) {
         const width = Math.max(3, Math.round((row[valueKey] / max) * 100));
         return '<div class="bar-row">' +
@@ -424,9 +497,11 @@
             '<span class="when">' + Fmt.date(d.expiry_date) +
             (days !== null ? ' (' + days + 'd)' : '') + '</span></li>';
         }).join('') + '</ul>'
-      : '<p class="muted">No leases, policies or permits expire in the next 180 days.</p>';
+      : '<p class="muted">No leases, policies or permits expire in the next 180 days' +
+        (stats.filtered ? ' among the filtered properties' : '') + '.</p>';
 
     host.innerHTML =
+      filterBannerHtml(stats) +
       '<div class="stat-row">' +
         '<div class="stat"><div class="v">' + t.properties + '</div><div class="k">Properties</div></div>' +
         '<div class="stat"><div class="v">' + t.sbus + '</div><div class="k">Business units</div></div>' +
@@ -454,6 +529,9 @@
       '<p class="muted" style="margin-top:14px">Land extent totals per business unit (in perches): ' +
         Fmt.esc(stats.bySbu.map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join('  ·  ')) +
       '</p>';
+
+    const clear = $('#btn-clear-from-dashboard');
+    if (clear) clear.addEventListener('click', resetFilters);
   }
 
   /* ---------- property drawer ---------- */
@@ -868,19 +946,7 @@
       });
     });
 
-    $('#btn-reset-filters').addEventListener('click', function () {
-      state.filters = { q: '', district: '', status: '', property_type: '',
-                        legal_entity_id: '', location_id: '' };
-      state.selectedSbus = null;
-      $('#search').value = '';
-      $('#filter-location').value = '';
-      $('#filter-entity').value = '';
-      $('#filter-district').value = '';
-      $('#filter-status').value = '';
-      $('#filter-type').value = '';
-      renderSbuFilters();
-      refreshProperties();
-    });
+    $('#btn-reset-filters').addEventListener('click', resetFilters);
 
     $('#btn-sbu-all').addEventListener('click', function () {
       state.selectedSbus = null;

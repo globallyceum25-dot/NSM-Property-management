@@ -63,7 +63,7 @@ window.API = (function () {
     updateMaster: (key, id, data) => request('PUT', '/api/masters/' + key + '/' + id, data),
     deleteMaster: (key, id) => request('DELETE', '/api/masters/' + key + '/' + id),
 
-    stats: () => request('GET', '/api/stats')
+    stats: (filters) => request('GET', '/api/stats' + qs(filters || {}))
   };
 })();
 
