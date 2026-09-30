@@ -315,7 +315,14 @@ _PROPERTY_SELECT = """
            (SELECT lc.code FROM location_code lc
              WHERE lc.location_id = loc.id AND lc.is_active = 1
              ORDER BY lc.code LIMIT 1) AS location_code,
-           (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count
+           (SELECT COUNT(*) FROM document d WHERE d.property_id = p.id) AS document_count,
+           EXISTS (SELECT 1 FROM document d WHERE d.property_id = p.id
+                   AND d.doc_type IN ('DEED', 'TITLE_CERTIFICATE')) AS has_deed,
+           -- Newest uploaded photograph, used as the card cover when present.
+           (SELECT d.id FROM document d
+             WHERE d.property_id = p.id AND d.doc_type = 'PHOTOGRAPH'
+               AND d.stored_name IS NOT NULL AND d.mime_type LIKE 'image/%'
+             ORDER BY d.id DESC LIMIT 1) AS cover_document_id
     FROM property p
     JOIN sbu s ON s.id = p.sbu_id
     LEFT JOIN legal_entity e ON e.id = p.legal_entity_id
@@ -357,6 +364,9 @@ def _property_filters(q):
     if q.get("status"):
         where.append("p.status = ?")
         params.append(q["status"])
+    if q.get("ownership_type"):
+        where.append("p.ownership_type = ?")
+        params.append(q["ownership_type"])
     if q.get("property_type"):
         where.append("p.property_type = ?")
         params.append(q["property_type"])

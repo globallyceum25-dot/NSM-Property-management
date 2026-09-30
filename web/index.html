@@ -3,159 +3,273 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Property Register &middot; Stage 1</title>
+<title>Property Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="css/styles.css">
 </head>
-<body>
+<body data-view="portfolio">
+
+<!-- Icon sprite: 24px line icons, stroked with currentColor -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-map" viewBox="0 0 24 24"><path d="M9 4 3 6.5v13.5l6-2.5 6 2.5 6-2.5V4l-6 2.5z"/><path d="M9 4v13.5M15 6.5V20"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="2"/><rect x="13.5" y="3.5" width="7" height="7" rx="2"/><rect x="3.5" y="13.5" width="7" height="7" rx="2"/><rect x="13.5" y="13.5" width="7" height="7" rx="2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r=".9"/><circle cx="4.5" cy="12" r=".9"/><circle cx="4.5" cy="18" r=".9"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3.5 20.5h17"/><rect x="5" y="11" width="3.2" height="6.5" rx="1"/><rect x="10.4" y="5.5" width="3.2" height="12" rx="1"/><rect x="15.8" y="13.5" width="3.2" height="4" rx="1"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><rect x="4.5" y="3" width="15" height="18" rx="2.5"/><path d="M9 7.5h1.2M13.8 7.5H15M9 11.5h1.2M13.8 11.5H15M10 21v-4h4v4"/></symbol>
+  <symbol id="i-landmark" viewBox="0 0 24 24"><path d="M3 20.5h18M4.5 9.5h15M12 3 4 8h16z"/><path d="M6.5 9.5v8M10 9.5v8M14 9.5v8M17.5 9.5v8"/></symbol>
+  <symbol id="i-database" viewBox="0 0 24 24"><ellipse cx="12" cy="5.5" rx="7.5" ry="2.8"/><path d="M4.5 5.5v13c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8v-13"/><path d="M4.5 12c0 1.55 3.36 2.8 7.5 2.8s7.5-1.25 7.5-2.8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m20 20-4.2-4.2"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2.2"/><circle cx="9" cy="17" r="2.2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6 9a6 6 0 0 1 12 0c0 6.5 2.5 8 2.5 8h-17S6 15.5 6 9z"/><path d="M10.3 20.5a1.9 1.9 0 0 0 3.4 0"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 3.5v11.5M7.5 10.5 12 15l4.5-4.5M5 20.5h14"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 24 24"><path d="M5 12h14"/></symbol>
+  <symbol id="i-pencil" viewBox="0 0 24 24"><path d="M16.5 4.2a2.4 2.4 0 0 1 3.4 3.4L8 19.5 3.5 20.5l1-4.5z"/><path d="m14.5 6.2 3.3 3.3"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M19 10c0 5.5-7 11-7 11s-7-5.5-7-11a7 7 0 0 1 14 0z"/><circle cx="12" cy="10" r="2.6"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><rect x="2.5" y="8" width="19" height="8" rx="2" transform="rotate(-45 12 12)"/><path d="m9.2 8.6 1.6 1.6M11.9 5.9l1.6 1.6M6.5 11.3l1.6 1.6M14.6 3.2l1.6 1.6"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 10.5 12 3.5l8.5 7V19a1.5 1.5 0 0 1-1.5 1.5h-4.5v-6h-5v6H5A1.5 1.5 0 0 1 3.5 19z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-10z"/><path d="M14 3.5v5h5M9 13h6M9 16.5h4"/></symbol>
+  <symbol id="i-expand" viewBox="0 0 24 24"><path d="M14.5 3.5h6v6M9.5 20.5h-6v-6M20.5 3.5l-7 7M3.5 20.5l7-7"/></symbol>
+  <symbol id="i-collapse" viewBox="0 0 24 24"><path d="M4 14h6v6M20 10h-6V4M14 10l6.5-6.5M3.5 20.5 10 14"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="m12 3.5 8.5 4.5-8.5 4.5L3.5 8z"/><path d="m3.5 12.2 8.5 4.5 8.5-4.5M3.5 16.2l8.5 4.5 8.5-4.5"/></symbol>
+  <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6 6.5l.9 12.6a1.5 1.5 0 0 0 1.5 1.4h7.2a1.5 1.5 0 0 0 1.5-1.4L18 6.5M10 10.5v6M14 10.5v6"/></symbol>
+  <symbol id="i-open" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-verified" viewBox="0 0 24 24"><path d="M12 2.2 14.3 4l2.9-.2.9 2.8 2.4 1.7-.9 2.8.9 2.8-2.4 1.7-.9 2.8-2.9-.2L12 20.1l-2.3-1.9-2.9.2-.9-2.8-2.4-1.7.9-2.8-.9-2.8 2.4-1.7.9-2.8 2.9.2z" fill="currentColor" stroke="none"/><path d="m8.6 11.3 2.3 2.3 4.5-4.6" stroke="#fff" stroke-width="2.1"/></symbol>
+</svg>
 
 <header class="topbar">
-  <div class="brand">
-    <span class="brand-mark">PR</span>
-    <div>
-      <h1>Property Register</h1>
-      <p>Sri Lanka &middot; Stage 1 &mdash; properties, documents &amp; map</p>
-    </div>
-  </div>
+  <a class="brand" href="#" data-go="portfolio" aria-label="Property Register home">
+    <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="10" fill="#F25C2A"/>
+      <path d="M16 6.5c-4.4 0-8 3.4-8 7.7 0 5.7 8 11.3 8 11.3s8-5.6 8-11.3c0-4.3-3.6-7.7-8-7.7z" fill="#fff"/>
+      <path d="M12.3 15.1 16 12.2l3.7 2.9V19h-7.4z" fill="#F25C2A"/>
+    </svg>
+    <span class="brand-name">Property Register</span>
+  </a>
+
+  <nav class="nav-pill" role="tablist" aria-label="Sections">
+    <button class="tab is-active" data-view="portfolio" title="Portfolio"><svg class="ic"><use href="#i-map"/></svg><span class="tab-label">Portfolio</span></button>
+    <button class="tab" data-view="dashboard" title="Dashboard"><svg class="ic"><use href="#i-chart"/></svg><span class="tab-label">Dashboard</span></button>
+    <button class="tab" data-view="sbus" title="Business units"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Business units</span></button>
+    <button class="tab" data-view="entities" title="Owning companies"><svg class="ic"><use href="#i-landmark"/></svg><span class="tab-label">Owning companies</span></button>
+    <button class="tab" data-view="masters" title="Master sheets"><svg class="ic"><use href="#i-database"/></svg><span class="tab-label">Master sheets</span></button>
+  </nav>
+
   <div class="topbar-actions">
-    <div class="search">
-      <input id="search" type="search" placeholder="Search code, name, city, district&hellip;" autocomplete="off">
+    <div class="pop-anchor">
+      <button class="circle-btn" id="btn-alerts" aria-label="Documents expiring soon" aria-haspopup="true" aria-expanded="false">
+        <svg class="ic"><use href="#i-bell"/></svg>
+        <span class="dot-badge" id="alert-count" hidden></span>
+      </button>
+      <div class="popover alerts-pop" id="alerts-pop" hidden></div>
     </div>
-    <a class="btn btn-ghost" href="/api/export/properties.csv">Export CSV</a>
-    <button class="btn btn-primary" id="btn-new-property">+ New property</button>
+    <a class="circle-btn" href="/api/export/properties.csv" title="Export the register as CSV" aria-label="Export CSV">
+      <svg class="ic"><use href="#i-download"/></svg>
+    </a>
+    <button class="btn btn-dark" id="btn-new-property"><svg class="ic"><use href="#i-plus"/></svg>New property</button>
   </div>
 </header>
 
-<div class="layout">
-  <aside class="sidebar">
-    <section class="filter-group">
-      <div class="filter-head">
-        <h2>Business units</h2>
-        <button class="link-btn" id="btn-sbu-all">all</button>
-      </div>
-      <div id="sbu-filters" class="sbu-filters"></div>
-    </section>
+<main class="main">
+  <!-- Search + filters: shared by Portfolio and Dashboard -->
+  <div class="toolbar" id="toolbar">
+    <div class="tenure-tabs" id="tenure-tabs" role="tablist" aria-label="Tenure">
+      <button class="is-active" data-tenure="">All</button>
+      <button data-tenure="FREEHOLD">Freehold</button>
+      <button data-tenure="LEASEHOLD">Leasehold</button>
+      <button data-tenure="RENTED_IN">Rented in</button>
+      <button data-tenure="LEASED_OUT">Leased out</button>
+    </div>
 
-    <section class="filter-group">
-      <h2>Filters</h2>
-      <label>District
-        <select id="filter-district"><option value="">All districts</option></select>
-      </label>
-      <label>Location
-        <select id="filter-location"><option value="">All locations</option></select>
-      </label>
-      <label>Owning company
-        <select id="filter-entity"><option value="">Any company</option></select>
-      </label>
-      <label>Status
-        <select id="filter-status"><option value="">Any status</option></select>
-      </label>
-      <label>Type
-        <select id="filter-type"><option value="">Any type</option></select>
-      </label>
-      <button class="btn btn-ghost btn-block" id="btn-reset-filters">Reset filters</button>
-    </section>
+    <label class="searchbox">
+      <svg class="ic"><use href="#i-search"/></svg>
+      <input id="search" type="search" placeholder="Search code, name, city, district&hellip;" autocomplete="off">
+    </label>
 
-    <section class="filter-group summary">
-      <h2>Showing</h2>
-      <p class="big-number" id="result-count">0</p>
-      <p class="muted" id="result-caption">properties</p>
-    </section>
-  </aside>
-
-  <main class="main">
-    <nav class="tabs" role="tablist">
-      <button class="tab is-active" data-view="map">Map</button>
-      <button class="tab" data-view="list">Properties</button>
-      <button class="tab" data-view="sbus">Business units</button>
-      <button class="tab" data-view="entities">Owning companies</button>
-      <button class="tab" data-view="masters">Master sheets</button>
-      <button class="tab" data-view="dashboard">Dashboard</button>
-    </nav>
-
-    <section class="view is-active" id="view-map">
-      <div id="map"></div>
-      <div class="map-legend" id="map-legend"></div>
-    </section>
-
-    <section class="view" id="view-list">
-      <div class="table-wrap">
-        <table class="grid">
-          <thead>
-            <tr>
-              <th>Code</th><th>Property</th><th>SBU</th><th>Owned by</th><th>Type</th>
-              <th>Location</th><th>District</th><th>Extent</th><th>Status</th>
-              <th>Docs</th><th>Coordinates</th><th></th>
-            </tr>
-          </thead>
-          <tbody id="property-rows"></tbody>
-        </table>
-        <p class="empty" id="list-empty" hidden>No properties match the current filters.</p>
-      </div>
-    </section>
-
-    <section class="view" id="view-sbus">
-      <div class="panel-head">
-        <h2>Business units (SBU)</h2>
-        <button class="btn btn-primary" id="btn-new-sbu">+ New SBU</button>
-      </div>
-      <div id="sbu-cards" class="sbu-cards"></div>
-    </section>
-
-    <section class="view" id="view-entities">
-      <div class="panel-head">
-        <h2>Owning companies (legal entities)</h2>
-        <button class="btn btn-primary" id="btn-new-entity">+ New company</button>
-      </div>
-      <p class="panel-note">
-        The group company that holds title. This is deliberately separate from the
-        business unit that <em>occupies</em> the property, and from how the property
-        is <em>held</em> (owned / leased / rented). A property leased or rented in
-        from an outside landlord has no owning company here &mdash; that party belongs
-        on the lease document instead.
-      </p>
-      <div id="entity-cards" class="sbu-cards"></div>
-    </section>
-
-    <section class="view" id="view-masters">
-      <div class="masters-layout">
-        <nav class="masters-nav" id="masters-nav"></nav>
-        <div class="masters-sheet">
-          <div class="panel-head">
-            <div>
-              <h2 id="master-title">Master sheets</h2>
-              <p class="panel-note" id="master-description"></p>
-            </div>
-            <div class="master-actions">
-              <input type="search" id="master-search" placeholder="Filter rows&hellip;">
-              <button class="btn btn-primary" id="btn-new-master-row">+ New row</button>
-            </div>
+    <div class="pop-anchor">
+      <button class="circle-btn filter-btn" id="btn-filters" aria-label="Filters" aria-haspopup="true" aria-expanded="false">
+        <svg class="ic"><use href="#i-sliders"/></svg>
+        <span class="dot-badge" id="filter-count" hidden></span>
+      </button>
+      <div class="popover filter-pop" id="filter-pop" hidden>
+        <div class="pop-head">
+          <h3>Filters</h3>
+          <button class="link-btn" id="btn-reset-filters">Reset all</button>
+        </div>
+        <div class="pop-section">
+          <div class="pop-label-row">
+            <span>Business units</span>
+            <button class="link-btn" id="btn-sbu-all">Select all</button>
           </div>
-          <div class="table-wrap master-table-wrap">
-            <table class="grid" id="master-grid">
-              <thead><tr id="master-head"></tr></thead>
-              <tbody id="master-rows"></tbody>
-            </table>
-            <p class="empty" id="master-empty" hidden></p>
-          </div>
+          <div id="sbu-filters" class="chip-set"></div>
+        </div>
+        <div class="pop-grid">
+          <label>Location<select id="filter-location"></select></label>
+          <label>Owning company<select id="filter-entity"></select></label>
+          <label>District<select id="filter-district"></select></label>
+          <label>Tenure<select id="filter-tenure"></select></label>
+          <label>Status<select id="filter-status"></select></label>
+          <label>Type<select id="filter-type"></select></label>
+        </div>
+        <div class="pop-foot">
+          <button class="btn btn-dark btn-block" id="btn-filters-done">Show properties</button>
         </div>
       </div>
-    </section>
+    </div>
 
-    <section class="view" id="view-dashboard">
-      <div id="dashboard"></div>
-    </section>
-  </main>
-</div>
+    <div class="seg-toggle" id="mode-toggle" role="tablist" aria-label="Layout">
+      <button class="is-active" data-mode="map"><svg class="ic"><use href="#i-map"/></svg>Map</button>
+      <button data-mode="grid"><svg class="ic"><use href="#i-grid"/></svg>Grid</button>
+      <button data-mode="table"><svg class="ic"><use href="#i-list"/></svg>Table</button>
+    </div>
+  </div>
+
+  <!-- Portfolio: cards + map / cards / table -->
+  <section class="view is-active" id="view-portfolio">
+    <div class="heading-row">
+      <div>
+        <h1 id="portfolio-title">Property portfolio</h1>
+        <p class="found"><span id="result-count">0</span> <span id="result-caption">properties</span></p>
+      </div>
+      <label class="sort-by">
+        <span>Sort by:</span>
+        <select id="sort-by">
+          <option value="newest">Latest</option>
+          <option value="code">Property code</option>
+          <option value="name">Name</option>
+          <option value="extent">Largest extent</option>
+          <option value="docs">Most documents</option>
+        </select>
+        <svg class="ic"><use href="#i-chevron"/></svg>
+      </label>
+    </div>
+    <div class="chips-row" id="active-chips" hidden></div>
+
+    <div class="portfolio-body mode-map" id="portfolio-body">
+      <div class="cards-col" id="cards-col">
+        <div class="cards" id="property-cards"></div>
+        <p class="empty" id="cards-empty" hidden>No properties match the current filters.</p>
+      </div>
+
+      <div class="map-panel" id="map-panel">
+        <div id="map"></div>
+        <button class="map-ctl ctl-expand" id="map-expand" title="Expand map" aria-label="Expand map">
+          <svg class="ic"><use href="#i-expand"/></svg>
+        </button>
+        <button class="map-ctl ctl-layers" id="map-layers" title="Switch map style" aria-label="Switch map style">
+          <svg class="ic"><use href="#i-layers"/></svg>
+        </button>
+        <div class="map-ctl-stack">
+          <button class="map-ctl" id="map-fit" title="Show all properties" aria-label="Show all properties">
+            <svg class="ic"><use href="#i-target"/></svg>
+          </button>
+          <div class="zoom-stack">
+            <button id="map-zoom-in" aria-label="Zoom in"><svg class="ic"><use href="#i-plus"/></svg></button>
+            <button id="map-zoom-out" aria-label="Zoom out"><svg class="ic"><use href="#i-minus"/></svg></button>
+          </div>
+        </div>
+        <div class="map-legend" id="map-legend"></div>
+        <div class="map-card" id="map-card" hidden></div>
+      </div>
+
+      <div class="table-panel" id="table-panel">
+        <div class="table-wrap">
+          <table class="grid">
+            <thead>
+              <tr>
+                <th>Code</th><th>Property</th><th>SBU</th><th>Owned by</th><th>Type</th>
+                <th>Location</th><th>Extent</th><th>Status</th>
+                <th>Docs</th><th>Coordinates</th><th class="row-actions"><span class="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody id="property-rows"></tbody>
+          </table>
+          <p class="empty" id="list-empty" hidden>No properties match the current filters.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-dashboard">
+    <div class="page" id="dashboard"></div>
+  </section>
+
+  <section class="view" id="view-sbus">
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1>Business units</h1>
+          <p class="found">The sector, business unit or department that occupies a property and carries its costs.</p>
+        </div>
+        <button class="btn btn-dark" id="btn-new-sbu"><svg class="ic"><use href="#i-plus"/></svg>New business unit</button>
+      </div>
+      <div id="sbu-cards" class="tile-grid"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-entities">
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <h1>Owning companies</h1>
+          <p class="found">
+            The group company that holds title &mdash; separate from the business unit that
+            <em>occupies</em> the property, and from how it is <em>held</em>. A property leased or
+            rented in from an outside landlord has no owning company here; that party belongs on
+            the lease document.
+          </p>
+        </div>
+        <button class="btn btn-dark" id="btn-new-entity"><svg class="ic"><use href="#i-plus"/></svg>New company</button>
+      </div>
+      <div id="entity-cards" class="tile-grid"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-masters">
+    <div class="masters-layout">
+      <nav class="masters-nav" id="masters-nav"></nav>
+      <div class="masters-sheet">
+        <div class="page-head">
+          <div>
+            <h1 id="master-title">Master sheets</h1>
+            <p class="found" id="master-description"></p>
+          </div>
+          <div class="master-actions">
+            <label class="searchbox searchbox-sm">
+              <svg class="ic"><use href="#i-search"/></svg>
+              <input type="search" id="master-search" placeholder="Filter rows&hellip;">
+            </label>
+            <button class="btn btn-dark" id="btn-new-master-row"><svg class="ic"><use href="#i-plus"/></svg>New row</button>
+          </div>
+        </div>
+        <div class="table-wrap master-table-wrap">
+          <table class="grid" id="master-grid">
+            <thead><tr id="master-head"></tr></thead>
+            <tbody id="master-rows"></tbody>
+          </table>
+          <p class="empty" id="master-empty" hidden></p>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
 
 <!-- Property detail drawer -->
 <aside class="drawer" id="drawer" hidden>
+  <div class="drawer-cover" id="drawer-cover"></div>
+  <button class="circle-btn drawer-close" id="btn-close-drawer" aria-label="Close">
+    <svg class="ic"><use href="#i-x"/></svg>
+  </button>
   <header class="drawer-head">
-    <div>
-      <p class="drawer-code" id="drawer-code"></p>
-      <h2 id="drawer-name"></h2>
-    </div>
-    <button class="icon-btn" id="btn-close-drawer" aria-label="Close">&times;</button>
+    <p class="drawer-code" id="drawer-code"></p>
+    <h2 id="drawer-name"></h2>
   </header>
   <div class="drawer-body" id="drawer-body"></div>
 </aside>
@@ -166,7 +280,7 @@
   <div class="modal-card modal-wide">
     <header class="modal-head">
       <h2 id="property-modal-title">New property</h2>
-      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="property-form" class="modal-body">
       <input type="hidden" name="id">
@@ -237,7 +351,7 @@
             <label>Longitude <span class="req">*</span>
               <input name="longitude" required inputmode="decimal" placeholder="79.86120">
             </label>
-            <button type="button" class="btn btn-ghost" id="btn-paste-coords">Paste "lat, lng"</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="btn-paste-coords">Paste &ldquo;lat, lng&rdquo;</button>
             <p class="hint">Click the map to drop the pin, or drag it to fine-tune. Coordinates must fall inside Sri Lanka.</p>
             <p class="field-error" id="coord-error" hidden></p>
           </div>
@@ -303,7 +417,7 @@
     </form>
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
-      <button class="btn btn-primary" id="btn-save-property">Save property</button>
+      <button class="btn btn-dark" id="btn-save-property">Save property</button>
     </footer>
   </div>
 </div>
@@ -313,7 +427,7 @@
   <div class="modal-card">
     <header class="modal-head">
       <h2 id="sbu-modal-title">New business unit</h2>
-      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="sbu-form" class="modal-body">
       <input type="hidden" name="id">
@@ -346,7 +460,7 @@
     </form>
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
-      <button class="btn btn-primary" id="btn-save-sbu">Save</button>
+      <button class="btn btn-dark" id="btn-save-sbu">Save</button>
     </footer>
   </div>
 </div>
@@ -356,7 +470,7 @@
   <div class="modal-card">
     <header class="modal-head">
       <h2 id="entity-modal-title">New owning company</h2>
-      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="entity-form" class="modal-body">
       <input type="hidden" name="id">
@@ -381,7 +495,7 @@
     </form>
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
-      <button class="btn btn-primary" id="btn-save-entity">Save</button>
+      <button class="btn btn-dark" id="btn-save-entity">Save</button>
     </footer>
   </div>
 </div>
@@ -391,7 +505,7 @@
   <div class="modal-card">
     <header class="modal-head">
       <h2>Attach document</h2>
-      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="doc-form" class="modal-body">
       <input type="hidden" name="property_id">
@@ -431,7 +545,7 @@
     </form>
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
-      <button class="btn btn-primary" id="btn-save-doc">Attach</button>
+      <button class="btn btn-dark" id="btn-save-doc">Attach</button>
     </footer>
   </div>
 </div>
@@ -441,7 +555,7 @@
   <div class="modal-card">
     <header class="modal-head">
       <h2 id="master-modal-title">New row</h2>
-      <button class="icon-btn" data-close-modal aria-label="Close">&times;</button>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="master-form" class="modal-body">
       <input type="hidden" name="id">
@@ -450,7 +564,7 @@
     </form>
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
-      <button class="btn btn-primary" id="btn-save-master">Save</button>
+      <button class="btn btn-dark" id="btn-save-master">Save</button>
     </footer>
   </div>
 </div>

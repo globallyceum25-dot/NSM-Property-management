@@ -31,8 +31,10 @@ pkill -f server.app
 The database and uploaded files are created on first run under `data/`.
 Back up that one folder and you have backed up the whole system.
 
-The map uses OpenStreetMap tiles and loads Leaflet from a CDN, so the machine
-needs internet access for the map to draw. Everything else works offline.
+Three things come from the internet: OpenStreetMap tiles (the map and the
+street-map covers on each property card), Leaflet from a CDN, and the Plus
+Jakarta Sans typeface from Google Fonts. Offline, the register still works: the
+maps go blank and the text falls back to the system font.
 
 ## What it does
 
@@ -52,10 +54,38 @@ issue and expiry dates, counterparty (notary, lessor, insurer), amount, notes,
 and an optional uploaded file (PDF, image, Word, Excel, ZIP — up to 25 MB).
 You can record a document reference now and attach the scan later.
 
-**Map** — properties appear as pins over Sri Lanka coloured by SBU. The sidebar
-filters (SBU, location, owning company, district, status, type, free-text search)
-drive the map, the table and the dashboard together. Clicking a pin opens the
-property.
+**Portfolio** — the main screen, in three layouts:
+
+- **Map** — property cards beside a light-grey map of Sri Lanka. Pins are coloured
+  by business unit and labelled with their property code wherever there is room;
+  labels that would overlap are hidden until you zoom in or hover. Clicking a pin
+  opens a floating card; hovering a card lights up its pin. The map can expand to
+  full width, switch to the colour style, and zoom to fit every property. The
+  business-unit chips on the map double as a quick filter — click one to show
+  only that unit.
+- **Grid** — the cards alone, four across on a desktop.
+- **Table** — the dense register view, with the actions pinned to the right edge.
+
+Each card's picture is the latest **Photograph** document with an image file. If
+there is none, the card shows a street map of the exact spot with a pin on the
+property's coordinates. A blue ✓ beside a name means a deed or title
+certificate is on file.
+
+**Search and filters** — the tenure tabs (All · Freehold · Leasehold · Rented in ·
+Leased out) and the search box sit above everything; the filter button opens
+business units, location, owning company, district, tenure, status and type.
+Every active filter shows as a removable chip under the heading, and the count
+reads "2 of 13" while any filter is on. Sort by latest, code, name, largest
+extent or most documents.
+
+**Alerts** — the bell counts documents expiring within 180 days across the whole
+register, whatever is filtered, and lists them; click one to open its property.
+
+**Links** — the address bar follows what is on screen, so any view can be
+bookmarked or sent: `#dashboard`, `#portfolio/grid`, `#portfolio/table`,
+`#masters`, and `#property/12` to open one property directly. Escape closes
+whatever is on top: a popover, then a form, then the property panel, then the
+map card.
 
 **Coordinate quality** — coordinates are validated server-side and in the browser
 against Sri Lanka's bounding box (lat 5.80–9.95, lng 79.40–82.05). Values outside
@@ -73,8 +103,7 @@ with no deed or title recorded; and leases, policies and permits expiring within
 — the tiles, all four breakdowns and the expiry list — recomputes over just the
 matching properties, so the dashboard can never disagree with the list beside it.
 A banner names the active filters and says how many of the register they cover
-("these 2 of 13 properties"), with a button to clear them. The sidebar count
-reads "2 of 13" whenever a filter is on.
+("these 2 of 13 properties"), with a button to clear them.
 
 **Master sheets** — one module holding every reference list the system uses, so
 codes and place names are maintained in a single place rather than retyped.
@@ -163,7 +192,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/legal-entities` | list / create owning companies |
 | PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
 | GET | `/api/locations` | slim location list for the property form |
-| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `district`, `province`, `status`, `property_type`, `q` |
+| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `ownership_type`, `district`, `province`, `status`, `property_type`, `q` |
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |

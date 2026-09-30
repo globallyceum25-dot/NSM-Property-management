@@ -2,22 +2,42 @@
 (function () {
   'use strict';
 
+  function emptyFilters() {
+    return { q: '', district: '', status: '', property_type: '',
+             legal_entity_id: '', location_id: '', ownership_type: '' };
+  }
+
   const state = {
     reference: null,
     sbus: [],
     entities: [],
     locations: [],
     properties: [],
+    alerts: [],
     selectedSbus: null,          // null = all
-    filters: { q: '', district: '', status: '', property_type: '',
-               legal_entity_id: '', location_id: '' },
+    filters: emptyFilters(),
     labels: {},
     currentProperty: null,
-    view: 'map'
+    view: 'portfolio',
+    mode: 'map',                 // portfolio layout: map | grid | table
+    expanded: false,             // map mode with the card column hidden
+    sort: 'newest'
+  };
+
+  // Cover heights as a share of their width.
+  const CARD_R = 0.72;
+  const DRAWER_R = 0.4;
+  const MAPCARD_R = 1;
+
+  const TENURE_SHORT = {
+    FREEHOLD: 'Freehold', LEASEHOLD: 'Leasehold', RENTED_IN: 'Rented in',
+    LEASED_OUT: 'Leased out', STATE_GRANT: 'State grant', OTHER: 'Other tenure'
   };
 
   const $ = (selector) => document.querySelector(selector);
   const $$ = (selector) => Array.prototype.slice.call(document.querySelectorAll(selector));
+  const esc = (value) => Fmt.esc(value);
+  const icon = (name) => '<svg class="ic"><use href="#i-' + name + '"/></svg>';
 
   /* ---------- small helpers ---------- */
 
@@ -34,6 +54,11 @@
   function labelFor(group, code) {
     const map = state.labels[group] || {};
     return map[code] || code || '';
+  }
+
+  // "Warehouse / stores" -> "Warehouse": card-sized labels.
+  function shortLabel(group, code) {
+    return labelFor(group, code).split(' / ')[0];
   }
 
   function fillSelect(select, options, opts) {
@@ -58,6 +83,156 @@
     return list.map((x) => ({ value: x.value, label: x.label }));
   }
 
+  // Avatar text: short codes as they are, longer ones cut to three (RETAIL -> RET).
+  function initials(code) {
+    const clean = String(code || '?').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+    return clean.length <= 4 ? clean : clean.slice(0, 3);
+  }
+
+  function toPerches(value, unit) {
+    const n = Number(value) || 0;
+    switch (unit) {
+      case 'ACRE': return n * 160;
+      case 'ROOD': return n * 40;
+      case 'HECTARE': return n * 395.37;
+      case 'SQ_M': return n * 0.0395369;
+      default: return n;
+    }
+  }
+
+  /* ---------- covers: an uploaded photograph, else a street map of the spot ---------- */
+
+  function coverHtml(p, ratio) {
+    const aspect = 'aspect-ratio: 100 / ' + (ratio * 100).toFixed(1);
+    if (p.cover_document_id) {
+      return '<div class="cover" style="' + aspect + '">' +
+        '<img class="photo" src="/api/documents/' + p.cover_document_id + '/file" ' +
+          'alt="Photograph of ' + esc(p.name) + '" loading="lazy"></div>';
+    }
+
+    // Four OpenStreetMap tiles around the property, positioned so its exact
+    // coordinates sit in the visible frame, with the pin drawn on that point.
+    const lat = Number(p.latitude);
+    const lng = Number(p.longitude);
+    const z = 16;
+    const n = Math.pow(2, z);
+    const xf = (lng + 180) / 360 * n;
+    const rad = lat * Math.PI / 180;
+    const yf = (1 - Math.log(Math.tan(rad) + 1 / Math.cos(rad)) / Math.PI) / 2 * n;
+    const x = Math.floor(xf);
+    const y = Math.floor(yf);
+    const x0 = (xf - x) < 0.5 ? x - 1 : x;
+    const y0 = (yf - y) < 0.5 ? y - 1 : y;
+    const px = (xf - x0) / 2;                 // point within the 2x2 mosaic, 0..1
+    const py = (yf - y0) / 2;
+    const offset = Math.min(0, Math.max(ratio - 1, ratio / 2 - py));  // in cover widths
+    const top = offset / ratio * 100;
+    const pinTop = (offset + py) / ratio * 100;
+    const tiles = [[x0, y0], [x0 + 1, y0], [x0, y0 + 1], [x0 + 1, y0 + 1]]
+      .map((t) => '<img src="https://tile.openstreetmap.org/' + z + '/' + t[0] + '/' + t[1] +
+                  '.png" alt="" loading="lazy" draggable="false">').join('');
+
+    return '<div class="cover" style="' + aspect + '" role="img" ' +
+        'aria-label="Street map around ' + esc(p.name) + '">' +
+      '<div class="mosaic" style="top:' + top.toFixed(2) + '%">' + tiles + '</div>' +
+      '<span class="cover-pin" style="left:' + (px * 100).toFixed(2) + '%;top:' +
+        pinTop.toFixed(2) + '%;--c:' + esc(p.sbu_color || '#f25c2a') + '"></span>' +
+    '</div>';
+  }
+
+  /* ---------- shared card fragments ---------- */
+
+  function statusHtml(code) {
+    return '<span class="status s-' + esc(code) + '"><i></i>' +
+      esc(shortLabel('statuses', code)) + '</span>';
+  }
+
+  function verifiedHtml(p) {
+    if (!p.has_deed) return '';
+    return '<svg class="verified" role="img" aria-label="Deed or title on file">' +
+      '<title>Deed or title on file</title><use href="#i-verified"/></svg>';
+  }
+
+  function specsHtml(p) {
+    const extent = Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits) ||
+      (p.building_area_sqft ? Fmt.num(p.building_area_sqft) + ' sq ft' : 'Extent not set');
+    const docs = p.document_count;
+    return '<div class="specs-wrap"><div class="specs">' +
+      '<span>' + icon('home') + esc(shortLabel('propertyTypes', p.property_type)) + '</span>' +
+      '<span>' + icon('ruler') + esc(extent) + '</span>' +
+      '<span' + (docs ? '' : ' class="none"') + '>' + icon('file') +
+        (docs ? docs + (docs === 1 ? ' doc' : ' docs') : 'No docs') + '</span>' +
+    '</div></div>';
+  }
+
+  function locationLine(p) {
+    if (p.location_name) {
+      return (p.location_code ? p.location_code + ' · ' : '') + p.location_name;
+    }
+    return p.city || p.district || 'No location set';
+  }
+
+  function addressLine(p) {
+    return [p.address_line1, p.city, p.district].filter(Boolean).join(', ');
+  }
+
+  function footLine(p) {
+    return [
+      p.property_code,
+      p.entity_code ? 'Owned by ' + p.entity_code : 'No group owner',
+      TENURE_SHORT[p.ownership_type] || labelFor('ownershipTypes', p.ownership_type)
+    ].join(' · ');
+  }
+
+  function cardHtml(p) {
+    return '<article class="pcard" data-card="' + p.id + '" tabindex="0" ' +
+        'aria-label="' + esc(p.property_code + ' — ' + p.name) + '">' +
+      '<div class="pcard-media">' +
+        coverHtml(p, CARD_R) +
+        '<span class="media-badge" title="Documents on file">' + icon('file') +
+          p.document_count + '</span>' +
+        '<div class="media-overlay">' +
+          '<span class="avatar" style="background:' + esc(p.sbu_color) + '">' +
+            esc(initials(p.sbu_code)) + '</span>' +
+          '<div class="ov-text">' +
+            '<div class="ov-title">' + esc(p.sbu_name) + '</div>' +
+            '<div class="ov-sub">' + icon('pin') + esc(locationLine(p)) + '</div>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+      '<div class="pcard-body">' +
+        '<div class="pcard-row">' + statusHtml(p.status) +
+          '<div class="pcard-actions">' +
+            '<button class="circle-btn sm" data-locate="' + p.id + '" title="Show on map" ' +
+              'aria-label="Show on map">' + icon('map') + '</button>' +
+            '<button class="circle-btn sm" data-edit="' + p.id + '" title="Edit" ' +
+              'aria-label="Edit property">' + icon('pencil') + '</button>' +
+          '</div>' +
+        '</div>' +
+        '<h3 class="pcard-title">' + esc(p.name) + verifiedHtml(p) + '</h3>' +
+        specsHtml(p) +
+        (addressLine(p) ? '<p class="pcard-addr">' + esc(addressLine(p)) + '</p>' : '') +
+        '<p class="pcard-foot">' + esc(footLine(p)) + '</p>' +
+      '</div>' +
+    '</article>';
+  }
+
+  function mapCardHtml(p) {
+    return '<div class="mc-media">' + coverHtml(p, MAPCARD_R) + '</div>' +
+      '<div class="mc-body">' +
+        '<div class="pcard-row">' + statusHtml(p.status) +
+          '<button class="circle-btn sm" data-card-close aria-label="Close">' + icon('x') + '</button>' +
+        '</div>' +
+        '<h3 class="mc-title" data-open="' + p.id + '">' + esc(p.name) + verifiedHtml(p) + '</h3>' +
+        specsHtml(p) +
+        '<p class="pcard-addr">' + esc(addressLine(p) || locationLine(p)) + '</p>' +
+        '<div class="mc-actions">' +
+          '<button class="btn btn-dark btn-sm" data-open="' + p.id + '">Open details</button>' +
+          '<button class="btn btn-ghost btn-sm" data-edit="' + p.id + '">' + icon('pencil') + 'Edit</button>' +
+        '</div>' +
+      '</div>';
+  }
+
   /* ---------- boot ---------- */
 
   async function boot() {
@@ -77,16 +252,17 @@
     buildStaticSelects();
     window.__districts = state.reference.districts;   // used by the masters form
     Masters.init(toast, async function (key) {
-      // Keep the sidebar filters and the property form in step with edits made
-      // in the Master sheets module.
+      // Keep the filters and the property form in step with edits made in the
+      // Master sheets module.
       if (key === 'location' || key === 'location_code') await refreshLocations();
       if (key === 'sbu') await refreshSbus();
       if (key === 'legal_entity') await refreshEntities();
       await refreshProperties();
     });
     MapView.init('map', state.reference, {
-      onSelect: openDrawer,
-      onEdit: (id) => openPropertyModal(id)
+      cardHtml: mapCardHtml,
+      onPick: pickCard,
+      onHover: hoverCard
     });
     wireEvents();
 
@@ -94,6 +270,35 @@
     await refreshEntities();
     await refreshLocations();
     await refreshProperties();
+    loadAlerts();
+
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
+  }
+
+  /* ---------- links: #dashboard, #portfolio/grid, #property/12 ... ---------- */
+
+  const VIEWS = ['portfolio', 'dashboard', 'sbus', 'entities', 'masters'];
+  const MODES = ['map', 'grid', 'table'];
+
+  function writeHash() {
+    let hash = state.view + (state.view === 'portfolio' && state.mode !== 'map' ? '/' + state.mode : '');
+    if (state.currentProperty) hash = 'property/' + state.currentProperty.id;
+    if (location.hash !== '#' + hash) history.replaceState(null, '', '#' + hash);
+  }
+
+  function applyHash() {
+    const parts = location.hash.replace(/^#/, '').split('/');
+    if (parts[0] === 'property' && /^\d+$/.test(parts[1] || '')) {
+      if (!state.currentProperty || String(state.currentProperty.id) !== parts[1]) {
+        openDrawer(Number(parts[1]));
+      }
+      return;
+    }
+    if (VIEWS.indexOf(parts[0]) === -1) return;
+    if (parts[0] === 'portfolio') setMode(MODES.indexOf(parts[1]) !== -1 ? parts[1] : 'map');
+    if (!$('#drawer').hidden) closeDrawer();
+    if (state.view !== parts[0]) switchView(parts[0]);
   }
 
   async function refreshLocations() {
@@ -125,6 +330,7 @@
     fillSelect($('#filter-district'), districtOptions, { placeholder: 'All districts' });
     fillSelect($('#filter-status'), optionsFrom(ref.statuses), { placeholder: 'Any status' });
     fillSelect($('#filter-type'), optionsFrom(ref.propertyTypes), { placeholder: 'Any type' });
+    fillSelect($('#filter-tenure'), optionsFrom(ref.ownershipTypes), { placeholder: 'Any tenure' });
 
     const form = $('#property-form');
     fillSelect(form.status, optionsFrom(ref.statuses), { value: 'ACTIVE' });
@@ -137,7 +343,8 @@
     $('#doc-file-hint').textContent =
       'PDF, image, Word, Excel or ZIP up to ' +
       Math.round(ref.maxUploadBytes / (1024 * 1024)) + ' MB. Optional — you can record a ' +
-      'document reference now and attach the scan later.';
+      'document reference now and attach the scan later. A Photograph document with an ' +
+      'image file becomes the property’s cover picture.';
   }
 
   /* ---------- data ---------- */
@@ -173,32 +380,361 @@
     field.value = keepField;
   }
 
+  function activeFilters() {
+    const filters = Object.assign({}, state.filters);
+    if (state.selectedSbus && state.selectedSbus.length) {
+      filters.sbu_id = state.selectedSbus.join(',');
+    }
+    return filters;
+  }
+
+  async function refreshProperties() {
+    if (state.selectedSbus && state.selectedSbus.length === 0) {
+      state.properties = [];
+    } else {
+      state.properties = await API.listProperties(activeFilters());
+    }
+    renderCount();
+    renderHeading();
+    renderActiveChips();
+    renderFilterBadge();
+    renderCards();
+    renderTable();
+    renderLegend();
+    MapView.render(state.properties);
+    const shown = state.properties.length;
+    $('#btn-filters-done').textContent =
+      'Show ' + shown + (shown === 1 ? ' property' : ' properties');
+    // The dashboard describes the same set, so keep it in step with the filters.
+    if (state.view === 'dashboard') await renderDashboard();
+  }
+
+  function sortedProperties() {
+    const list = state.properties.slice();
+    const byCode = (a, b) => String(a.property_code).localeCompare(String(b.property_code));
+    switch (state.sort) {
+      case 'code':
+        return list.sort(byCode);
+      case 'name':
+        return list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
+      case 'extent':
+        return list.sort((a, b) =>
+          toPerches(b.extent_value, b.extent_unit) - toPerches(a.extent_value, a.extent_unit) ||
+          byCode(a, b));
+      case 'docs':
+        return list.sort((a, b) => b.document_count - a.document_count || byCode(a, b));
+      default:   // newest
+        return list.sort((a, b) =>
+          String(b.created_at).localeCompare(String(a.created_at)) || b.id - a.id);
+    }
+  }
+
+  function resetFilters() {
+    state.filters = emptyFilters();
+    state.selectedSbus = null;
+    $('#search').value = '';
+    ['#filter-location', '#filter-entity', '#filter-district', '#filter-status',
+     '#filter-type', '#filter-tenure'].forEach((sel) => { $(sel).value = ''; });
+    syncTenureTabs();
+    renderSbuFilters();
+    return refreshProperties();
+  }
+
+  function setTenure(code) {
+    state.filters.ownership_type = code || '';
+    $('#filter-tenure').value = state.filters.ownership_type;
+    syncTenureTabs();
+    return refreshProperties();
+  }
+
+  function syncTenureTabs() {
+    $$('#tenure-tabs button').forEach((b) =>
+      b.classList.toggle('is-active', b.dataset.tenure === state.filters.ownership_type));
+  }
+
+  /* ---------- describing the active filters ---------- */
+
+  // One entry per active filter, with how to clear it. Drives the chips under
+  // the heading, the dashboard banner and the "N of M" wording.
+  function activeChips() {
+    const f = state.filters;
+    const chips = [];
+    const clearSelect = (key, selector) => () => {
+      state.filters[key] = '';
+      $(selector).value = '';
+    };
+
+    if (f.q) {
+      chips.push({ label: 'Search: ' + f.q,
+                   clear: () => { state.filters.q = ''; $('#search').value = ''; } });
+    }
+    if (state.selectedSbus) {
+      const names = state.sbus
+        .filter((s) => state.selectedSbus.indexOf(s.id) !== -1).map((s) => s.code);
+      chips.push({
+        label: names.length ? 'Business unit' + (names.length === 1 ? ': ' : 's: ') + names.join(', ')
+                            : 'No business unit selected',
+        clear: () => { state.selectedSbus = null; renderSbuFilters(); }
+      });
+    }
+    if (f.ownership_type) {
+      chips.push({ label: 'Tenure: ' + (TENURE_SHORT[f.ownership_type] || f.ownership_type),
+                   clear: () => { state.filters.ownership_type = '';
+                                  $('#filter-tenure').value = ''; syncTenureTabs(); } });
+    }
+    if (f.location_id) {
+      const location = state.locations.filter((l) => String(l.id) === f.location_id)[0];
+      chips.push({ label: 'Location: ' + (location ? location.name : 'not set'),
+                   clear: clearSelect('location_id', '#filter-location') });
+    }
+    if (f.legal_entity_id) {
+      const entity = state.entities.filter((e) => String(e.id) === f.legal_entity_id)[0];
+      chips.push({ label: 'Owned by: ' + (entity ? entity.short_code : 'nobody recorded'),
+                   clear: clearSelect('legal_entity_id', '#filter-entity') });
+    }
+    if (f.district) {
+      chips.push({ label: 'District: ' + f.district, clear: clearSelect('district', '#filter-district') });
+    }
+    if (f.status) {
+      chips.push({ label: 'Status: ' + shortLabel('statuses', f.status),
+                   clear: clearSelect('status', '#filter-status') });
+    }
+    if (f.property_type) {
+      chips.push({ label: 'Type: ' + shortLabel('propertyTypes', f.property_type),
+                   clear: clearSelect('property_type', '#filter-type') });
+    }
+    return chips;
+  }
+
+  let currentChips = [];
+
+  function renderActiveChips() {
+    currentChips = activeChips();
+    const host = $('#active-chips');
+    host.hidden = currentChips.length === 0;
+    host.innerHTML = currentChips.map((c, i) =>
+      '<span class="fchip">' + esc(c.label) +
+        '<button data-chip-clear="' + i + '" aria-label="Remove filter ' + esc(c.label) + '">' +
+          icon('x') + '</button></span>').join('') +
+      (currentChips.length ? '<button class="link-btn" data-chip-clear="all">Clear all</button>' : '');
+  }
+
+  function renderFilterBadge() {
+    // Everything in the popover counts; the search box shows itself.
+    const n = activeChips().filter((c) => c.label.indexOf('Search:') !== 0).length;
+    const badge = $('#filter-count');
+    badge.textContent = n;
+    badge.hidden = n === 0;
+  }
+
+  function filterBannerHtml(stats) {
+    const parts = activeChips().map((c) => c.label);
+    if (!parts.length) return '';
+    return '<div class="filter-banner">' +
+      '<div><strong>Filtered view</strong> — ' + esc(parts.join(' · ')) + '. ' +
+        'Every figure below covers these ' + stats.totals.properties +
+        ' of ' + stats.totals.allProperties + ' properties.</div>' +
+      '<button class="btn btn-ghost btn-sm" id="btn-clear-from-dashboard">Clear filters</button>' +
+      '</div>';
+  }
+
+  /* ---------- filter popover ---------- */
+
+  function renderSbuFilters() {
+    const host = $('#sbu-filters');
+    host.innerHTML = state.sbus.map(function (sbu) {
+      const on = !state.selectedSbus || state.selectedSbus.indexOf(sbu.id) !== -1;
+      return '<button type="button" class="chip ' + (on ? 'is-on' : 'is-off') + '" ' +
+          'data-sbu-chip="' + sbu.id + '" aria-pressed="' + on + '">' +
+        '<i style="background:' + esc(sbu.color) + '"></i>' +
+        '<span>' + esc(sbu.name) + '</span><b>' + sbu.property_count + '</b></button>';
+    }).join('');
+  }
+
+  function toggleSbu(id) {
+    const all = state.sbus.map((s) => s.id);
+    const selected = state.selectedSbus ? state.selectedSbus.slice() : all.slice();
+    const at = selected.indexOf(id);
+    if (at === -1) selected.push(id); else selected.splice(at, 1);
+    state.selectedSbus = selected.length === all.length ? null : selected;
+    renderSbuFilters();
+    refreshProperties();
+  }
+
+  /* ---------- heading, counts, legend ---------- */
+
+  function renderCount() {
+    const shown = state.properties.length;
+    // The SBU list is never filtered, so its counts give the register total.
+    const total = state.sbus.reduce((sum, s) => sum + s.property_count, 0);
+    const filtered = activeChips().length > 0;
+
+    $('#result-count').textContent = shown;
+    $('#result-caption').textContent = filtered
+      ? 'of ' + total + (total === 1 ? ' property' : ' properties')
+      : (shown === 1 ? 'property' : 'properties') + ' in the register';
+    $('#result-caption').classList.toggle('is-filtered', filtered);
+  }
+
+  function renderHeading() {
+    const q = state.filters.q;
+    $('#portfolio-title').textContent = q ? 'Results for “' + q + '”' : 'Property portfolio';
+  }
+
+  // Map legend doubles as a quick filter: click a unit to show only it.
+  function renderLegend() {
+    const counts = {};
+    state.properties.forEach((p) => { counts[p.sbu_id] = (counts[p.sbu_id] || 0) + 1; });
+    const solo = state.selectedSbus && state.selectedSbus.length === 1 ? state.selectedSbus[0] : null;
+    $('#map-legend').innerHTML = state.sbus
+      .filter((s) => counts[s.id])
+      .map((s) => '<button class="legend-chip' + (solo === s.id ? ' is-solo' : '') + '" ' +
+          'data-legend-sbu="' + s.id + '" title="' +
+          (solo === s.id ? 'Show all business units' : 'Show only ' + esc(s.name)) + '">' +
+        '<i style="background:' + esc(s.color) + '"></i>' + esc(s.name) +
+        ' <b>' + counts[s.id] + '</b></button>')
+      .join('');
+  }
+
+  /* ---------- cards ---------- */
+
+  function renderCards() {
+    const list = sortedProperties();
+    const host = $('#property-cards');
+    host.innerHTML = list.map(cardHtml).join('');
+    $('#cards-empty').hidden = list.length > 0;
+
+    $$('#property-cards .pcard').forEach(function (card) {
+      const id = Number(card.dataset.card);
+      card.addEventListener('mouseenter', () => MapView.highlight(id, true));
+      card.addEventListener('mouseleave', () => MapView.highlight(id, false));
+    });
+  }
+
+  function cardEl(id) {
+    return $('#property-cards .pcard[data-card="' + id + '"]');
+  }
+
+  // A pin was clicked: mark its card and bring it into view.
+  function pickCard(id) {
+    $$('#property-cards .pcard.is-picked').forEach((c) => c.classList.remove('is-picked'));
+    if (id === null) return;
+    const card = cardEl(id);
+    if (card) {
+      card.classList.add('is-picked');
+      card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+  }
+
+  function hoverCard(id, on) {
+    const card = cardEl(id);
+    if (card) card.classList.toggle('is-hot', on);
+  }
+
+  /* ---------- property table ---------- */
+
+  function renderTable() {
+    const body = $('#property-rows');
+    body.innerHTML = '';
+    const list = sortedProperties();
+    $('#list-empty').hidden = list.length > 0;
+
+    list.forEach(function (p) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        '<td class="code">' + esc(p.property_code) + '</td>' +
+        '<td class="prop-cell"><span class="prop-name">' + esc(p.name) + verifiedHtml(p) + '</span>' +
+          '<span class="prop-sub">' + esc([p.address_line1, p.city].filter(Boolean).join(', ')) + '</span></td>' +
+        '<td><span class="sbu-pill"><span class="swatch" style="background:' +
+          esc(p.sbu_color) + '"></span>' + esc(p.sbu_code) + '</span></td>' +
+        '<td>' + (p.entity_code
+          ? '<span title="' + esc(p.entity_name) + '">' + esc(p.entity_code) + '</span>'
+          : '<span class="muted-inline" title="Leased or rented in — owned by an outside landlord">—</span>') + '</td>' +
+        '<td title="' + esc(labelFor('propertyTypes', p.property_type)) + '">' +
+          esc(shortLabel('propertyTypes', p.property_type)) + '</td>' +
+        '<td>' + (p.location_name
+          ? (p.location_code ? '<span class="loc-code">' + esc(p.location_code) +
+              '</span> ' : '') + esc(p.location_name)
+          : '<span class="muted-inline" title="No location from the master list">—</span>') +
+          (p.district ? '<span class="prop-sub">' + esc(p.district) + ' district</span>' : '') + '</td>' +
+        '<td>' + esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits)) + '</td>' +
+        '<td><span class="badge ' + esc(p.status) + '" title="' + esc(labelFor('statuses', p.status)) + '">' +
+          esc(shortLabel('statuses', p.status)) + '</span></td>' +
+        '<td class="doc-count' + (p.document_count ? '' : ' zero') + '">' + p.document_count + '</td>' +
+        '<td class="coords">' + Fmt.coords(p.latitude, p.longitude) + '</td>' +
+        '<td class="row-actions">' +
+          '<button class="circle-btn sm" data-locate="' + p.id + '" title="Show on map" ' +
+            'aria-label="Show on map">' + icon('map') + '</button>' +
+          '<button class="circle-btn sm" data-open="' + p.id + '" title="Open details" ' +
+            'aria-label="Open details">' + icon('open') + '</button>' +
+        '</td>';
+      tr.addEventListener('click', function (event) {
+        if (event.target.closest('button')) return;
+        openDrawer(p.id);
+      });
+      body.appendChild(tr);
+    });
+  }
+
+  /* ---------- business units & owning companies ---------- */
+
+  function tileHtml(opts) {
+    return '<div class="tile">' +
+      '<div class="tile-top">' +
+        '<span class="avatar lg" style="background:' + esc(opts.color) + '">' +
+          esc(initials(opts.code)) + '</span>' +
+        '<div class="tile-actions">' +
+          '<button class="circle-btn sm" ' + opts.editAttr + ' title="Edit" aria-label="Edit">' +
+            icon('pencil') + '</button>' +
+          '<button class="circle-btn sm danger" ' + opts.deleteAttr + ' title="Delete" aria-label="Delete">' +
+            icon('trash') + '</button>' +
+        '</div>' +
+      '</div>' +
+      '<h3>' + esc(opts.name) + ' <span class="code">' + esc(opts.code) + '</span></h3>' +
+      (opts.sub ? '<p class="tile-sub">' + esc(opts.sub) + '</p>' : '') +
+      '<p class="tile-desc">' + esc(opts.description) + '</p>' +
+      '<div class="tile-foot"><span><b>' + opts.count + '</b> propert' +
+        (opts.count === 1 ? 'y' : 'ies') + '</span>' + (opts.badge || '') + '</div>' +
+    '</div>';
+  }
+
+  function renderSbuCards() {
+    const host = $('#sbu-cards');
+    if (!state.sbus.length) {
+      host.innerHTML = '<p class="empty">No business units yet. Every property belongs to one, ' +
+        'so add these first.</p>';
+      return;
+    }
+    host.innerHTML = state.sbus.map((sbu) => tileHtml({
+      color: sbu.color,
+      code: sbu.code,
+      name: sbu.name,
+      sub: [sbu.sector, sbu.cost_centre ? 'CC ' + sbu.cost_centre : ''].filter(Boolean).join(' · '),
+      description: sbu.description || 'No description.',
+      count: sbu.property_count,
+      editAttr: 'data-edit-sbu="' + sbu.id + '"',
+      deleteAttr: 'data-delete-sbu="' + sbu.id + '"'
+    })).join('');
+  }
+
   function renderEntityCards() {
     const host = $('#entity-cards');
-    host.innerHTML = '';
     if (!state.entities.length) {
       host.innerHTML = '<p class="empty">No owning companies yet. Add the group ' +
         'companies that hold title to your properties.</p>';
       return;
     }
-    state.entities.forEach(function (entity) {
-      const card = document.createElement('div');
-      card.className = 'sbu-card entity-card';
-      const unconfirmed = entity.name === entity.short_code;
-      card.innerHTML =
-        '<h3>' + Fmt.esc(entity.name) +
-          ' <span class="code">' + Fmt.esc(entity.short_code) + '</span>' +
-          (unconfirmed ? '<span class="warn-chip">name unconfirmed</span>' : '') + '</h3>' +
-        (entity.reg_no ? '<p class="sbu-sector">Reg. ' + Fmt.esc(entity.reg_no) + '</p>' : '') +
-        '<p>' + Fmt.esc(entity.description || 'No notes.') + '</p>' +
-        '<div class="sbu-foot">' +
-          '<span class="n">' + entity.property_count + ' propert' +
-            (entity.property_count === 1 ? 'y' : 'ies') + '</span>' +
-          '<span><button class="btn btn-ghost btn-sm" data-edit-entity="' + entity.id + '">Edit</button> ' +
-          '<button class="btn btn-danger btn-sm" data-delete-entity="' + entity.id + '">Delete</button></span>' +
-        '</div>';
-      host.appendChild(card);
-    });
+    host.innerHTML = state.entities.map((entity) => tileHtml({
+      color: '#3f3f46',
+      code: entity.short_code,
+      name: entity.name,
+      sub: entity.reg_no ? 'Reg. ' + entity.reg_no : '',
+      description: entity.description || 'No notes.',
+      count: entity.property_count,
+      badge: entity.name === entity.short_code ? '<span class="warn-chip">Name unconfirmed</span>' : '',
+      editAttr: 'data-edit-entity="' + entity.id + '"',
+      deleteAttr: 'data-delete-entity="' + entity.id + '"'
+    })).join('');
   }
 
   function openEntityModal(entityId) {
@@ -253,217 +789,76 @@
     } catch (err) { toast(err.message, true); }
   }
 
-  function activeFilters() {
-    const filters = Object.assign({}, state.filters);
-    if (state.selectedSbus && state.selectedSbus.length) {
-      filters.sbu_id = state.selectedSbus.join(',');
+  /* ---------- alerts (bell) ---------- */
+
+  // Always the whole register: an expiring lease matters whatever is filtered.
+  async function loadAlerts() {
+    try {
+      const stats = await API.stats();
+      state.alerts = stats.expiringSoon;
+    } catch (err) {
+      state.alerts = [];
     }
-    return filters;
+    const n = state.alerts.length;
+    const badge = $('#alert-count');
+    badge.textContent = n;
+    badge.hidden = n === 0;
+    $('#btn-alerts').setAttribute('aria-label',
+      n ? n + ' document' + (n === 1 ? '' : 's') + ' expiring within 180 days'
+        : 'No documents expiring soon');
+
+    $('#alerts-pop').innerHTML =
+      '<div class="pop-head"><h3>Expiring within 180 days</h3></div>' +
+      (n
+        ? '<ul class="alert-list">' + state.alerts.map(function (d) {
+            const days = Fmt.daysUntil(d.expiry_date);
+            return '<li data-open="' + d.property_id + '">' +
+              '<span class="al-icon">' + icon('clock') + '</span>' +
+              '<span class="al-text"><b>' + esc(d.title) + '</b>' +
+                '<span>' + esc(d.property_code) + ' · ' + Fmt.date(d.expiry_date) + '</span></span>' +
+              (days !== null ? '<span class="al-days">' + days + 'd</span>' : '') +
+            '</li>';
+          }).join('') + '</ul>'
+        : '<p class="pop-empty">No leases, policies or permits expire in the next 180 days.</p>') +
+      '<div class="pop-foot"><button class="btn btn-ghost btn-sm btn-block" data-go="dashboard">' +
+        'Open the dashboard</button></div>';
   }
 
-  async function refreshProperties() {
-    if (state.selectedSbus && state.selectedSbus.length === 0) {
-      state.properties = [];
-    } else {
-      state.properties = await API.listProperties(activeFilters());
-    }
-    renderCount();
-    renderTable();
-    renderLegend();
-    MapView.render(state.properties);
-    // The dashboard describes the same set, so keep it in step with the filters.
-    if (state.view === 'dashboard') await renderDashboard();
-  }
+  /* ---------- popovers ---------- */
 
-  function resetFilters() {
-    state.filters = { q: '', district: '', status: '', property_type: '',
-                      legal_entity_id: '', location_id: '' };
-    state.selectedSbus = null;
-    $('#search').value = '';
-    $('#filter-location').value = '';
-    $('#filter-entity').value = '';
-    $('#filter-district').value = '';
-    $('#filter-status').value = '';
-    $('#filter-type').value = '';
-    renderSbuFilters();
-    return refreshProperties();
-  }
+  const POPOVERS = [['#btn-filters', '#filter-pop'], ['#btn-alerts', '#alerts-pop']];
 
-  /* ---------- describing the active filters ---------- */
-
-  function filterDescriptions() {
-    const parts = [];
-    if (state.filters.q) parts.push('search “' + state.filters.q + '”');
-
-    if (state.selectedSbus) {
-      const names = state.sbus
-        .filter((s) => state.selectedSbus.indexOf(s.id) !== -1)
-        .map((s) => s.code);
-      parts.push(names.length
-        ? 'business unit' + (names.length === 1 ? ' ' : 's ') + names.join(', ')
-        : 'no business unit selected');
-    }
-    if (state.filters.location_id) {
-      const location = state.locations
-        .filter((l) => String(l.id) === state.filters.location_id)[0];
-      parts.push('location ' + (location ? location.name : 'not set'));
-    }
-    if (state.filters.legal_entity_id) {
-      const entity = state.entities
-        .filter((e) => String(e.id) === state.filters.legal_entity_id)[0];
-      parts.push('owned by ' + (entity ? entity.short_code : 'nobody recorded'));
-    }
-    if (state.filters.district) parts.push('district ' + state.filters.district);
-    if (state.filters.status) {
-      parts.push('status ' + labelFor('statuses', state.filters.status).toLowerCase());
-    }
-    if (state.filters.property_type) {
-      parts.push('type ' + labelFor('propertyTypes', state.filters.property_type).toLowerCase());
-    }
-    return parts;
-  }
-
-  function filterBannerHtml(stats) {
-    const parts = filterDescriptions();
-    if (!parts.length) return '';
-    return '<div class="filter-banner">' +
-      '<div><strong>Filtered view</strong> — ' + Fmt.esc(parts.join(' · ')) + '. ' +
-        'Every figure below covers these ' + stats.totals.properties +
-        ' of ' + stats.totals.allProperties + ' properties.</div>' +
-      '<button class="btn btn-ghost btn-sm" id="btn-clear-from-dashboard">Clear filters</button>' +
-      '</div>';
-  }
-
-  /* ---------- sidebar ---------- */
-
-  function renderSbuFilters() {
-    const host = $('#sbu-filters');
-    host.innerHTML = '';
-    state.sbus.forEach(function (sbu) {
-      const checked = !state.selectedSbus || state.selectedSbus.indexOf(sbu.id) !== -1;
-      const label = document.createElement('label');
-      label.className = 'sbu-filter';
-      label.innerHTML =
-        '<input type="checkbox" value="' + sbu.id + '"' + (checked ? ' checked' : '') + '>' +
-        '<span class="swatch" style="background:' + Fmt.esc(sbu.color) + '"></span>' +
-        '<span class="name" title="' + Fmt.esc(sbu.name) + '">' + Fmt.esc(sbu.name) + '</span>' +
-        '<span class="count">' + sbu.property_count + '</span>';
-      label.querySelector('input').addEventListener('change', onSbuFilterChange);
-      host.appendChild(label);
+  function closePopovers() {
+    POPOVERS.forEach(function (pair) {
+      $(pair[1]).hidden = true;
+      $(pair[0]).setAttribute('aria-expanded', 'false');
     });
   }
 
-  function onSbuFilterChange() {
-    const checked = $$('#sbu-filters input:checked').map((i) => Number(i.value));
-    state.selectedSbus = (checked.length === state.sbus.length) ? null : checked;
-    refreshProperties();
+  function togglePopover(buttonSel, popSel) {
+    const pop = $(popSel);
+    const opening = pop.hidden;
+    closePopovers();
+    if (opening) {
+      pop.hidden = false;
+      $(buttonSel).setAttribute('aria-expanded', 'true');
+    }
   }
 
-  function renderCount() {
-    const shown = state.properties.length;
-    // The SBU list is never filtered, so its counts give the register total.
-    const total = state.sbus.reduce((sum, s) => sum + s.property_count, 0);
-    const filtered = filterDescriptions().length > 0;
-
-    $('#result-count').textContent = shown;
-    $('#result-caption').textContent = filtered
-      ? 'of ' + total + (total === 1 ? ' property' : ' properties')
-      : (shown === 1 ? 'property' : 'properties');
-    $('#result-caption').classList.toggle('is-filtered', filtered);
-  }
-
-  function renderLegend() {
-    const host = $('#map-legend');
-    const counts = {};
-    state.properties.forEach(function (p) {
-      counts[p.sbu_id] = (counts[p.sbu_id] || 0) + 1;
-    });
-    const rows = state.sbus
-      .filter((s) => counts[s.id])
-      .map((s) => '<div class="legend-row"><span class="swatch" style="background:' +
-        Fmt.esc(s.color) + '"></span>' + Fmt.esc(s.name) +
-        ' <span style="color:var(--text-muted)">(' + counts[s.id] + ')</span></div>');
-    host.innerHTML = rows.length
-      ? '<h3>Business units on map</h3>' + rows.join('')
-      : '<h3>No properties shown</h3>';
-  }
-
-  /* ---------- property table ---------- */
-
-  function renderTable() {
-    const body = $('#property-rows');
-    body.innerHTML = '';
-    $('#list-empty').hidden = state.properties.length > 0;
-
-    state.properties.forEach(function (p) {
-      const tr = document.createElement('tr');
-      tr.innerHTML =
-        '<td class="code">' + Fmt.esc(p.property_code) + '</td>' +
-        '<td><span class="prop-name">' + Fmt.esc(p.name) + '</span>' +
-          '<span class="prop-sub">' + Fmt.esc([p.address_line1, p.city].filter(Boolean).join(', ')) + '</span></td>' +
-        '<td><span class="sbu-pill"><span class="swatch" style="background:' +
-          Fmt.esc(p.sbu_color) + '"></span>' + Fmt.esc(p.sbu_code) + '</span></td>' +
-        '<td>' + (p.entity_code
-          ? '<span title="' + Fmt.esc(p.entity_name) + '">' + Fmt.esc(p.entity_code) + '</span>'
-          : '<span class="muted-inline" title="Leased or rented in — owned by an outside landlord">—</span>') + '</td>' +
-        '<td>' + Fmt.esc(labelFor('propertyTypes', p.property_type)) + '</td>' +
-        '<td>' + (p.location_name
-          ? (p.location_code ? '<span class="loc-code">' + Fmt.esc(p.location_code) +
-              '</span> ' : '') + Fmt.esc(p.location_name)
-          : '<span class="muted-inline" title="No location from the master list">—</span>') + '</td>' +
-        '<td>' + Fmt.esc(p.district || '') + '</td>' +
-        '<td>' + Fmt.esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits)) + '</td>' +
-        '<td><span class="badge ' + Fmt.esc(p.status) + '">' +
-          Fmt.esc(labelFor('statuses', p.status)) + '</span></td>' +
-        '<td class="doc-count' + (p.document_count ? '' : ' zero') + '">' + p.document_count + '</td>' +
-        '<td class="coords">' + Fmt.coords(p.latitude, p.longitude) + '</td>' +
-        '<td class="row-actions">' +
-          '<button class="btn btn-ghost btn-sm" data-locate="' + p.id + '">Map</button> ' +
-          '<button class="btn btn-ghost btn-sm" data-open="' + p.id + '">Open</button>' +
-        '</td>';
-      tr.addEventListener('click', function (event) {
-        if (event.target.closest('button')) return;
-        openDrawer(p.id);
-      });
-      body.appendChild(tr);
-    });
-  }
-
-  /* ---------- SBU cards ---------- */
-
-  function renderSbuCards() {
-    const host = $('#sbu-cards');
-    host.innerHTML = '';
-    state.sbus.forEach(function (sbu) {
-      const card = document.createElement('div');
-      card.className = 'sbu-card';
-      card.style.borderLeftColor = sbu.color;
-      const sub = [sbu.sector, sbu.cost_centre ? 'CC ' + sbu.cost_centre : '']
-        .filter(Boolean).join(' · ');
-      card.innerHTML =
-        '<h3>' + Fmt.esc(sbu.name) + ' <span class="code">' + Fmt.esc(sbu.code) + '</span></h3>' +
-        (sub ? '<p class="sbu-sector">' + Fmt.esc(sub) + '</p>' : '') +
-        '<p>' + Fmt.esc(sbu.description || 'No description.') + '</p>' +
-        '<div class="sbu-foot">' +
-          '<span class="n">' + sbu.property_count + ' propert' +
-            (sbu.property_count === 1 ? 'y' : 'ies') + '</span>' +
-          '<span><button class="btn btn-ghost btn-sm" data-edit-sbu="' + sbu.id + '">Edit</button> ' +
-          '<button class="btn btn-danger btn-sm" data-delete-sbu="' + sbu.id + '">Delete</button></span>' +
-        '</div>';
-      host.appendChild(card);
-    });
+  function anyPopoverOpen() {
+    return POPOVERS.some((pair) => !$(pair[1]).hidden);
   }
 
   /* ---------- dashboard ---------- */
 
   async function renderDashboard() {
     const host = $('#dashboard');
-    host.innerHTML = '<p class="empty">Loading…</p>';
+    if (!host.innerHTML) host.innerHTML = '<p class="empty">Loading…</p>';
     let stats;
     try {
       stats = await API.stats(activeFilters());
     } catch (err) {
-      host.innerHTML = '<p class="empty">Could not load statistics: ' + Fmt.esc(err.message) + '</p>';
+      host.innerHTML = '<p class="empty">Could not load statistics: ' + esc(err.message) + '</p>';
       return;
     }
 
@@ -479,11 +874,11 @@
     function bars(rows, labelKey, valueKey, max, colorFor) {
       if (!rows.length) return emptyNote;
       return rows.map(function (row) {
-        const width = Math.max(3, Math.round((row[valueKey] / max) * 100));
+        const width = Math.max(4, Math.round((row[valueKey] / max) * 100));
         return '<div class="bar-row">' +
-          '<span class="label" title="' + Fmt.esc(row[labelKey]) + '">' + Fmt.esc(row[labelKey]) + '</span>' +
+          '<span class="label" title="' + esc(row[labelKey]) + '">' + esc(row[labelKey]) + '</span>' +
           '<span class="bar-track"><span class="bar-fill" style="width:' + width + '%;background:' +
-            Fmt.esc(colorFor(row)) + '"></span></span>' +
+            esc(colorFor(row)) + '"></span></span>' +
           '<span class="n">' + row[valueKey] + '</span>' +
         '</div>';
       }).join('');
@@ -493,9 +888,9 @@
       ? '<ul class="mini-list">' + stats.expiringSoon.map(function (d) {
           const days = Fmt.daysUntil(d.expiry_date);
           return '<li><span><a href="#" data-open="' + d.property_id + '">' +
-            Fmt.esc(d.property_code) + '</a> — ' + Fmt.esc(d.title) + '</span>' +
+            esc(d.property_code) + '</a> — ' + esc(d.title) + '</span>' +
             '<span class="when">' + Fmt.date(d.expiry_date) +
-            (days !== null ? ' (' + days + 'd)' : '') + '</span></li>';
+            (days !== null ? ' · ' + days + 'd' : '') + '</span></li>';
         }).join('') + '</ul>'
       : '<p class="muted">No leases, policies or permits expire in the next 180 days' +
         (stats.filtered ? ' among the filtered properties' : '') + '.</p>';
@@ -503,7 +898,7 @@
     host.innerHTML =
       filterBannerHtml(stats) +
       '<div class="stat-row">' +
-        '<div class="stat"><div class="v">' + t.properties + '</div><div class="k">Properties</div></div>' +
+        '<div class="stat hero"><div class="v">' + t.properties + '</div><div class="k">Properties</div></div>' +
         '<div class="stat"><div class="v">' + t.sbus + '</div><div class="k">Business units</div></div>' +
         '<div class="stat"><div class="v">' + t.documents + '</div><div class="k">Documents</div></div>' +
         '<div class="stat"><div class="v">' + t.files + '</div><div class="k">Files stored</div></div>' +
@@ -516,18 +911,18 @@
         '<div class="card"><h3>Properties by owning company</h3>' +
           bars(stats.byEntity, 'short_code', 'n',
                Math.max.apply(null, stats.byEntity.map((e) => e.n).concat([1])),
-               (r) => r.short_code === 'Not recorded' ? '#9aa3ad' : '#6b4b9a') + '</div>' +
+               (r) => r.short_code === 'Not recorded' ? '#d4d4d8' : '#3f3f46') + '</div>' +
         '<div class="card"><h3>Properties by district</h3>' +
-          bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#0b5d8f') + '</div>' +
+          bars(stats.byDistrict, 'district', 'n', maxDistrict, () => '#f25c2a') + '</div>' +
         '<div class="card"><h3>By status</h3>' +
           bars(stats.byStatus.map((s) => ({ label: labelFor('statuses', s.status), n: s.n })),
                'label', 'n',
                Math.max.apply(null, stats.byStatus.map((s) => s.n).concat([1])),
-               () => '#6b7784') + '</div>' +
+               () => '#18181b') + '</div>' +
         '<div class="card"><h3>Expiring within 180 days</h3>' + expiring + '</div>' +
       '</div>' +
-      '<p class="muted" style="margin-top:14px">Land extent totals per business unit (in perches): ' +
-        Fmt.esc(stats.bySbu.map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join('  ·  ')) +
+      '<p class="dash-note">Land extent per business unit, in perches: ' +
+        esc(stats.bySbu.map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join('  ·  ')) +
       '</p>';
 
     const clear = $('#btn-clear-from-dashboard');
@@ -545,83 +940,89 @@
       return;
     }
     state.currentProperty = property;
+    closePopovers();
 
-    $('#drawer-code').textContent = property.property_code;
-    $('#drawer-name').textContent = property.name;
+    $('#drawer-cover').innerHTML = coverHtml(property, DRAWER_R);
+    $('#drawer-code').textContent = property.property_code + ' · ' +
+      shortLabel('statuses', property.status);
+    $('#drawer-name').innerHTML = esc(property.name) + verifiedHtml(property);
     $('#drawer-body').innerHTML = detailHtml(property);
     $('#drawer').hidden = false;
     $('#scrim').hidden = false;
+    writeHash();
   }
 
   function closeDrawer() {
+    const wasOpen = !$('#drawer').hidden;
     $('#drawer').hidden = true;
     $('#scrim').hidden = true;
     state.currentProperty = null;
+    if (wasOpen) writeHash();
   }
 
   function row(label, value) {
     if (value === null || value === undefined || value === '') return '';
-    return '<dt>' + Fmt.esc(label) + '</dt><dd>' + value + '</dd>';
+    return '<dt>' + esc(label) + '</dt><dd>' + value + '</dd>';
   }
 
   function detailHtml(p) {
     const address = [p.address_line1, p.address_line2, p.city, p.postal_code]
-      .filter(Boolean).map(Fmt.esc).join('<br>');
+      .filter(Boolean).map(esc).join('<br>');
 
-    const details =
-      '<div class="detail-actions">' +
-        '<button class="btn btn-primary btn-sm" data-edit="' + p.id + '">Edit property</button>' +
-        '<button class="btn btn-ghost btn-sm" data-locate="' + p.id + '">Show on map</button>' +
-        '<button class="btn btn-ghost btn-sm" data-add-doc="' + p.id + '">+ Add document</button>' +
+    return '<div class="detail-actions">' +
+        '<button class="btn btn-dark btn-sm" data-edit="' + p.id + '">' + icon('pencil') + 'Edit property</button>' +
+        '<button class="btn btn-ghost btn-sm" data-locate="' + p.id + '">' + icon('map') + 'Show on map</button>' +
+        '<button class="btn btn-ghost btn-sm" data-add-doc="' + p.id + '">' + icon('plus') + 'Add document</button>' +
         '<button class="btn btn-danger btn-sm" data-delete="' + p.id + '">Delete</button>' +
       '</div>' +
       '<section class="detail-section"><h3>Classification</h3><dl class="detail-grid">' +
         row('Business unit', '<span class="sbu-pill"><span class="swatch" style="background:' +
-            Fmt.esc(p.sbu_color) + '"></span>' + Fmt.esc(p.sbu_code + ' — ' + p.sbu_name) + '</span>') +
+            esc(p.sbu_color) + '"></span>' + esc(p.sbu_code + ' — ' + p.sbu_name) + '</span>') +
         row('Owned by', p.entity_code
-            ? Fmt.esc(p.entity_code + ' — ' + p.entity_name)
+            ? esc(p.entity_code + ' — ' + p.entity_name)
             : '<span class="muted-inline">No group company — leased or rented in</span>') +
-        row('Sector', Fmt.esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
+        row('Sector', esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
             .filter(Boolean).join(' · '))) +
-        row('Type', Fmt.esc(labelFor('propertyTypes', p.property_type))) +
-        row('Ownership', Fmt.esc(labelFor('ownershipTypes', p.ownership_type))) +
-        row('Status', '<span class="badge ' + Fmt.esc(p.status) + '">' +
-            Fmt.esc(labelFor('statuses', p.status)) + '</span>') +
-        row('Current use', Fmt.esc(p.current_use)) +
+        row('Type', esc(labelFor('propertyTypes', p.property_type))) +
+        row('Ownership', esc(labelFor('ownershipTypes', p.ownership_type))) +
+        row('Status', '<span class="badge ' + esc(p.status) + '">' +
+            esc(labelFor('statuses', p.status)) + '</span>') +
+        row('Current use', esc(p.current_use)) +
       '</dl></section>' +
 
       '<section class="detail-section"><h3>Location</h3><dl class="detail-grid">' +
         row('Location', p.location_name
-            ? (p.location_code ? '<span class="loc-code">' + Fmt.esc(p.location_code) +
-                '</span> ' : '') + Fmt.esc(p.location_name)
+            ? (p.location_code ? '<span class="loc-code">' + esc(p.location_code) +
+                '</span> ' : '') + esc(p.location_name)
             : '<span class="muted-inline">Not linked to the location master</span>') +
         row('Address', address) +
-        row('District', Fmt.esc(p.district)) +
-        row('Province', Fmt.esc(p.province)) +
+        row('District', esc(p.district)) +
+        row('Province', esc(p.province)) +
         row('Coordinates', '<span style="font-variant-numeric:tabular-nums">' +
             Fmt.coords(p.latitude, p.longitude) + '</span>') +
       '</dl></section>' +
 
       '<section class="detail-section"><h3>Extent &amp; value</h3><dl class="detail-grid">' +
-        row('Land extent', Fmt.esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits))) +
+        row('Land extent', esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits))) +
         row('Building area', p.building_area_sqft ? Fmt.num(p.building_area_sqft) + ' sq ft' : '') +
-        row('Assessment no.', Fmt.esc(p.assessment_no)) +
-        row('Survey plan', Fmt.esc([p.plan_no, p.lot_no ? 'Lot ' + p.lot_no : ''].filter(Boolean).join(' · '))) +
+        row('Assessment no.', esc(p.assessment_no)) +
+        row('Survey plan', esc([p.plan_no, p.lot_no ? 'Lot ' + p.lot_no : ''].filter(Boolean).join(' · '))) +
         row('Acquired', Fmt.date(p.acquisition_date)) +
         row('Acquisition cost', Fmt.money(p.acquisition_cost, p.currency)) +
         row('Current value', Fmt.money(p.current_value, p.currency)) +
       '</dl></section>' +
 
-      '<section class="detail-section"><h3>Custody</h3><dl class="detail-grid">' +
-        row('Custodian', Fmt.esc(p.custodian)) +
-        row('Contact', Fmt.esc(p.contact_phone)) +
-        row('Notes', Fmt.esc(p.notes)) +
-      '</dl></section>' +
+      (p.custodian || p.contact_phone || p.notes
+        ? '<section class="detail-section"><h3>Custody</h3><dl class="detail-grid">' +
+            row('Custodian', esc(p.custodian)) +
+            row('Contact', esc(p.contact_phone)) +
+            row('Notes', esc(p.notes)) +
+          '</dl></section>'
+        : '') +
 
       '<section class="detail-section"><h3>Documents (' + p.documents.length + ')</h3>' +
         documentsHtml(p.documents) +
       '</section>';
-    return details;
   }
 
   function documentsHtml(documents) {
@@ -637,25 +1038,27 @@
         expiryNote = ' · expires <span class="' + cls + '">' + Fmt.date(d.expiry_date) + suffix + '</span>';
       }
       const meta = [
-        d.reference_no ? 'Ref ' + Fmt.esc(d.reference_no) : '',
+        d.reference_no ? 'Ref ' + esc(d.reference_no) : '',
         d.issue_date ? 'issued ' + Fmt.date(d.issue_date) : '',
-        d.counterparty ? Fmt.esc(d.counterparty) : '',
+        d.counterparty ? esc(d.counterparty) : '',
         d.amount ? Fmt.money(d.amount, d.currency) : ''
       ].filter(Boolean).join(' · ');
 
       const fileBits = d.stored_name
-        ? '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file" target="_blank" rel="noopener">View</a>' +
-          '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file?disposition=attachment">Download</a>' +
-          '<span class="no-file">' + Fmt.esc(d.file_name) + ' · ' + Fmt.fileSize(d.size_bytes) + '</span>'
+        ? '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file" target="_blank" rel="noopener">' +
+            icon('open') + 'View</a>' +
+          '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file?disposition=attachment">' +
+            icon('download') + 'Download</a>' +
+          '<span class="no-file">' + esc(d.file_name) + ' · ' + Fmt.fileSize(d.size_bytes) + '</span>'
         : '<span class="no-file">No file attached</span>';
 
       return '<div class="doc-item">' +
-        '<div class="doc-top"><span class="doc-type ' + Fmt.esc(d.doc_type) + '">' +
-          Fmt.esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
+        '<div class="doc-top"><span class="doc-type ' + esc(d.doc_type) + '">' +
+          esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
           '<button class="btn btn-danger btn-sm" data-delete-doc="' + d.id + '">Remove</button></div>' +
-        '<h4>' + Fmt.esc(d.title) + '</h4>' +
+        '<h4>' + esc(d.title) + '</h4>' +
         '<p class="doc-meta">' + meta + expiryNote + '</p>' +
-        (d.notes ? '<p class="doc-meta">' + Fmt.esc(d.notes) + '</p>' : '') +
+        (d.notes ? '<p class="doc-meta">' + esc(d.notes) + '</p>' : '') +
         '<div class="doc-foot">' + fileBits + '</div>' +
       '</div>';
     }).join('');
@@ -671,6 +1074,7 @@
       switchView('sbus');
       return;
     }
+    closePopovers();
     const form = $('#property-form');
     form.reset();
     $('#property-form-error').hidden = true;
@@ -788,7 +1192,7 @@
       if (!id || (state.currentProperty && String(state.currentProperty.id) === String(id))) {
         openDrawer(saved.id);
       }
-      MapView.focus(saved.id);
+      if (state.view === 'portfolio' && state.mode === 'map') MapView.focus(saved.id);
     } catch (err) {
       errorBox.textContent = err.message;
       errorBox.hidden = false;
@@ -890,6 +1294,7 @@
       $('#doc-modal').hidden = true;
       await openDrawer(propertyId);
       await refreshProperties();
+      loadAlerts();
       toast('Document attached.');
     } catch (err) {
       errorBox.textContent = err.message;
@@ -899,20 +1304,54 @@
     }
   }
 
-  /* ---------- view switching ---------- */
+  /* ---------- views & layout ---------- */
 
   function switchView(view) {
     state.view = view;
-    $$('.tab').forEach((tab) => tab.classList.toggle('is-active', tab.dataset.view === view));
+    document.body.dataset.view = view;
+    closePopovers();
+    $$('.nav-pill .tab').forEach((tab) => {
+      const on = tab.dataset.view === view;
+      tab.classList.toggle('is-active', on);
+      tab.setAttribute('aria-selected', on);
+    });
     $$('.view').forEach((section) =>
       section.classList.toggle('is-active', section.id === 'view-' + view));
-    if (view === 'map') MapView.invalidate();
+    if (view === 'portfolio' && state.mode === 'map') MapView.invalidate();
     if (view === 'dashboard') renderDashboard();
     if (view === 'masters') Masters.show();
+    writeHash();
   }
 
-  async function locate(propertyId) {
-    switchView('map');
+  function setMode(mode) {
+    state.mode = mode;
+    const body = $('#portfolio-body');
+    body.classList.remove('mode-map', 'mode-grid', 'mode-table');
+    body.classList.add('mode-' + mode);
+    $$('#mode-toggle button').forEach((b) => {
+      const on = b.dataset.mode === mode;
+      b.classList.toggle('is-active', on);
+      b.setAttribute('aria-selected', on);
+    });
+    if (mode === 'map') MapView.invalidate();
+    else MapView.hideCard();
+    writeHash();
+  }
+
+  function setExpanded(on) {
+    state.expanded = on;
+    $('#portfolio-body').classList.toggle('map-expanded', on);
+    const button = $('#map-expand');
+    button.querySelector('use').setAttribute('href', on ? '#i-collapse' : '#i-expand');
+    button.title = on ? 'Show the property cards' : 'Expand map';
+    button.setAttribute('aria-label', button.title);
+    MapView.invalidate();
+  }
+
+  function locate(propertyId) {
+    closeDrawer();
+    if (state.view !== 'portfolio') switchView('portfolio');
+    if (state.mode !== 'map') setMode('map');
     MapView.invalidate();
     setTimeout(function () {
       if (!MapView.focus(propertyId)) {
@@ -926,32 +1365,87 @@
   let searchTimer = null;
 
   function wireEvents() {
-    $$('.tab').forEach((tab) =>
+    $$('.nav-pill .tab').forEach((tab) =>
       tab.addEventListener('click', () => switchView(tab.dataset.view)));
+    $$('#mode-toggle button').forEach((b) =>
+      b.addEventListener('click', () => setMode(b.dataset.mode)));
+    $$('#tenure-tabs button').forEach((b) =>
+      b.addEventListener('click', () => setTenure(b.dataset.tenure)));
+    $('#map-expand').addEventListener('click', () => setExpanded(!state.expanded));
+
+    $('#sort-by').addEventListener('change', function (event) {
+      state.sort = event.target.value;
+      renderCards();
+      renderTable();
+    });
 
     $('#search').addEventListener('input', function (event) {
       clearTimeout(searchTimer);
       const value = event.target.value;
       searchTimer = setTimeout(function () {
-        state.filters.q = value;
+        state.filters.q = value.trim();
         refreshProperties();
       }, 250);
     });
 
-    ['district', 'status', 'type'].forEach(function (key) {
-      const field = key === 'type' ? 'property_type' : key;
-      $('#filter-' + key).addEventListener('change', function (event) {
-        state.filters[field] = event.target.value;
+    // Filter popover
+    $('#btn-filters').addEventListener('click', (e) => {
+      e.stopPropagation(); togglePopover('#btn-filters', '#filter-pop');
+    });
+    $('#btn-alerts').addEventListener('click', (e) => {
+      e.stopPropagation(); togglePopover('#btn-alerts', '#alerts-pop');
+    });
+    $('#btn-filters-done').addEventListener('click', closePopovers);
+
+    [['#filter-district', 'district'], ['#filter-status', 'status'],
+     ['#filter-type', 'property_type'], ['#filter-entity', 'legal_entity_id'],
+     ['#filter-location', 'location_id']].forEach(function (pair) {
+      $(pair[0]).addEventListener('change', function (event) {
+        state.filters[pair[1]] = event.target.value;
         refreshProperties();
       });
     });
+    $('#filter-tenure').addEventListener('change', (e) => setTenure(e.target.value));
 
     $('#btn-reset-filters').addEventListener('click', resetFilters);
-
     $('#btn-sbu-all').addEventListener('click', function () {
       state.selectedSbus = null;
       renderSbuFilters();
       refreshProperties();
+    });
+    $('#sbu-filters').addEventListener('click', function (event) {
+      const chip = event.target.closest('[data-sbu-chip]');
+      if (chip) toggleSbu(Number(chip.dataset.sbuChip));
+    });
+
+    $('#map-legend').addEventListener('click', function (event) {
+      const chip = event.target.closest('[data-legend-sbu]');
+      if (!chip) return;
+      const id = Number(chip.dataset.legendSbu);
+      const solo = state.selectedSbus && state.selectedSbus.length === 1 && state.selectedSbus[0] === id;
+      state.selectedSbus = solo ? null : [id];
+      renderSbuFilters();
+      refreshProperties();
+    });
+
+    $('#active-chips').addEventListener('click', function (event) {
+      const button = event.target.closest('[data-chip-clear]');
+      if (!button) return;
+      if (button.dataset.chipClear === 'all') { resetFilters(); return; }
+      const chip = currentChips[Number(button.dataset.chipClear)];
+      if (chip) { chip.clear(); refreshProperties(); }
+    });
+
+    // Cards open the drawer; their buttons are handled by the delegated handler.
+    $('#property-cards').addEventListener('click', function (event) {
+      if (event.target.closest('button, a')) return;
+      const card = event.target.closest('.pcard');
+      if (card) openDrawer(Number(card.dataset.card));
+    });
+    $('#property-cards').addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      const card = event.target.closest('.pcard');
+      if (card && event.target === card) openDrawer(Number(card.dataset.card));
     });
 
     $('#btn-new-property').addEventListener('click', () => openPropertyModal(null));
@@ -961,10 +1455,6 @@
     $('#btn-save-sbu').addEventListener('click', saveSbu);
     $('#btn-save-entity').addEventListener('click', saveEntity);
     $('#entity-form').addEventListener('submit', (e) => { e.preventDefault(); saveEntity(); });
-    $('#filter-entity').addEventListener('change', function (event) {
-      state.filters.legal_entity_id = event.target.value;
-      refreshProperties();
-    });
     $('#btn-save-doc').addEventListener('click', saveDocument);
     $('#btn-close-drawer').addEventListener('click', closeDrawer);
     $('#scrim').addEventListener('click', closeDrawer);
@@ -980,11 +1470,7 @@
       const district = state.reference.districts
         .filter((d) => d.district === event.target.value)[0];
       propertyForm.province.value = district ? district.province : '';
-      if (district && !propertyForm.latitude.value) {
-        MapView.centerPicker(district.lat, district.lng, 11);
-      } else if (district) {
-        MapView.centerPicker(district.lat, district.lng, 11);
-      }
+      if (district) MapView.centerPicker(district.lat, district.lng, 11);
     });
 
     propertyForm.location_id.addEventListener('change', function (event) {
@@ -1014,11 +1500,6 @@
       }
     });
 
-    $('#filter-location').addEventListener('change', function (event) {
-      state.filters.location_id = event.target.value;
-      refreshProperties();
-    });
-
     $('#btn-paste-coords').addEventListener('click', function () {
       const input = window.prompt(
         'Paste coordinates copied from Google Maps, e.g.  6.927079, 79.861244');
@@ -1037,22 +1518,28 @@
         button.closest('.modal').hidden = true;
       }));
 
+    // Escape unwinds one layer at a time: popover, modal, drawer, map card.
     document.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape') return;
+      if (anyPopoverOpen()) { closePopovers(); return; }
       const openModal = $$('.modal').filter((m) => !m.hidden)[0];
       if (openModal) { openModal.hidden = true; return; }
-      if (!$('#drawer').hidden) closeDrawer();
+      if (!$('#drawer').hidden) { closeDrawer(); return; }
+      if (MapView.isCardOpen()) MapView.hideCard();
     });
 
     // Delegated actions for dynamically rendered buttons.
     document.addEventListener('click', function (event) {
+      if (anyPopoverOpen() && !event.target.closest('.pop-anchor')) closePopovers();
+
       const target = event.target.closest('[data-open],[data-locate],[data-edit],[data-delete],' +
         '[data-add-doc],[data-delete-doc],[data-edit-sbu],[data-delete-sbu],' +
-        '[data-edit-entity],[data-delete-entity]');
+        '[data-edit-entity],[data-delete-entity],[data-go]');
       if (!target) return;
       const d = target.dataset;
 
-      if (d.open !== undefined) { event.preventDefault(); openDrawer(Number(d.open)); }
+      if (d.go !== undefined) { event.preventDefault(); closePopovers(); switchView(d.go); }
+      else if (d.open !== undefined) { event.preventDefault(); openDrawer(Number(d.open)); }
       else if (d.locate !== undefined) locate(Number(d.locate));
       else if (d.edit !== undefined) openPropertyModal(Number(d.edit));
       else if (d.delete !== undefined) removeProperty(Number(d.delete));
@@ -1081,6 +1568,7 @@
       closeDrawer();
       await refreshSbus();
       await refreshProperties();
+      loadAlerts();
       toast('Property deleted.');
     } catch (err) { toast(err.message, true); }
   }
@@ -1092,6 +1580,7 @@
       await API.deleteDocument(documentId);
       if (propertyId) await openDrawer(propertyId);
       await refreshProperties();
+      loadAlerts();
       toast('Document removed.');
     } catch (err) { toast(err.message, true); }
   }
