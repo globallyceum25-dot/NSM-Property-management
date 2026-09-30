@@ -4,12 +4,14 @@ Run with:  python3 -m server.app  [--port 8000] [--host 127.0.0.1]
 """
 
 import argparse
+import errno
 import json
 import mimetypes
 import os
 import posixpath
 import sys
 import traceback
+import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
@@ -186,19 +188,48 @@ class Handler(BaseHTTPRequestHandler):
     do_DELETE = _dispatch
 
 
+def _register_already_running(host, port):
+    """True if the process holding the port is this app, not something else."""
+    probe_host = "127.0.0.1" if host in ("", "0.0.0.0") else host
+    url = "http://%s:%d/api/reference" % (probe_host, port)
+    try:
+        with urllib.request.urlopen(url, timeout=2) as response:
+            return "mapCenter" in json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return False
+
+
 def main():
     parser = argparse.ArgumentParser(description="Property register server")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
     args = parser.parse_args()
 
+    # Claim the port before touching the database, so a second start neither
+    # migrates a live database nor dies with a bare traceback.
+    try:
+        httpd = ThreadingHTTPServer((args.host, args.port), Handler)
+    except OSError as exc:
+        if exc.errno != errno.EADDRINUSE:
+            raise
+        if _register_already_running(args.host, args.port):
+            print("The property register is already running at http://%s:%d/"
+                  % (args.host, args.port))
+            print("Open that address in your browser. To restart it, stop it first:")
+            print("    pkill -f server.app")
+            return 0
+        print("Port %d is in use by another program." % args.port)
+        print("Start the register on a different port instead:")
+        print("    PORT=8080 ./run.sh")
+        return 1
+
     db.init_db()
-    httpd = ThreadingHTTPServer((args.host, args.port), Handler)
     httpd.daemon_threads = True
     print("Property register running at http://%s:%d/" % (args.host, args.port))
     print("Database: %s" % db.DB_PATH)
     print("Uploads:  %s" % db.UPLOAD_DIR)
     print("Press Ctrl+C to stop.")
+    sys.stdout.flush()   # show the banner even when output goes to a log file
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
@@ -208,4 +239,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

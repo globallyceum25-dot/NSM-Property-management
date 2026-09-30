@@ -21,6 +21,13 @@ Then open <http://127.0.0.1:8000/>. To use another port:
 PORT=8080 ./run.sh
 ```
 
+If the register is already running, `./run.sh` says so and leaves it alone
+rather than starting a second copy. To restart it, stop it first:
+
+```bash
+pkill -f server.app
+```
+
 The database and uploaded files are created on first run under `data/`.
 Back up that one folder and you have backed up the whole system.
 
