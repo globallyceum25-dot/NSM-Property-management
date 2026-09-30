@@ -113,6 +113,14 @@ bookmarked or sent: `#dashboard`, `#portfolio/grid`, `#portfolio/table`,
 whatever is on top: a popover, then a form, then the property panel, then the
 map card.
 
+**Forms** — numbers are read the way people type them: `1,250,000`,
+`LKR 1,250,000`, `Rs. 420,000/=`. Every problem is reported on the field
+itself, which is scrolled into view and focused, so a long form never looks as
+if its button did nothing; buttons show *Saving…* / *Uploading…* while they
+work. Files can be dropped onto the document form or chosen; the type and size
+are checked the moment a file is picked, and a rejected upload never leaves a
+file on disk.
+
 **Coordinate quality** — coordinates are validated server-side and in the browser
 against Sri Lanka's bounding box (lat 5.80–9.95, lng 79.40–82.05). Values outside
 it are rejected, and a transposed pair is detected and named as such, because

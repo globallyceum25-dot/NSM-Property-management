@@ -342,10 +342,10 @@
 
     fillSelect($('#doc-form').doc_type, optionsFrom(ref.documentTypes), { value: 'DEED' });
     $('#doc-file-hint').textContent =
-      'PDF, image, Word, Excel or ZIP up to ' +
-      Math.round(ref.maxUploadBytes / (1024 * 1024)) + ' MB. Optional — you can record a ' +
-      'document reference now and attach the scan later. A Photograph document with an ' +
-      'image file becomes the property’s cover picture.';
+      'Optional. PDF, image, Word, Excel or ZIP, up to ' +
+      Math.round(ref.maxUploadBytes / (1024 * 1024)) + ' MB. You can record the reference ' +
+      'now and attach the scan later. A Photograph with an image file becomes the ' +
+      'property’s cover picture.';
   }
 
   /* ---------- data ---------- */
@@ -864,12 +864,15 @@
   async function saveEntity() {
     const form = $('#entity-form');
     const errorBox = $('#entity-form-error');
+    clearFieldErrors(form);
     errorBox.hidden = true;
-    if (!form.reportValidity()) return;
+    if (!checkRequired(form)) return;
 
     const data = collectForm(form);
     const id = form.id.value;
     delete data.id;
+    const button = $('#btn-save-entity');
+    setBusy(button, 'Saving…');
     try {
       if (id) await API.updateEntity(id, data);
       else await API.createEntity(data);
@@ -878,8 +881,9 @@
       await refreshProperties();
       toast(id ? 'Owning company updated.' : 'Owning company added.');
     } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.hidden = false;
+      showFormError(form, errorBox, err.message, err.field);
+    } finally {
+      setBusy(button, null);
     }
   }
 
@@ -1352,6 +1356,7 @@
     closePopovers();
     const form = $('#property-form');
     form.reset();
+    clearFieldErrors(form);
     $('#property-form-error').hidden = true;
     $('#coord-error').hidden = true;
     fillSelect(form.status, optionsFrom(state.reference.statuses), { value: 'ACTIVE' });
@@ -1423,6 +1428,20 @@
     return true;
   }
 
+  /* ---------- form helpers ---------- */
+
+  // Read a number the way people type one: "1,250,000", "LKR 1,250,000",
+  // "Rs. 420,000/=". Mirrors the server, so what passes here saves there.
+  function parseNumber(raw) {
+    const text = String(raw == null ? '' : raw).trim()
+      .replace(/^(?:lkr|rs\.?|usd|us\$|\$)\s*/i, '')
+      .replace(/\s*\/\s*[=-]\s*$/, '')
+      .replace(/[,\s_]/g, '');
+    if (text === '') return { ok: true, value: null };
+    const value = Number(text);
+    return isFinite(value) ? { ok: true, value: value } : { ok: false, value: null };
+  }
+
   function collectForm(form, numericFields) {
     const data = {};
     Array.prototype.forEach.call(form.elements, function (field) {
@@ -1431,7 +1450,10 @@
       let value = field.value;
       if (typeof value === 'string') value = value.trim();
       if (numericFields && numericFields.indexOf(field.name) !== -1) {
-        data[field.name] = value === '' ? null : Number(value);
+        // Never silently drop a value: an unreadable one is sent as typed so
+        // the server names the field (checkNumbers normally catches it first).
+        const parsed = parseNumber(value);
+        data[field.name] = parsed.ok ? parsed.value : value;
       } else {
         data[field.name] = value === '' ? null : value;
       }
@@ -1439,25 +1461,119 @@
     return data;
   }
 
+  function fieldLabel(field) {
+    const label = field.closest('label');
+    const text = label ? label.firstChild && label.firstChild.textContent : field.name;
+    return String(text || field.name).replace(/\*/g, '').trim();
+  }
+
+  // Required and malformed fields, reported inline like every other error
+  // (the forms are novalidate, so the browser's pop-up bubbles never appear).
+  function checkRequired(form) {
+    const fields = Array.prototype.slice.call(form.elements);
+    for (let i = 0; i < fields.length; i++) {
+      const field = fields[i];
+      if (!field.name || field.disabled || field.type === 'hidden' || field.checkValidity()) continue;
+      const label = fieldLabel(field);
+      const message = field.validity.valueMissing
+        ? (field.tagName === 'SELECT' ? 'Choose ' : 'Enter ') +
+          label.charAt(0).toLowerCase() + label.slice(1) + '.'
+        : field.validationMessage;
+      fieldError(form, field.name, message);
+      return false;
+    }
+    return true;
+  }
+
+  // Flags the first numeric field that can't be read. Returns true if all are fine.
+  function checkNumbers(form, names) {
+    for (let i = 0; i < names.length; i++) {
+      const field = form.elements[names[i]];
+      if (field && !parseNumber(field.value).ok) {
+        fieldError(form, names[i], fieldLabel(field) + ' must be a number, for example 1,250,000.');
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function clearFieldErrors(form) {
+    form.querySelectorAll('.is-invalid').forEach((el) => {
+      el.classList.remove('is-invalid');
+      el.removeAttribute('aria-invalid');
+    });
+    form.querySelectorAll('.field-msg').forEach((el) => el.remove());
+  }
+
+  // Put the message on the field itself, then bring it into view and focus it,
+  // so a long form never looks as if its button did nothing.
+  function fieldError(form, name, message) {
+    const field = name && form.elements[name];
+    if (!field || field.type === 'hidden') return false;
+    field.classList.add('is-invalid');
+    field.setAttribute('aria-invalid', 'true');
+    const msg = document.createElement('span');
+    msg.className = 'field-msg';
+    msg.setAttribute('role', 'alert');
+    msg.textContent = message;
+    const host = field.closest('label') || field.closest('.field-block') || field.parentElement;
+    host.appendChild(msg);
+    field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    field.focus({ preventScroll: true });
+    return true;
+  }
+
+  function showFormError(form, box, message, fieldName) {
+    clearFieldErrors(form);
+    box.hidden = true;
+    if (fieldError(form, fieldName, message)) return;
+    box.textContent = message;
+    box.hidden = false;
+    box.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // Shows the button is working, and stops a double submit.
+  function setBusy(button, busyText) {
+    if (busyText) {
+      button.dataset.idleText = button.textContent;
+      button.textContent = busyText;
+      button.disabled = true;
+      button.classList.add('is-busy');
+    } else {
+      if (button.dataset.idleText) button.textContent = button.dataset.idleText;
+      button.disabled = false;
+      button.classList.remove('is-busy');
+    }
+  }
+
+  const PROPERTY_NUMBERS = ['latitude', 'longitude', 'extent_value',
+    'building_area_sqft', 'acquisition_cost', 'current_value'];
+
   async function saveProperty() {
     const form = $('#property-form');
     const errorBox = $('#property-form-error');
+    clearFieldErrors(form);
     errorBox.hidden = true;
 
-    if (!form.reportValidity()) return;
+    if (!checkRequired(form)) return;
+    if (!checkNumbers(form, PROPERTY_NUMBERS)) return;
     if (!validateCoords()) {
-      errorBox.textContent = 'Fix the coordinates before saving.';
-      errorBox.hidden = false;
+      const coord = $('#coord-error');
+      if (coord.hidden) {
+        showFormError(form, errorBox, 'Enter both latitude and longitude, or click the map to place the pin.', 'latitude');
+      } else {
+        coord.scrollIntoView({ block: 'center', behavior: 'smooth' });
+        form.latitude.focus({ preventScroll: true });
+      }
       return;
     }
 
-    const data = collectForm(form, ['latitude', 'longitude', 'extent_value',
-      'building_area_sqft', 'acquisition_cost', 'current_value', 'sbu_id']);
+    const data = collectForm(form, PROPERTY_NUMBERS.concat(['sbu_id']));
     const id = form.id.value;
     delete data.id;
 
     const button = $('#btn-save-property');
-    button.disabled = true;
+    setBusy(button, 'Saving…');
     try {
       const saved = id ? await API.updateProperty(id, data) : await API.createProperty(data);
       $('#property-modal').hidden = true;
@@ -1469,11 +1585,9 @@
       }
       if (state.view === 'portfolio' && state.mode === 'map') MapView.focus(saved.id);
     } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.hidden = false;
-      if (err.field && form.elements[err.field]) form.elements[err.field].focus();
+      showFormError(form, errorBox, err.message, err.field);
     } finally {
-      button.disabled = false;
+      setBusy(button, null);
     }
   }
 
@@ -1506,13 +1620,16 @@
   async function saveSbu() {
     const form = $('#sbu-form');
     const errorBox = $('#sbu-form-error');
+    clearFieldErrors(form);
     errorBox.hidden = true;
-    if (!form.reportValidity()) return;
+    if (!checkRequired(form)) return;
 
     const data = collectForm(form);
     const id = form.id.value;
     delete data.id;
 
+    const button = $('#btn-save-sbu');
+    setBusy(button, 'Saving…');
     try {
       if (id) await API.updateSbu(id, data);
       else await API.createSbu(data);
@@ -1521,8 +1638,9 @@
       await refreshProperties();
       toast(id ? 'Business unit updated.' : 'Business unit added.');
     } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.hidden = false;
+      showFormError(form, errorBox, err.message, err.field);
+    } finally {
+      setBusy(button, null);
     }
   }
 
@@ -1534,6 +1652,7 @@
     $('#doc-form-error').hidden = true;
     fillSelect(form.doc_type, optionsFrom(state.reference.documentTypes), { value: 'DEED' });
     form.property_id.value = propertyId;
+    renderFileState();
     $('#doc-modal').hidden = false;
     setTimeout(() => form.doc_type.focus(), 50);
   }
@@ -1541,42 +1660,132 @@
   async function saveDocument() {
     const form = $('#doc-form');
     const errorBox = $('#doc-form-error');
+    clearFieldErrors(form);
     errorBox.hidden = true;
-    if (!form.reportValidity()) return;
+    if (!checkRequired(form)) return;
+    if (!checkNumbers(form, ['amount'])) return;
+
+    const issue = form.issue_date.value;
+    const expiry = form.expiry_date.value;
+    if (issue && expiry && expiry < issue) {
+      fieldError(form, 'expiry_date', 'Expiry date cannot be before the issue date.');
+      return;
+    }
+
+    const file = form.elements.file.files[0];
+    const fileProblem = file ? checkFile(file) : null;
+    if (fileProblem) {
+      fieldError(form, 'file', fileProblem);
+      return;
+    }
 
     const propertyId = form.property_id.value;
     const formData = new FormData();
     ['doc_type', 'title', 'reference_no', 'issue_date', 'expiry_date',
-     'counterparty', 'amount', 'notes'].forEach(function (name) {
+     'counterparty', 'notes'].forEach(function (name) {
       const value = (form.elements[name].value || '').trim();
       if (value) formData.append(name, value);
     });
-    const file = form.elements.file.files[0];
-    if (file) {
-      if (file.size > state.reference.maxUploadBytes) {
-        errorBox.textContent = 'That file is ' + Fmt.fileSize(file.size) + ' — the limit is ' +
-          Fmt.fileSize(state.reference.maxUploadBytes) + '.';
-        errorBox.hidden = false;
-        return;
-      }
-      formData.append('file', file, file.name);
-    }
+    const amount = parseNumber(form.amount.value);
+    if (amount.value !== null) formData.append('amount', String(amount.value));
+    if (file) formData.append('file', file, file.name);
 
     const button = $('#btn-save-doc');
-    button.disabled = true;
+    setBusy(button, file ? 'Uploading…' : 'Saving…');
     try {
       await API.addDocument(propertyId, formData);
       $('#doc-modal').hidden = true;
       await openDrawer(propertyId);
       await refreshProperties();
       loadAlerts();
-      toast('Document attached.');
+      toast(file ? 'Document and file attached.' : 'Document recorded.');
     } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.hidden = false;
+      showFormError(form, errorBox, err.message, err.field);
     } finally {
-      button.disabled = false;
+      setBusy(button, null);
     }
+  }
+
+  /* ---------- the file drop zone ---------- */
+
+  const IMAGE_TYPES = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+
+  function extensionOf(name) {
+    const dot = name.lastIndexOf('.');
+    return dot === -1 ? '' : name.slice(dot).toLowerCase();
+  }
+
+  // Returns a reason the file can't be uploaded, or null.
+  function checkFile(file) {
+    const ext = extensionOf(file.name);
+    const allowed = state.reference.allowedExtensions || [];
+    if (allowed.length && allowed.indexOf(ext) === -1) {
+      return (ext ? ext.slice(1).toUpperCase() + ' files' : 'Files without an extension') +
+        ' can\u2019t be attached. Use PDF, an image, Word, Excel or ZIP.';
+    }
+    if (file.size > state.reference.maxUploadBytes) {
+      return 'That file is ' + Fmt.fileSize(file.size) + '; the limit is ' +
+        Fmt.fileSize(state.reference.maxUploadBytes) + '.';
+    }
+    if (file.size === 0) return 'That file is empty.';
+    return null;
+  }
+
+  function renderFileState() {
+    const form = $('#doc-form');
+    const input = form.elements.file;
+    const file = input.files[0];
+    const zone = $('#doc-dropzone');
+    const warn = $('#doc-file-warn');
+    clearFieldErrors(form);
+    zone.querySelector('.dz-empty').hidden = !!file;
+    zone.querySelector('.dz-file').hidden = !file;
+    zone.classList.toggle('has-file', !!file);
+    warn.hidden = true;
+    if (!file) return;
+
+    zone.querySelector('.dz-name').textContent = file.name;
+    zone.querySelector('.dz-size').textContent = Fmt.fileSize(file.size);
+    const problem = checkFile(file);
+    if (problem) {
+      fieldError(form, 'file', problem);
+    } else if (form.doc_type.value === 'PHOTOGRAPH' && IMAGE_TYPES.indexOf(extensionOf(file.name)) === -1) {
+      warn.textContent = 'This will be saved, but only an image file (JPG, PNG, GIF or WebP) ' +
+        'becomes the property\u2019s cover picture.';
+      warn.hidden = false;
+    }
+  }
+
+  function wireDropzone() {
+    const form = $('#doc-form');
+    const input = form.elements.file;
+    const zone = $('#doc-dropzone');
+
+    input.addEventListener('change', renderFileState);
+    form.doc_type.addEventListener('change', renderFileState);
+    $('#doc-file-clear').addEventListener('click', function () {
+      input.value = '';
+      renderFileState();
+      input.focus();
+    });
+
+    ['dragenter', 'dragover'].forEach((type) => zone.addEventListener(type, function (event) {
+      event.preventDefault();
+      zone.classList.add('is-drag');
+    }));
+    ['dragleave', 'dragend'].forEach((type) => zone.addEventListener(type, function (event) {
+      if (!zone.contains(event.relatedTarget)) zone.classList.remove('is-drag');
+    }));
+    zone.addEventListener('drop', function (event) {
+      event.preventDefault();
+      zone.classList.remove('is-drag');
+      const dropped = event.dataTransfer && event.dataTransfer.files;
+      if (!dropped || !dropped.length) return;
+      const one = new DataTransfer();
+      one.items.add(dropped[0]);        // one document, one file
+      input.files = one.files;
+      renderFileState();
+    });
   }
 
   /* ---------- views & layout ---------- */
@@ -1736,6 +1945,18 @@
     $('#btn-save-entity').addEventListener('click', saveEntity);
     $('#entity-form').addEventListener('submit', (e) => { e.preventDefault(); saveEntity(); });
     $('#btn-save-doc').addEventListener('click', saveDocument);
+    wireDropzone();
+
+    // Typing into a flagged field clears its error.
+    document.addEventListener('input', function (event) {
+      const field = event.target;
+      if (!field.classList || !field.classList.contains('is-invalid')) return;
+      field.classList.remove('is-invalid');
+      field.removeAttribute('aria-invalid');
+      const host = field.closest('label') || field.closest('.field-block');
+      const msg = host && host.querySelector('.field-msg');
+      if (msg) msg.remove();
+    });
     $('#btn-close-drawer').addEventListener('click', closeDrawer);
     $('#scrim').addEventListener('click', closeDrawer);
 

@@ -47,23 +47,36 @@ def _clean_str(value):
     return value or None
 
 
-def _as_float(value, field):
+# Currency marks and separators people type around amounts: "LKR 1,250,000",
+# "Rs. 420,000/=", "1 250 000". Stripped before the number is read.
+_CURRENCY_PREFIX = re.compile(r"^(?:lkr|rs\.?|usd|us\$|\$)\s*", re.IGNORECASE)
+_AMOUNT_SUFFIX = re.compile(r"\s*/\s*[=-]\s*$")
+
+
+def _as_float(value, label, key):
+    """Read a number the way people write one; `key` names the form field."""
     if value is None or value == "":
         return None
-    try:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
         return float(value)
-    except (TypeError, ValueError):
-        raise ApiError("%s must be a number." % field, field=field)
+    text = _AMOUNT_SUFFIX.sub("", _CURRENCY_PREFIX.sub("", str(value).strip()))
+    text = text.replace(",", "").replace(" ", "").replace("_", "")
+    if text == "":
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        raise ApiError("%s must be a number, for example 1,250,000." % label, field=key)
 
 
-def _as_date(value, field):
+def _as_date(value, label, key):
     value = _clean_str(value)
     if value is None:
         return None
     try:
         datetime.datetime.strptime(value, "%Y-%m-%d")
     except ValueError:
-        raise ApiError("%s must be a date in YYYY-MM-DD format." % field, field=field)
+        raise ApiError("%s must be a date in YYYY-MM-DD format." % label, field=key)
     return value
 
 
@@ -114,6 +127,7 @@ def get_reference(ctx):
         "mapZoom": srilanka.MAP_DEFAULT_ZOOM,
         "colors": srilanka.SBU_COLORS,
         "maxUploadBytes": MAX_UPLOAD_BYTES,
+        "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
     }
 
 
@@ -451,8 +465,8 @@ def _property_payload(ctx, conn):
                             (location_id,)).fetchone():
             raise ApiError("The selected location does not exist.", field="location_id")
 
-    lat = _as_float(data.get("latitude"), "Latitude")
-    lng = _as_float(data.get("longitude"), "Longitude")
+    lat = _as_float(data.get("latitude"), "Latitude", "latitude")
+    lng = _as_float(data.get("longitude"), "Longitude", "longitude")
     ok, message = srilanka.coordinates_in_sri_lanka(lat, lng)
     if not ok:
         raise ApiError(message, field="latitude")
@@ -480,11 +494,11 @@ def _property_payload(ctx, conn):
                                    srilanka.EXTENT_UNITS, "Extent unit", "PERCH"),
         "district": district,
         "province": province,
-        "extent_value": _as_float(data.get("extent_value"), "Extent"),
-        "building_area_sqft": _as_float(data.get("building_area_sqft"), "Building area"),
-        "acquisition_cost": _as_float(data.get("acquisition_cost"), "Acquisition cost"),
-        "current_value": _as_float(data.get("current_value"), "Current value"),
-        "acquisition_date": _as_date(data.get("acquisition_date"), "Acquisition date"),
+        "extent_value": _as_float(data.get("extent_value"), "Land extent", "extent_value"),
+        "building_area_sqft": _as_float(data.get("building_area_sqft"), "Building area", "building_area_sqft"),
+        "acquisition_cost": _as_float(data.get("acquisition_cost"), "Acquisition cost", "acquisition_cost"),
+        "current_value": _as_float(data.get("current_value"), "Current value", "current_value"),
+        "acquisition_date": _as_date(data.get("acquisition_date"), "Acquisition date", "acquisition_date"),
         "currency": _clean_str(data.get("currency")) or "LKR",
     }
     for field in ("address_line1", "address_line2", "city", "postal_code",
@@ -580,15 +594,34 @@ def create_document(ctx):
         raise ApiError("Property not found.", 404)
 
     fields, upload = ctx.form()
-    title = _clean_str(fields.get("title"))
+
+    # 1. Check every field before anything touches the disk, so a rejected
+    #    upload can never leave an orphaned file behind.
     doc_type = _check_enum(fields.get("doc_type"), srilanka.DOCUMENT_TYPES,
                            "Document type", "OTHER")
-    if not title:
-        # Fall back to the document type label so a row is never nameless.
-        title = dict(srilanka.DOCUMENT_TYPES)[doc_type]
+    # Fall back to the document type label so a row is never nameless.
+    title = _clean_str(fields.get("title")) or dict(srilanka.DOCUMENT_TYPES)[doc_type]
+    payload = {
+        "property_id": pid,
+        "doc_type": doc_type,
+        "title": title,
+        "reference_no": _clean_str(fields.get("reference_no")),
+        "issue_date": _as_date(fields.get("issue_date"), "Issue date", "issue_date"),
+        "expiry_date": _as_date(fields.get("expiry_date"), "Expiry date", "expiry_date"),
+        "counterparty": _clean_str(fields.get("counterparty")),
+        "amount": _as_float(fields.get("amount"), "Amount", "amount"),
+        "currency": _clean_str(fields.get("currency")) or "LKR",
+        "notes": _clean_str(fields.get("notes")),
+        "file_name": None,
+        "stored_name": None,
+        "mime_type": None,
+        "size_bytes": None,
+    }
+    if payload["issue_date"] and payload["expiry_date"] \
+            and payload["expiry_date"] < payload["issue_date"]:
+        raise ApiError("Expiry date cannot be before the issue date.", field="expiry_date")
 
-    stored_name = file_name = mime_type = None
-    size_bytes = None
+    ext = None
     if upload is not None and upload.is_file:
         file_name = os.path.basename(upload.filename.replace("\\", "/"))
         ext = os.path.splitext(file_name)[1].lower()
@@ -601,39 +634,27 @@ def create_document(ctx):
                            % (MAX_UPLOAD_BYTES // (1024 * 1024)), 413, "file")
         if not upload.data:
             raise ApiError("The uploaded file is empty.", field="file")
-        stored_name = "%s%s" % (uuid.uuid4().hex, ext)
-        with open(os.path.join(db.UPLOAD_DIR, stored_name), "wb") as fh:
-            fh.write(upload.data)
-        mime_type = upload.content_type
-        size_bytes = len(upload.data)
+        payload.update({"file_name": file_name, "mime_type": upload.content_type,
+                        "size_bytes": len(upload.data)})
 
-    payload = {
-        "property_id": pid,
-        "doc_type": doc_type,
-        "title": title,
-        "reference_no": _clean_str(fields.get("reference_no")),
-        "issue_date": _as_date(fields.get("issue_date"), "Issue date"),
-        "expiry_date": _as_date(fields.get("expiry_date"), "Expiry date"),
-        "counterparty": _clean_str(fields.get("counterparty")),
-        "amount": _as_float(fields.get("amount"), "Amount"),
-        "currency": _clean_str(fields.get("currency")) or "LKR",
-        "notes": _clean_str(fields.get("notes")),
-        "file_name": file_name,
-        "stored_name": stored_name,
-        "mime_type": mime_type,
-        "size_bytes": size_bytes,
-    }
-    if payload["issue_date"] and payload["expiry_date"] \
-            and payload["expiry_date"] < payload["issue_date"]:
-        _remove_stored_file(stored_name)
-        raise ApiError("Expiry date cannot be before the issue date.", field="expiry_date")
+    # 2. Everything is valid: write the file, then the record. If the record
+    #    fails, take the file back out.
+    if ext is not None:
+        payload["stored_name"] = "%s%s" % (uuid.uuid4().hex, ext)
+        with open(os.path.join(db.UPLOAD_DIR, payload["stored_name"]), "wb") as fh:
+            fh.write(upload.data)
 
     columns = ["property_id", "file_name", "stored_name", "mime_type",
                "size_bytes"] + DOCUMENT_FIELDS
-    cur = conn.execute(
-        "INSERT INTO document (%s) VALUES (%s)"
-        % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
-    conn.commit()
+    try:
+        cur = conn.execute(
+            "INSERT INTO document (%s) VALUES (%s)"
+            % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        _remove_stored_file(payload["stored_name"])
+        raise
     row = conn.execute("SELECT * FROM document WHERE id = ?", (cur.lastrowid,)).fetchone()
     return 201, _row_to_dict(row)
 

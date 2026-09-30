@@ -232,7 +232,15 @@ window.Masters = (function () {
     const form = $('#master-form');
     const errorBox = $('#master-form-error');
     errorBox.hidden = true;
-    if (!form.reportValidity()) return;
+    form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    const missing = Array.prototype.slice.call(form.elements)
+      .filter((el) => el.name && el.type !== 'hidden' && !el.checkValidity())[0];
+    if (missing) {
+      const label = (missing.closest('label') && missing.closest('label').firstChild.textContent || missing.name)
+        .replace(/\*/g, '').trim();
+      showError(form, errorBox, { message: label + ' is required.', field: missing.name });
+      return;
+    }
 
     const data = {};
     current.columns.forEach(function (column) {
@@ -242,6 +250,9 @@ window.Masters = (function () {
     });
 
     const id = form.elements.id.value;
+    const button = $('#btn-save-master');
+    button.disabled = true;
+    button.textContent = 'Saving\u2026';
     try {
       if (id) await API.updateMaster(current.key, id, data);
       else await API.createMaster(current.key, data);
@@ -249,8 +260,27 @@ window.Masters = (function () {
       await reload();
       notify(id ? 'Row updated.' : 'Row added.');
     } catch (err) {
-      errorBox.textContent = err.message;
-      errorBox.hidden = false;
+      showError(form, errorBox, err);
+    } finally {
+      button.disabled = false;
+      button.textContent = 'Save';
+    }
+  }
+
+  // Mark the field the server named and bring it into view, so the message is
+  // never hidden below the fold of a long form.
+  function showError(form, errorBox, err) {
+    form.querySelectorAll('.is-invalid').forEach((el) => el.classList.remove('is-invalid'));
+    errorBox.textContent = err.message;
+    errorBox.hidden = false;
+    const field = err.field && form.elements[err.field];
+    if (field) {
+      field.classList.add('is-invalid');
+      field.setAttribute('aria-invalid', 'true');
+      field.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      field.focus({ preventScroll: true });
+    } else {
+      errorBox.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
     }
   }
 

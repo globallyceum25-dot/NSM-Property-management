@@ -41,6 +41,7 @@
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
   <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m6.5 9.5 5.5 5.5 5.5-5.5"/></symbol>
   <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.5V4M7.5 8.5 12 4l4.5 4.5M4.5 15v3.5a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2V15"/></symbol>
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6 6.5l.9 12.6a1.5 1.5 0 0 0 1.5 1.4h7.2a1.5 1.5 0 0 0 1.5-1.4L18 6.5M10 10.5v6M14 10.5v6"/></symbol>
   <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 11.5-8.1 8.1a5 5 0 0 1-7.1-7.1l8.4-8.4a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/><path d="M12 8.5v4.5M12 16.3v.2"/></symbol>
@@ -290,7 +291,7 @@
       <h2 id="property-modal-title">New property</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
-    <form id="property-form" class="modal-body">
+    <form id="property-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
 
       <fieldset>
@@ -437,7 +438,7 @@
       <h2 id="sbu-modal-title">New business unit</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
-    <form id="sbu-form" class="modal-body">
+    <form id="sbu-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
       <div class="grid-2">
         <label>Code <span class="req">*</span>
@@ -480,7 +481,7 @@
       <h2 id="entity-modal-title">New owning company</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
-    <form id="entity-form" class="modal-body">
+    <form id="entity-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
       <div class="grid-2">
         <label>Short code <span class="req">*</span>
@@ -515,7 +516,7 @@
       <h2>Attach document</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
-    <form id="doc-form" class="modal-body">
+    <form id="doc-form" class="modal-body" novalidate>
       <input type="hidden" name="property_id">
       <div class="grid-2">
         <label>Document type <span class="req">*</span>
@@ -542,10 +543,28 @@
           <input name="amount" inputmode="decimal">
         </label>
       </div>
-      <label>File
-        <input name="file" type="file">
+      <div class="field-block">
+        <span class="field-label" id="doc-file-label">File</span>
+        <div class="dropzone" id="doc-dropzone">
+          <input id="doc-file" name="file" type="file" class="dz-input" aria-labelledby="doc-file-label"
+                 aria-describedby="doc-file-hint">
+          <label for="doc-file" class="dz-empty">
+            <span class="dz-icon"><svg class="ic"><use href="#i-upload"/></svg></span>
+            <span><b>Choose a file</b> or drag it here</span>
+          </label>
+          <div class="dz-file" hidden>
+            <span class="dz-icon"><svg class="ic"><use href="#i-file"/></svg></span>
+            <span class="dz-text"><b class="dz-name"></b><span class="dz-size"></span></span>
+            <span class="dz-actions">
+              <label for="doc-file" class="btn btn-ghost btn-sm">Replace</label>
+              <button type="button" class="circle-btn sm danger" id="doc-file-clear"
+                      title="Remove this file" aria-label="Remove this file"><svg class="ic"><use href="#i-x"/></svg></button>
+            </span>
+          </div>
+        </div>
+        <p class="field-warn" id="doc-file-warn" hidden></p>
         <span class="hint" id="doc-file-hint"></span>
-      </label>
+      </div>
       <label>Notes
         <textarea name="notes" rows="2" maxlength="1000"></textarea>
       </label>
@@ -565,7 +584,7 @@
       <h2 id="master-modal-title">New row</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
-    <form id="master-form" class="modal-body">
+    <form id="master-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
       <div id="master-fields"></div>
       <p class="form-error" id="master-form-error" hidden></p>
