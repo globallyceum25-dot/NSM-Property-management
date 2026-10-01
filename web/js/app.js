@@ -183,18 +183,40 @@
       '<title>Deed or title on file</title><use href="#i-verified"/></svg>';
   }
 
+  /* Every area in the portfolio reads in one unit, square feet; the unit it
+     was recorded in stays one hover away. */
+  function sqftShort(sqft) {
+    if (sqft >= 1e6) return Fmt.num(sqft / 1e6, sqft >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M sq ft';
+    return Fmt.num(Math.round(sqft)) + ' sq ft';
+  }
+
+  function sqftCell(sqft, value, unit) {
+    if (!sqft) return '<td class="num"><span class="muted-inline">—</span></td>';
+    const recorded = unit && unit !== 'SQ_FT'
+      ? ' title="Recorded as ' + esc(Fmt.num(value) + ' ' + unitName(unit, value)) + '"' : '';
+    return '<td class="num"' + recorded + '>' + Fmt.num(Math.round(sqft)) + '</td>';
+  }
+
+  function areaFact(kind, sqft, value, unit) {
+    const label = kind === 'land' ? 'Land' : 'Floor area';
+    if (!sqft) return '<div><dt>' + label + '</dt><dd class="is-empty">—</dd></div>';
+    const recorded = unit && unit !== 'SQ_FT'
+      ? ' title="Recorded as ' + esc(Fmt.num(value) + ' ' + unitName(unit, value)) + '"' : '';
+    return '<div' + recorded + '><dt>' + label + '</dt><dd>' + esc(sqftShort(sqft)) + '</dd></div>';
+  }
+
   function specsHtml(p) {
-    const extent = Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits) ||
-      (p.building_area_value
-        ? Fmt.num(p.building_area_value) + ' ' + unitName(p.building_area_unit, p.building_area_value)
-        : 'Extent not set');
     const docs = p.document_count;
     return '<div class="specs-wrap"><div class="specs">' +
       '<span>' + icon('home') + esc(shortLabel('propertyTypes', p.property_type)) + '</span>' +
-      '<span>' + icon('ruler') + esc(extent) + '</span>' +
       '<span' + (docs ? '' : ' class="none"') + '>' + icon('file') +
         (docs ? docs + (docs === 1 ? ' doc' : ' docs') : 'No docs') + '</span>' +
-    '</div></div>';
+    '</div></div>' +
+    // Both areas in one unit, side by side, so cards compare at a glance.
+    '<dl class="area-facts">' +
+      areaFact('land', p.extent_sqft, p.extent_value, p.extent_unit) +
+      areaFact('floor', p.building_area_sqft, p.building_area_value, p.building_area_unit) +
+    '</dl>';
   }
 
   function locationLine(p) {
@@ -503,7 +525,7 @@
         return list.sort((a, b) => String(a.name).localeCompare(String(b.name)));
       case 'extent':
         return list.sort((a, b) =>
-          toPerches(b.extent_value, b.extent_unit) - toPerches(a.extent_value, a.extent_unit) ||
+          (b.extent_sqft || 0) - (a.extent_sqft || 0) ||
           byCode(a, b));
       case 'docs':
         return list.sort((a, b) => b.document_count - a.document_count || byCode(a, b));
@@ -848,7 +870,8 @@
               '</span> ' : '') + esc(p.location_name)
           : '<span class="muted-inline" title="No location from the master list">—</span>') +
           (p.district ? '<span class="prop-sub">' + esc(p.district) + ' district</span>' : '') + '</td>' +
-        '<td>' + esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits)) + '</td>' +
+        sqftCell(p.extent_sqft, p.extent_value, p.extent_unit) +
+        sqftCell(p.building_area_sqft, p.building_area_value, p.building_area_unit) +
         '<td><span class="badge ' + esc(p.status) + '" title="' + esc(labelFor('statuses', p.status)) + '">' +
           esc(shortLabel('statuses', p.status)) + '</span></td>' +
         '<td class="doc-count' + (p.document_count ? '' : ' zero') + '">' + p.document_count + '</td>' +

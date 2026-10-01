@@ -169,6 +169,17 @@ The conversions are exact, with one table on the server (`SQFT_PER_UNIT` in
 - 1 hectare = 107,639.1 sq ft
 - 1 m² = 10.764 sq ft
 
+**One unit across the portfolio** — cards, the map's floating card and the
+table all show areas in **square feet**, so properties compare at a glance:
+
+- Every card has a **Land / Floor area** row, e.g. "152,460 sq ft · 48,000 sq ft".
+- Figures of a million or more shorten to "5.49M sq ft".
+- The table has right-aligned **Land (sq ft)** and **Floor area (sq ft)** columns.
+- Hovering any figure shows the unit it was recorded in ("Recorded as 126 acres").
+- *Largest extent* sorts on land in sq ft.
+
+The dashboard's land charts stay in acres, which suit estate-sized totals.
+
 Every property's sq ft figures are worked out when it is saved. Existing
 properties were converted when the database was upgraded; their building areas
 were recorded in sq ft before, so they keep that unit. The property panel shows

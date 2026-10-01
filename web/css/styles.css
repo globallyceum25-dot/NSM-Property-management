@@ -171,7 +171,7 @@
     --viz-warning-track: #3b3220;
     --viz-good-track: #1b3a22;
 
-    --map-bg: #1a2322;
+    --map-bg: #2c3133;          /* the dark map's water, so tile seams vanish */
     --map-tiles: invert(1) hue-rotate(180deg) grayscale(.85) brightness(.82) contrast(.92);
     --map-tiles-colour: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.75);
     --scrim: rgba(0, 0, 0, .55);
@@ -243,7 +243,7 @@
   --viz-warning-track: #3b3220;
   --viz-good-track: #1b3a22;
 
-  --map-bg: #1a2322;
+  --map-bg: #2c3133;          /* the dark map's water, so tile seams vanish */
   --map-tiles: invert(1) hue-rotate(180deg) grayscale(.85) brightness(.82) contrast(.92);
   --map-tiles-colour: invert(1) hue-rotate(180deg) brightness(.9) contrast(.9) saturate(.75);
   --scrim: rgba(0, 0, 0, .55);
@@ -874,6 +874,20 @@ button.kpi:hover .kpi-cta, button.kpi:focus-visible .kpi-cta, button.kpi.is-acti
 }
 .specs .ic { width: 16px; height: 16px; color: var(--text); }
 .specs .none { color: var(--danger); }
+
+/* land and floor area, both in sq ft, as two aligned figures */
+.area-facts {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin: 12px 0 0; padding: 10px 14px;
+  border-radius: 14px; background: var(--table-head);
+}
+.area-facts dt { font-size: 11.5px; font-weight: 600; letter-spacing: .02em; color: var(--text-muted); }
+.area-facts dd {
+  margin: 2px 0 0; font-size: 14.5px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.area-facts dd.is-empty { color: var(--text-faint); font-weight: 500; }
+.area-facts > div + div { padding-left: 12px; border-left: 1px solid var(--border-strong); }
 
 .pcard-addr { margin-top: 11px; font-size: 13.5px; color: var(--text-muted); }
 .pcard-foot { margin-top: 12px; font-size: 12.5px; font-style: italic; color: var(--text-muted); }
@@ -2102,3 +2116,13 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   .grid-spacer { display: none; }
 }
 .modal-body .unit-input select:focus { border-left-color: var(--border-strong); }
+
+/* portfolio table: areas in one unit, aligned on the digits */
+#table-panel .grid .num, #table-panel .grid th.num { text-align: right; font-variant-numeric: tabular-nums; }
+@media (max-width: 1500px) {
+  #table-panel .grid .coords { display: none; }
+}
+
+/* Fractional zoom can leave hairline gaps between map tiles, which show as
+   seams on the dark map; overlapping each tile by half a pixel closes them. */
+.leaflet-tile-container img.leaflet-tile { width: 256.5px !important; height: 256.5px !important; }
