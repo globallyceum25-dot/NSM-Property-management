@@ -178,8 +178,6 @@ table all show areas in **square feet**, so properties compare at a glance:
 - Hovering any figure shows the unit it was recorded in ("Recorded as 126 acres").
 - *Largest extent* sorts on land in sq ft.
 
-The dashboard's land charts stay in acres, which suit estate-sized totals.
-
 Every property's sq ft figures are worked out when it is saved. Existing
 properties were converted when the database was upgraded; their building areas
 were recorded in sq ft before, so they keep that unit. The property panel shows
@@ -251,7 +249,29 @@ scope of what is covered, and four signals, each a shortcut to the list behind i
 - **Documents without a file** opens the Documents module on its *No file* tab.
 
 Each signal shows its state with an icon and words (critical, due, clear), not
-colour alone. Below the band come four sections, each headed by a rule:
+colour alone.
+
+**Business-unit filter** — a row of chips at the top of the dashboard, one per
+unit with its colour and property count:
+
+- Click a unit to show only that unit.
+- Click more units to compare them together.
+- **All units** goes back to the whole register.
+
+It is the same business-unit filter the Portfolio and Documents use, so moving
+between modules keeps the selection.
+
+Below the band come five sections, each headed by a rule:
+
+- *Land & floor area*:
+  - **Total land area** and **Total floor area** — the sum over every property
+    shown, in square feet. Land is also given in acres and hectares, floor area
+    in m² and acres.
+  - Each total has a bar split by business unit in the unit's colour, with a
+    legend of each unit's share.
+  - A line underneath says how many properties have the area recorded
+    ("Recorded for 12 of 14 properties"), so a partial total never passes for
+    a complete one.
 
 - *Portfolio at a glance*:
   - **Tenure mix** and **Documents by type** — donut charts with a legend that
@@ -266,9 +286,8 @@ colour alone. Below the band come four sections, each headed by a rule:
     first, each with its date, business-unit dot and days left. Click one to
     open its property.
 - *Land & location*:
-  - **Land extent by business unit** — acres and share of all land, with the
-    exact perches beneath.
-  - **Largest holdings** — the five biggest properties by land.
+  - **Land by business unit** — square feet and share of all land.
+  - **Largest holdings** — the five biggest properties by land, in sq ft.
   - **Properties by province** — all nine provinces, shown as bars instead of
     columns on a phone.
   - **Property types**.

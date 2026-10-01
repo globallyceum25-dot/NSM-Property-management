@@ -825,7 +825,9 @@ def get_stats(ctx):
                                     WHEN f.extent_unit='HECTARE' THEN f.extent_value*395.37
                                     WHEN f.extent_unit='SQ_M' THEN f.extent_value*0.0395369
                                     WHEN f.extent_unit='SQ_FT' THEN f.extent_value/272.25
-                                    ELSE f.extent_value END), 0) AS extent_perches
+                                    ELSE f.extent_value END), 0) AS extent_perches,
+                  COALESCE(SUM(f.extent_sqft), 0) AS land_sqft,
+                  COALESCE(SUM(f.building_area_sqft), 0) AS floor_sqft
            FROM sbu s LEFT JOIN (%s) f ON f.sbu_id = s.id
            GROUP BY s.id ORDER BY property_count DESC, s.name""" % subset)]
     if where:
@@ -892,6 +894,12 @@ def get_stats(ctx):
             """SELECT COUNT(*) AS n FROM document d
                WHERE d.stored_name IS NOT NULL
                  AND d.property_id IN (SELECT id FROM (%s))""" % subset),
+        # Land and floor area, summed in square feet, with how many properties
+        # actually have each recorded (a total over half the register says so).
+        "land_sqft": scalar("SELECT COALESCE(SUM(extent_sqft), 0) AS n FROM (%s)" % subset),
+        "floor_sqft": scalar("SELECT COALESCE(SUM(building_area_sqft), 0) AS n FROM (%s)" % subset),
+        "with_land": scalar("SELECT COUNT(*) AS n FROM (%s) WHERE extent_sqft > 0" % subset),
+        "with_floor": scalar("SELECT COUNT(*) AS n FROM (%s) WHERE building_area_sqft > 0" % subset),
         "without_deed": scalar(
             """SELECT COUNT(*) AS n FROM (%s) f WHERE NOT EXISTS
                  (SELECT 1 FROM document d WHERE d.property_id = f.id

@@ -1450,23 +1450,110 @@
   }
 
   function landBars(stats) {
-    const withLand = stats.bySbu.filter((s) => s.extent_perches > 0);
-    const total = withLand.reduce((sum, s) => sum + s.extent_perches, 0);
+    const withLand = stats.bySbu.filter((s) => s.land_sqft > 0);
+    const total = withLand.reduce((sum, s) => sum + s.land_sqft, 0);
     const rows = withLand
-      .sort((a, b) => b.extent_perches - a.extent_perches)
+      .sort((a, b) => b.land_sqft - a.land_sqft)
       .map(function (s) {
-        const acres = s.extent_perches / 160;
-        const share = s.extent_perches / total * 100;
-        return { label: s.name, value: acres, dot: s.color,
-                 display: Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac · ' +
-                   (share < 1 ? '<1' : Math.round(share)) + '%' };
+        const share = s.land_sqft / total * 100;
+        return { label: s.name, value: s.land_sqft, dot: s.color,
+                 display: sqftShort(s.land_sqft) + ' · ' + (share < 1 ? '<1' : Math.round(share)) + '%' };
       });
-    const chart = Charts.hbars({ items: rows, className: 'wide-val', emptyText: stats.totals.properties
+    return Charts.hbars({ items: rows, className: 'wide-val', emptyText: stats.totals.properties
       ? 'No land extent recorded' : 'No properties match' });
-    // The exact figures, in the unit the register records.
-    const perches = stats.bySbu.filter((s) => s.extent_perches > 0)
-      .map((s) => s.code + ' ' + Fmt.num(s.extent_perches, 1)).join(' · ');
-    return chart + (perches ? '<p class="chart-foot">In perches: ' + esc(perches) + '</p>' : '');
+  }
+
+  /* ---------- totals: land and floor area, in square feet ---------- */
+
+  // 7.84M, 170K, 8,848: a legend's figures in one consistent short form.
+  function compactNum(n) {
+    if (n >= 1e6) return Fmt.num(n / 1e6, n >= 1e7 ? 1 : 2).replace(/\.?0+$/, '') + 'M';
+    if (n >= 1e4) return Fmt.num(Math.round(n / 1e3)) + 'K';
+    return Fmt.num(Math.round(n));
+  }
+
+  function areaCardHtml(stats, kind) {
+    const t = stats.totals;
+    const land = kind === 'land';
+    const total = land ? t.land_sqft : t.floor_sqft;
+    const recorded = land ? t.with_land : t.with_floor;
+    const key = land ? 'land_sqft' : 'floor_sqft';
+    const parts = stats.bySbu.filter((x) => x[key] > 0).sort((a, b) => b[key] - a[key]);
+    const title = land ? 'Total land area' : 'Total floor area';
+    const sub = land ? 'Every property’s land extent, added up' : 'Every building’s floor area, added up';
+
+    let body;
+    if (!total) {
+      body = '<div class="chart-empty">' + (t.properties
+        ? (land ? 'No land extent recorded yet' : 'No floor area recorded yet')
+        : 'No properties match') + '</div>';
+    } else {
+      const alt = land
+        ? Fmt.num(total / 43560, 1) + ' acres · ' + Fmt.num(total / 107639.104, 1) + ' hectares'
+        : Fmt.num(Math.round(total / 10.7639104)) + ' m² · ' + Fmt.num(total / 43560, 2) + ' acres';
+      // One bar, split by business unit in each unit's own colour.
+      const bar = '<div class="area-bar" role="img" aria-label="' + esc(title + ' by business unit') + '">' +
+        parts.map(function (x) {
+          const share = x[key] / total * 100;
+          return '<span style="flex-grow:' + share.toFixed(3) + ';background:' + esc(x.color) + '"' +
+            ' tabindex="0" data-tip-label="' + esc(x.name) + '" data-tip-value="' +
+            esc(Fmt.num(Math.round(x[key])) + ' sq ft · ' + (share < 1 ? '<1' : Math.round(share)) + '%') + '"></span>';
+        }).join('') + '</div>';
+      const legend = '<ul class="area-legend">' + parts.map(function (x) {
+        const share = x[key] / total * 100;
+        return '<li><i style="background:' + esc(x.color) + '"></i><span>' + esc(x.name) + '</span>' +
+          '<b title="' + esc(Fmt.num(Math.round(x[key])) + ' sq ft') + '">' + esc(compactNum(x[key])) + '</b>' +
+          '<em>' + (share < 1 ? '<1' : Math.round(share)) + '%</em></li>';
+      }).join('') + '</ul>';
+      const missing = t.properties - recorded;
+      body = '<div class="area-total"><b>' + Fmt.num(Math.round(total)) + '</b><span>sq ft</span></div>' +
+        '<p class="area-alt">' + esc(alt) + '</p>' + bar + legend +
+        '<p class="chart-foot">' + (missing
+          ? 'Recorded for ' + recorded + ' of ' + plural(t.properties, 'property', 'properties') +
+            ' — ' + plural(missing, 'property has', 'properties have') + ' no ' +
+            (land ? 'land extent' : 'floor area') + ' yet, so the total leaves ' + (missing === 1 ? 'it' : 'them') + ' out.'
+          : 'Recorded for every property shown.') + '</p>';
+    }
+    return '<section class="chart-card span-6 area-card is-' + kind + '">' +
+      '<header class="chart-head"><div><h3>' + esc(title) + '</h3><p class="chart-sub">' + esc(sub) + '</p></div>' +
+        '<span class="area-icon">' + icon(land ? 'ruler' : 'building') + '</span></header>' +
+      body + '</section>';
+  }
+
+  /* ---------- the dashboard's business-unit filter ---------- */
+
+  function dashFilterHtml() {
+    const sel = state.selectedSbus;
+    const total = state.sbus.reduce((sum, x) => sum + x.property_count, 0);
+    const chip = (id, on, inner, label) =>
+      '<button type="button" class="df-chip' + (on ? ' is-on' : '') + '" data-dash-sbu="' + id + '" ' +
+        'aria-pressed="' + on + '"' + (label ? ' title="' + esc(label) + '"' : '') + '>' + inner + '</button>';
+    return '<div class="dash-filter" role="group" aria-label="Filter the dashboard by business unit">' +
+      '<span class="df-label">' + icon('building') + 'Business unit</span>' +
+      '<div class="df-chips">' +
+        chip('all', !sel, 'All units <b>' + total + '</b>') +
+        state.sbus.map((x) => chip(x.id, !!sel && sel.indexOf(x.id) !== -1,
+          '<i style="background:' + esc(x.color) + '"></i>' + esc(x.name) + ' <b>' + x.property_count + '</b>',
+          x.code + ' — ' + x.name + (sel ? '' : ' · click to show only this unit; add more to compare')
+        )).join('') +
+      '</div>' +
+    '</div>';
+  }
+
+  // From "All", a chip shows just that unit; further chips add to it; removing
+  // the last one returns to All.
+  function pickDashSbu(value) {
+    if (value === 'all') {
+      state.selectedSbus = null;
+    } else {
+      const id = Number(value);
+      const sel = state.selectedSbus ? state.selectedSbus.slice() : [];
+      const at = sel.indexOf(id);
+      if (at === -1) sel.push(id); else sel.splice(at, 1);
+      state.selectedSbus = !sel.length || sel.length === state.sbus.length ? null : sel;
+    }
+    renderSbuFilters();
+    refreshProperties();
   }
 
   function provinceColumns(stats) {
@@ -1491,7 +1578,7 @@
 
   function largestHoldings() {
     const ranked = state.properties
-      .map((p) => ({ p: p, perches: toPerches(p.extent_value, p.extent_unit) }))
+      .map((p) => ({ p: p, perches: (p.extent_sqft || 0) / 272.25 }))
       .filter((x) => x.perches > 0)
       .sort((a, b) => b.perches - a.perches);
     if (!ranked.length) {
@@ -1500,20 +1587,21 @@
     }
     const totalLand = ranked.reduce((s, x) => s + x.perches, 0);
     return '<ul class="holdings">' + ranked.slice(0, 5).map(function (x) {
-      const acres = x.perches / 160;
       const share = Math.round(x.perches / totalLand * 100);
       return '<li data-open="' + x.p.id + '" tabindex="0">' +
         '<span class="lh-thumb">' + coverHtml(x.p, 0.78) + '</span>' +
         '<span class="lh-text"><b>' + esc(x.p.name) + '</b>' +
           '<span>' + esc(x.p.property_code) + ' · ' + esc(x.p.sbu_code) + '</span></span>' +
-        '<span class="lh-figs"><b>' + Fmt.num(acres, acres < 10 ? 1 : 0) + ' ac</b>' +
+        '<span class="lh-figs"><b>' + esc(sqftShort(x.p.extent_sqft)) + '</b>' +
           '<span class="lh-share">' + share + '% of land</span></span>' +
       '</li>';
     }).join('') + '</ul>';
   }
 
   function chartsHtml(stats) {
-    return sectionHead('Portfolio at a glance') +
+    return sectionHead('Land & floor area') +
+      '<div class="chart-grid">' + areaCardHtml(stats, 'land') + areaCardHtml(stats, 'floor') + '</div>' +
+      sectionHead('Portfolio at a glance') +
       '<div class="chart-grid">' +
         chartCard({ span: 4, title: 'Tenure mix', sub: 'How the properties are held',
                     body: tenureDonut(stats) }) +
@@ -1532,7 +1620,7 @@
       '</div>' +
       sectionHead('Land & location') +
       '<div class="chart-grid">' +
-        chartCard({ span: 7, title: 'Land extent by business unit', sub: 'Acres and share of all land, largest first',
+        chartCard({ span: 7, title: 'Land by business unit', sub: 'Square feet and share of all land, largest first',
                     body: landBars(stats) }) +
         chartCard({ span: 5, title: 'Largest holdings', sub: 'By land extent · click to open',
                     body: largestHoldings(), link: { go: 'register', label: 'Register' } }) +
@@ -1613,6 +1701,7 @@
     }
 
     host.innerHTML =
+      dashFilterHtml() +
       dashHeroHtml(stats) +
       filterBannerHtml(stats) +
       chartsHtml(stats) +
@@ -1621,6 +1710,8 @@
     if (!host.__dashGo) {
       host.__dashGo = true;
       host.addEventListener('click', function (event) {
+        const pick = event.target.closest('[data-dash-sbu]');
+        if (pick) { pickDashSbu(pick.dataset.dashSbu); return; }
         const target = event.target.closest('[data-dash-go]');
         if (target) goFromDashboard(target.dataset.dashGo);
       });
