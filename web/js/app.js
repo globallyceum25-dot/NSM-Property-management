@@ -14,7 +14,9 @@
     locations: [],
     properties: [],
     stats: null,                 // /api/stats for the current filters
-    docs: { status: '', type: '', sort: 'newest', fromModule: false },
+    docs: { status: '', type: '', sort: 'newest', fromModule: false, focus: null },
+    sbuPage: { id: null, tab: 'properties' },   // one business unit's page
+    currentDoc: null,            // document open in the document panel
     alerts: [],
     selectedSbus: null,          // null = all
     filters: emptyFilters(),
@@ -286,6 +288,10 @@
   function writeHash() {
     let hash = state.view + (state.view === 'portfolio' && state.mode !== 'map' ? '/' + state.mode : '') +
       (state.view === 'documents' && state.docs.status ? '/' + state.docs.status : '');
+    if (state.view === 'sbus' && state.sbuPage.id) {
+      hash = 'sbus/' + state.sbuPage.id + (state.sbuPage.tab === 'documents' ? '/documents' : '');
+    }
+    if (state.currentDoc) hash = 'documents/doc/' + state.currentDoc.id;
     if (state.currentProperty) hash = 'property/' + state.currentProperty.id;
     if (location.hash !== '#' + hash) history.replaceState(null, '', '#' + hash);
   }
@@ -298,7 +304,24 @@
       }
       return;
     }
+    if (parts[0] === 'documents' && parts[1] === 'doc' && /^\d+$/.test(parts[2] || '')) {
+      if (!$('#drawer').hidden) closeDrawer();
+      if (state.view !== 'documents') switchView('documents');
+      if (!state.currentDoc || String(state.currentDoc.id) !== parts[2]) openDocPanel(Number(parts[2]));
+      return;
+    }
     if (VIEWS.indexOf(parts[0]) === -1) return;
+    if (!$('#doc-drawer').hidden) closeDocPanel();
+    if (parts[0] === 'sbus') {
+      if (!$('#drawer').hidden) closeDrawer();
+      if (/^\d+$/.test(parts[1] || '')) {
+        openSbuPage(Number(parts[1]), parts[2] === 'documents' ? 'documents' : 'properties');
+      } else {
+        closeSbuPage();
+        if (state.view !== 'sbus') switchView('sbus');
+      }
+      return;
+    }
     if (parts[0] === 'portfolio') setMode(MODES.indexOf(parts[1]) !== -1 ? parts[1] : 'map');
     if (parts[0] === 'documents') {
       const status = DOC_STATUSES.indexOf(parts[1]) !== -1 ? parts[1] : '';
@@ -439,6 +462,7 @@
     // The dashboard describes the same set, so keep it in step with the filters.
     if (state.view === 'dashboard') await renderDashboard();
     if (state.view === 'documents') await renderDocuments();
+    if (state.view === 'sbus' && state.sbuPage.id) await renderSbuPage();
   }
 
   function sortedProperties() {
@@ -818,7 +842,11 @@
   /* ---------- business units & owning companies ---------- */
 
   function tileHtml(opts) {
-    return '<div class="tile">' +
+    const open = opts.openId
+      ? ' data-sbu-open="' + opts.openId + '" role="link" tabindex="0" ' +
+        'aria-label="Open ' + esc(opts.name) + ': properties and documents"'
+      : '';
+    return '<div class="tile' + (opts.openId ? ' is-link' : '') + '"' + open + '>' +
       '<div class="tile-top">' +
         '<span class="avatar lg" style="background:' + esc(opts.color) + '">' +
           esc(initials(opts.code)) + '</span>' +
@@ -833,7 +861,8 @@
       (opts.sub ? '<p class="tile-sub">' + esc(opts.sub) + '</p>' : '') +
       '<p class="tile-desc">' + esc(opts.description) + '</p>' +
       '<div class="tile-foot"><span><b>' + opts.count + '</b> propert' +
-        (opts.count === 1 ? 'y' : 'ies') + '</span>' + (opts.badge || '') + '</div>' +
+        (opts.count === 1 ? 'y' : 'ies') + '</span>' + (opts.badge || '') +
+        (opts.openId ? '<span class="tile-open">Open' + icon('open') + '</span>' : '') + '</div>' +
     '</div>';
   }
 
@@ -851,6 +880,7 @@
       sub: [sbu.sector, sbu.cost_centre ? 'CC ' + sbu.cost_centre : ''].filter(Boolean).join(' · '),
       description: sbu.description || 'No description.',
       count: sbu.property_count,
+      openId: sbu.id,
       editAttr: 'data-edit-sbu="' + sbu.id + '"',
       deleteAttr: 'data-delete-sbu="' + sbu.id + '"'
     })).join('');
@@ -1029,7 +1059,8 @@
         '<a class="circle-btn sm" href="/api/documents/' + d.id + '/file?disposition=attachment" ' +
           'title="Download the file" aria-label="Download ' + esc(d.file_name) + '">' + icon('download') + '</a>'
       : '';
-    return '<tr data-doc-property="' + d.property_id + '">' +
+    return '<tr data-doc-id="' + d.id + '" data-doc-property="' + d.property_id + '"' +
+        (String(d.id) === String(state.docs.focus) ? ' class="is-focus"' : '') + '>' +
       '<td class="doc-cell">' +
         '<span class="doc-type ' + esc(d.doc_type) + '">' + esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
         '<span class="doc-title">' + esc(d.title) + '</span>' +
@@ -1100,6 +1131,8 @@
     }
 
     $('#doc-rows').innerHTML = rows.map(docRowHtml).join('');
+    const focused = $('#doc-rows tr.is-focus');
+    if (focused) focused.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const empty = $('#docs-empty');
     empty.hidden = rows.length > 0;
     empty.textContent = c.all
@@ -1480,6 +1513,304 @@
     Charts.bindTooltips(host);
   }
 
+  /* ---------- one business unit: its properties and documents ---------- */
+
+  let sbuRequest = 0;
+
+  function showSbuDetail(on) {
+    $('#sbu-detail').hidden = !on;
+    $('#sbu-index').hidden = on;
+  }
+
+  async function openSbuPage(id, tab) {
+    const changed = state.sbuPage.id !== id;
+    state.sbuPage = { id: id, tab: tab || 'properties' };
+    if (state.view !== 'sbus') switchView('sbus');
+    showSbuDetail(true);
+    writeHash();
+    if (changed) {
+      $('#sbu-detail').innerHTML = '<p class="empty">Loading…</p>';
+      $('#view-sbus').scrollTop = 0;
+    }
+    await renderSbuPage();
+  }
+
+  function closeSbuPage() {
+    if (!state.sbuPage.id) return;
+    state.sbuPage.id = null;
+    showSbuDetail(false);
+    writeHash();
+  }
+
+  function sbuStatHtml(value, label, tone) {
+    return '<div class="sh-stat' + (tone ? ' is-' + tone : '') + '"><b>' + value + '</b>' +
+      '<span>' + esc(label) + '</span></div>';
+  }
+
+  function sbuPropertyRow(p) {
+    const place = [p.city, p.district].filter(Boolean).join(', ');
+    return '<tr data-open="' + p.id + '" tabindex="0">' +
+      '<td><div class="sp-cell"><span class="sp-thumb">' + coverHtml(p, 0.72) + '</span>' +
+        '<span class="sp-text"><b>' + esc(p.name) + verifiedHtml(p) + '</b>' +
+          '<span>' + esc(p.property_code) + '</span></span></div></td>' +
+      '<td class="wrap-cell">' + esc(place) +
+        (p.location_name ? '<span class="prop-sub">' + esc(p.location_name) + '</span>' : '') + '</td>' +
+      '<td>' + esc(shortLabel('propertyTypes', p.property_type)) + '</td>' +
+      '<td>' + esc(TENURE_SHORT[p.ownership_type] || labelFor('ownershipTypes', p.ownership_type)) + '</td>' +
+      '<td><span class="badge ' + esc(p.status) + '">' + esc(shortLabel('statuses', p.status)) + '</span></td>' +
+      '<td class="num">' + (p.document_count
+        ? '<button class="count-chip" data-sbu-tab="documents" title="See this unit’s documents">' +
+            icon('file') + p.document_count + '</button>'
+        : '<span class="muted-inline">0</span>') + '</td>' +
+      '<td class="row-actions">' +
+        '<button class="circle-btn sm" data-locate="' + p.id + '" title="Show on map" aria-label="Show ' +
+          esc(p.name) + ' on the map">' + icon('map') + '</button>' +
+        '<button class="circle-btn sm" data-open="' + p.id + '" title="Open the property" aria-label="Open ' +
+          esc(p.name) + '">' + icon('open') + '</button>' +
+      '</td></tr>';
+  }
+
+  function sbuDocumentRow(d) {
+    const file = d.stored_name
+      ? '<span class="file-line">' + icon('file') + '<span>' + esc(d.file_name) + '</span>' +
+          '<small>' + esc(Fmt.fileSize(d.size_bytes)) + '</small></span>'
+      : '<span class="file-line is-none">No file attached</span>';
+    return '<tr data-doc-go="' + d.id + '" tabindex="0" title="Open in the Documents module">' +
+      '<td class="doc-cell">' +
+        '<span class="doc-type ' + esc(d.doc_type) + '">' + esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
+        '<span class="doc-title">' + esc(d.title) + '</span>' +
+        (d.reference_no ? '<span class="prop-sub">Ref ' + esc(d.reference_no) + '</span>' : '') + file +
+      '</td>' +
+      '<td class="prop-cell"><span class="prop-name">' + esc(d.property_name) + '</span>' +
+        '<span class="prop-sub">' + esc(d.property_code) + '</span></td>' +
+      '<td>' + (d.issue_date ? esc(Fmt.date(d.issue_date)) : '<span class="muted-inline">—</span>') + '</td>' +
+      '<td>' + expiryHtml(d.expiry_date) + '</td>' +
+      '<td class="num">' + (d.amount ? esc(Fmt.money(d.amount, d.currency)) : '<span class="muted-inline">—</span>') + '</td>' +
+      '<td class="row-actions"><button class="go-btn" data-doc-go="' + d.id + '">' +
+        '<span>Open in Documents</span>' + icon('open') + '</button></td>' +
+    '</tr>';
+  }
+
+  async function renderSbuPage() {
+    const id = state.sbuPage.id;
+    const host = $('#sbu-detail');
+    const sbu = state.sbus.filter((x) => x.id === id)[0];
+    if (!sbu) {
+      host.innerHTML = '<button class="crumb-back" data-sbu-back>' + icon('chevron') +
+        'All business units</button><p class="empty">This business unit no longer exists.</p>';
+      return;
+    }
+    const seq = ++sbuRequest;
+    let props, docs, stats;
+    try {
+      const results = await Promise.all([
+        API.listProperties({ sbu_id: id }),
+        API.listDocuments({ sbu_id: id, sort: 'expiry' }),
+        API.stats({ sbu_id: id })
+      ]);
+      props = results[0]; docs = results[1]; stats = results[2];
+    } catch (err) {
+      host.innerHTML = '<p class="empty">Could not load this business unit: ' + esc(err.message) + '</p>';
+      return;
+    }
+    if (seq !== sbuRequest || state.sbuPage.id !== id) return;
+
+    const t = stats.totals;
+    const perches = (stats.bySbu.filter((x) => x.id === id)[0] || {}).extent_perches || 0;
+    const acres = perches / 160;
+    const expiring = stats.expiringSoon.length;
+    const tab = state.sbuPage.tab;
+    const meta = ['Business unit', sbu.code, sbu.sector, sbu.cost_centre ? 'Cost centre ' + sbu.cost_centre : '']
+      .filter(Boolean).join(' · ');
+
+    const head =
+      '<nav class="crumbs" aria-label="Breadcrumb">' +
+        '<button class="crumb-back" data-sbu-back>' + icon('chevron') + 'Business units</button>' +
+        '<span aria-hidden="true">/</span><span aria-current="page">' + esc(sbu.name) + '</span>' +
+      '</nav>' +
+      '<section class="sbu-hero" style="--c:' + esc(sbu.color) + '">' +
+        '<div class="sh-id">' +
+          '<span class="avatar xl" style="background:' + esc(sbu.color) + '">' + esc(initials(sbu.code)) + '</span>' +
+          '<div class="sh-text"><p class="sh-meta">' + esc(meta) + '</p>' +
+            '<h1>' + esc(sbu.name) + '</h1>' +
+            (sbu.description ? '<p class="sh-desc">' + esc(sbu.description) + '</p>' : '') + '</div>' +
+        '</div>' +
+        '<div class="sh-actions">' +
+          '<button class="btn btn-ghost btn-sm" data-edit-sbu="' + id + '">' + icon('pencil') + 'Edit unit</button>' +
+          '<button class="btn btn-dark btn-sm" data-sbu-map>' + icon('map') + 'Show on map</button>' +
+        '</div>' +
+        '<div class="sh-stats">' +
+          sbuStatHtml(t.properties, t.properties === 1 ? 'Property' : 'Properties') +
+          sbuStatHtml(t.documents, t.documents === 1 ? 'Document' : 'Documents') +
+          sbuStatHtml(t.files, 'Files stored') +
+          sbuStatHtml(acres ? Fmt.num(acres, acres < 10 ? 1 : 0) + '<small> ac</small>' : '—', 'Land') +
+          sbuStatHtml(t.without_deed, 'Without deed / title', t.without_deed ? 'bad' : '') +
+          sbuStatHtml(expiring, 'Due within 180 days', expiring ? 'warn' : '') +
+        '</div>' +
+      '</section>';
+
+    const tabs =
+      '<div class="docs-bar">' +
+        '<div class="doc-tabs" role="tablist" aria-label="Show">' +
+          '<button role="tab" data-sbu-tab="properties" class="' + (tab === 'properties' ? 'is-active' : '') + '" ' +
+            'aria-selected="' + (tab === 'properties') + '">' + icon('building') + 'Properties <b>' + props.length + '</b></button>' +
+          '<button role="tab" data-sbu-tab="documents" class="' + (tab === 'documents' ? 'is-active' : '') + '" ' +
+            'aria-selected="' + (tab === 'documents') + '">' + icon('file') + 'Documents <b>' + docs.documents.length + '</b></button>' +
+        '</div>' +
+        (tab === 'properties'
+          ? '<button class="chart-link" data-sbu-portfolio>Open in Portfolio' + icon('open') + '</button>'
+          : '<button class="chart-link" data-sbu-docs>Open all in Documents' + icon('open') + '</button>') +
+      '</div>';
+
+    let body;
+    if (tab === 'properties') {
+      body = props.length
+        ? '<div class="table-wrap sbu-table"><table class="grid sbu-grid"><thead><tr>' +
+            '<th>Property</th><th>Location</th><th>Type</th><th>Tenure</th><th>Status</th>' +
+            '<th class="num">Docs</th><th class="row-actions"><span class="sr-only">Actions</span></th>' +
+          '</tr></thead><tbody>' + props.map(sbuPropertyRow).join('') + '</tbody></table></div>'
+        : '<p class="empty">No properties in this business unit yet.</p>';
+    } else {
+      body = docs.documents.length
+        ? '<div class="table-wrap sbu-table"><table class="grid sbu-grid docs-grid"><thead><tr>' +
+            '<th>Document</th><th>Property</th><th>Issued</th><th>Expiry</th><th class="num">Amount</th>' +
+            '<th class="row-actions"><span class="sr-only">Actions</span></th>' +
+          '</tr></thead><tbody>' + docs.documents.map(sbuDocumentRow).join('') + '</tbody></table></div>' +
+          '<p class="sbu-note">Soonest expiry first. Click a document to open it in the Documents module.</p>'
+        : '<p class="empty">No documents recorded against this unit’s properties yet.</p>';
+    }
+
+    host.innerHTML = head + tabs + body;
+  }
+
+  function onSbuPageClick(event) {
+    const t = event.target.closest('[data-sbu-back],[data-sbu-tab],[data-sbu-map],' +
+      '[data-sbu-portfolio],[data-sbu-docs],[data-doc-go]');
+    if (!t) return;
+    const id = state.sbuPage.id;
+    const d = t.dataset;
+    if (d.sbuBack !== undefined) { closeSbuPage(); return; }
+    if (d.sbuTab !== undefined) {
+      event.stopPropagation();
+      state.sbuPage.tab = d.sbuTab;
+      writeHash();
+      renderSbuPage();
+      return;
+    }
+    if (d.docGo !== undefined) { goToDocument(Number(d.docGo)); return; }
+    // The remaining shortcuts show this unit in another module, as a filter.
+    state.selectedSbus = [id];
+    renderSbuFilters();
+    if (d.sbuMap !== undefined || d.sbuPortfolio !== undefined) {
+      switchView('portfolio');
+      setMode(d.sbuMap !== undefined ? 'map' : 'table');
+    } else {
+      state.docs.status = '';
+      state.docs.type = '';
+      switchView('documents');
+    }
+    refreshProperties();
+  }
+
+  /* ---------- one document: the document panel ---------- */
+
+  function goToDocument(id) {
+    state.docs.status = '';
+    state.docs.type = '';
+    state.docs.focus = id;
+    if (state.view !== 'documents') switchView('documents');
+    else renderDocuments();
+    openDocPanel(id);
+  }
+
+  function markFocusRow() {
+    $$('#doc-rows tr').forEach((tr) =>
+      tr.classList.toggle('is-focus', String(tr.dataset.docId) === String(state.docs.focus)));
+  }
+
+  function docPreviewHtml(d) {
+    const src = '/api/documents/' + d.id + '/file';
+    if (!d.stored_name) {
+      return '<div class="dd-preview is-empty">' + icon('paperclip') +
+        '<p><b>No file attached</b>The reference is recorded; the scan can follow later.</p></div>';
+    }
+    const ext = extensionOf(d.file_name || '');
+    if (IMAGE_TYPES.indexOf(ext) !== -1) {
+      return '<div class="dd-preview"><img src="' + src + '" alt="' + esc(d.title) + '"></div>';
+    }
+    if (ext === '.pdf') {
+      return '<div class="dd-preview is-pdf"><iframe src="' + src + '#view=FitH" title="' +
+        esc(d.file_name) + '"></iframe></div>';
+    }
+    return '<div class="dd-preview is-empty">' + icon('file') +
+      '<p><b>' + esc(d.file_name) + '</b>No preview for ' + esc(ext.slice(1).toUpperCase() || 'this') +
+      ' files — download it to open.</p></div>';
+  }
+
+  function docPanelHtml(d) {
+    const src = '/api/documents/' + d.id + '/file';
+    const actions = (d.stored_name
+        ? '<a class="btn btn-dark btn-sm" href="' + src + '" target="_blank" rel="noopener">' +
+            icon('open') + 'View file</a>' +
+          '<a class="btn btn-ghost btn-sm" href="' + src + '?disposition=attachment">' +
+            icon('download') + 'Download</a>'
+        : '') +
+      '<button class="btn btn-ghost btn-sm" data-doc-property-open="' + d.property_id + '">' +
+        icon('home') + 'Open property</button>';
+    return '<header class="dd-head">' +
+        '<span class="doc-type ' + esc(d.doc_type) + '">' + esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
+        '<h2>' + esc(d.title) + '</h2>' +
+        '<div class="dd-sub">' + sbuTag(d) +
+          (d.reference_no ? '<span>Ref ' + esc(d.reference_no) + '</span>' : '') + '</div>' +
+      '</header>' +
+      '<div class="dd-body">' +
+        docPreviewHtml(d) +
+        '<div class="detail-actions">' + actions + '</div>' +
+        '<section class="detail-section"><h3>Details</h3><dl class="detail-grid">' +
+          row('Property', '<a href="#" data-doc-property-open="' + d.property_id + '">' +
+            esc(d.property_code + ' — ' + d.property_name) + '</a>') +
+          row('Location', esc([d.location_name, d.city, d.district]
+            .filter((v, i, all) => v && all.indexOf(v) === i).join(' · '))) +
+          row('Issued', d.issue_date ? esc(Fmt.date(d.issue_date)) : '') +
+          row('Expiry', expiryHtml(d.expiry_date)) +
+          row('Counterparty', esc(d.counterparty)) +
+          row('Amount', d.amount ? esc(Fmt.money(d.amount, d.currency)) : '') +
+          row('File', d.stored_name ? esc(d.file_name) + ' · ' + esc(Fmt.fileSize(d.size_bytes)) : '') +
+          row('Recorded', d.created_at ? esc(Fmt.date(String(d.created_at).slice(0, 10))) : '') +
+          row('Notes', esc(d.notes)) +
+        '</dl></section>' +
+      '</div>';
+  }
+
+  async function openDocPanel(id) {
+    let d;
+    try {
+      d = await API.getDocument(id);
+    } catch (err) {
+      toast(err.message, true);
+      return;
+    }
+    if (!$('#drawer').hidden) closeDrawer();
+    state.currentDoc = d;
+    state.docs.focus = d.id;
+    markFocusRow();
+    $('#doc-drawer-body').innerHTML = docPanelHtml(d);
+    $('#doc-drawer').hidden = false;
+    $('#scrim').hidden = false;
+    writeHash();
+  }
+
+  function closeDocPanel() {
+    if ($('#doc-drawer').hidden) return;
+    $('#doc-drawer').hidden = true;
+    $('#doc-drawer-body').innerHTML = '';      // stops an embedded PDF
+    if ($('#drawer').hidden) $('#scrim').hidden = true;
+    state.currentDoc = null;
+    state.docs.focus = null;
+    markFocusRow();
+    writeHash();
+  }
+
   /* ---------- property drawer ---------- */
 
   async function openDrawer(propertyId) {
@@ -1490,6 +1821,7 @@
       toast(err.message, true);
       return;
     }
+    if (!$('#doc-drawer').hidden) closeDocPanel();
     state.currentProperty = property;
     closePopovers();
 
@@ -2148,7 +2480,10 @@
 
   function wireEvents() {
     $$('.nav-pill .tab').forEach((tab) =>
-      tab.addEventListener('click', () => switchView(tab.dataset.view)));
+      tab.addEventListener('click', function () {
+        if (tab.dataset.view === 'sbus') closeSbuPage();
+        switchView(tab.dataset.view);
+      }));
     $$('#mode-toggle button').forEach((b) =>
       b.addEventListener('click', () => setMode(b.dataset.mode)));
     $$('#tenure-tabs button').forEach((b) =>
@@ -2266,11 +2601,41 @@
     $('#docs-banner').addEventListener('click', function (event) {
       if (event.target.closest('[data-clear-filters]')) resetFilters();
     });
-    // A row opens its property; its links and buttons do their own thing.
+    // A row opens the document; its links and buttons do their own thing.
     $('#doc-rows').addEventListener('click', function (event) {
       if (event.target.closest('button, a')) return;
-      const row = event.target.closest('tr[data-doc-property]');
-      if (row) openDrawer(Number(row.dataset.docProperty));
+      const row = event.target.closest('tr[data-doc-id]');
+      if (row) openDocPanel(Number(row.dataset.docId));
+    });
+
+    // Business units: a card opens the unit's page.
+    $('#sbu-cards').addEventListener('click', function (event) {
+      if (event.target.closest('button, a')) return;
+      const tile = event.target.closest('[data-sbu-open]');
+      if (tile) openSbuPage(Number(tile.dataset.sbuOpen), 'properties');
+    });
+    $('#sbu-cards').addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      const tile = event.target.closest('[data-sbu-open]');
+      if (!tile || event.target !== tile) return;
+      event.preventDefault();
+      openSbuPage(Number(tile.dataset.sbuOpen), 'properties');
+    });
+    $('#sbu-detail').addEventListener('click', onSbuPageClick);
+    $('#sbu-detail').addEventListener('keydown', function (event) {
+      if (event.key !== 'Enter') return;
+      const row = event.target.closest('tr[tabindex]');
+      if (row && event.target === row) row.click();
+    });
+
+    $('#btn-close-doc').addEventListener('click', closeDocPanel);
+    $('#doc-drawer').addEventListener('click', function (event) {
+      const t = event.target.closest('[data-doc-property-open]');
+      if (!t) return;
+      event.preventDefault();
+      const id = Number(t.dataset.docPropertyOpen);
+      closeDocPanel();
+      openDrawer(id);
     });
     wireDropzone();
 
@@ -2285,7 +2650,7 @@
       if (msg) msg.remove();
     });
     $('#btn-close-drawer').addEventListener('click', closeDrawer);
-    $('#scrim').addEventListener('click', closeDrawer);
+    $('#scrim').addEventListener('click', function () { closeDrawer(); closeDocPanel(); });
 
     $('#property-form').addEventListener('submit', (e) => { e.preventDefault(); saveProperty(); });
     $('#sbu-form').addEventListener('submit', (e) => { e.preventDefault(); saveSbu(); });
@@ -2360,6 +2725,7 @@
       const openModal = $$('.modal').filter((m) => !m.hidden)[0];
       if (openModal) { openModal.hidden = true; return; }
       if (!$('#drawer').hidden) { closeDrawer(); return; }
+      if (!$('#doc-drawer').hidden) { closeDocPanel(); return; }
       if (MapView.isCardOpen()) MapView.hideCard();
     });
 

@@ -265,7 +265,9 @@
   </section>
 
   <section class="view" id="view-sbus">
-    <div class="page">
+    <!-- One business unit: its properties and documents -->
+    <div class="page sbu-page" id="sbu-detail" hidden></div>
+    <div class="page" id="sbu-index">
       <div class="page-head">
         <div>
           <h1>Business units</h1>
@@ -335,6 +337,13 @@
     <h2 id="drawer-name"></h2>
   </header>
   <div class="drawer-body" id="drawer-body"></div>
+</aside>
+<!-- One document: details and a preview of its file -->
+<aside class="drawer doc-drawer" id="doc-drawer" hidden aria-label="Document">
+  <button class="circle-btn drawer-close" id="btn-close-doc" aria-label="Close">
+    <svg class="ic"><use href="#i-x"/></svg>
+  </button>
+  <div class="doc-drawer-inner" id="doc-drawer-body"></div>
 </aside>
 <div class="scrim" id="scrim" hidden></div>
 

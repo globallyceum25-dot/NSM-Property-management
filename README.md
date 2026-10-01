@@ -53,7 +53,7 @@ maps go blank and the text falls back to the system font.
 
 ![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
 
-More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property’s detail panel, the dashboard and the Documents module.
+More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property’s detail panel, the dashboard, the Documents module and a business unit's page.
 
 **Three things kept apart.** The register separates who *occupies* a property
 (the SBU), who *owns* it (the legal entity), and how it is *held* (tenure).
@@ -63,6 +63,22 @@ where the Ownership column mixes owning companies with "Rent" and "Lease".
 **Properties by SBU** — every property belongs to exactly one business unit.
 SBUs are created and edited in the app (name, code, description, map colour),
 and an SBU cannot be deleted while properties still point at it.
+
+**Business unit pages** — click any card under Business units to open that
+unit's page:
+
+- a header in the unit's colour, with its description and six figures:
+  properties, documents, files stored, land, properties without a deed or
+  title, and documents due within 180 days
+- two tabs, **Properties** and **Documents**
+
+The Properties tab lists each property with its picture, location, type,
+tenure, status and document count; click one to open it. The Documents tab
+lists every document on the unit's properties, soonest expiry first. Each has
+an **Open in Documents** shortcut that jumps to the Documents module, highlights
+that document and opens its panel. **Show on map**, **Open in Portfolio** and
+**Open all in Documents** show the unit in those modules, as a filter you can
+clear. Each page has its own link, for example `#sbus/5` or `#sbus/5/documents`.
 
 **Documents** — each property holds any number of documents: deed, title
 certificate, rent/lease agreement, survey plan, valuation, rates receipt,
@@ -123,8 +139,16 @@ Expired, each with its count. You can narrow it by document type and sort it by
 latest, expiry, business unit, property or title. The toolbar's search, tenure
 tabs and filters apply here too, so searching "Colombo" lists only documents on
 properties in Colombo. **Attach document** records a new one: you pick the
-property in the form, and you stay on the list afterwards. Clicking a row opens
-its property.
+property in the form, and you stay on the list afterwards.
+
+Click a row to open the **document panel**, which shows:
+
+- the document's type, title, business unit and reference
+- a preview of the file: images and PDFs inline, other formats as a download
+- **View file**, **Download** and **Open property**
+- every detail recorded for it
+
+Each document has its own link, `#documents/doc/<id>`.
 
 **Alerts** — the bell counts documents expiring within 180 days across the whole
 register, whatever is filtered, and lists them; click one to open its property.
@@ -290,6 +314,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |
 | GET | `/api/documents` | every document with its property and SBU; takes the property filters above plus `doc_status` (`file`, `nofile`, `expiring`, `expired`), `doc_type` and `sort` (`newest`, `expiry`, `sbu`, `property`, `title`), and returns per-tab counts |
+| GET | `/api/documents/{id}` | one document with its property and SBU |
 | GET | `/api/documents/{id}/file` | view; add `?disposition=attachment` to download |
 | DELETE | `/api/documents/{id}` | remove document and its file |
 | GET | `/api/masters` | list the master sheets |

@@ -728,6 +728,24 @@ def list_all_documents(ctx):
                  "properties": len({r["property_id"] for r in rows})}
 
 
+def get_document(ctx):
+    """One document with its property and business unit, for the document panel."""
+    conn = db.get_conn()
+    doc_id = int(ctx.match.group("id"))
+    row = conn.execute(
+        """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
+                  s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+                  loc.name AS location_name
+           FROM document d
+           JOIN property p ON p.id = d.property_id
+           JOIN sbu s ON s.id = p.sbu_id
+           LEFT JOIN location loc ON loc.id = p.location_id
+           WHERE d.id = ?""", (doc_id,)).fetchone()
+    if row is None:
+        raise ApiError("Document not found.", 404)
+    return 200, _row_to_dict(row)
+
+
 def delete_document(ctx):
     conn = db.get_conn()
     doc_id = int(ctx.match.group("id"))
@@ -927,6 +945,7 @@ ROUTES = [
     ("POST",   r"^/api/properties/(?P<id>\d+)/documents$", create_document),
     ("GET",    r"^/api/documents$",                      list_all_documents),
     ("GET",    r"^/api/documents/(?P<id>\d+)/file$",     download_document),
+    ("GET",    r"^/api/documents/(?P<id>\d+)$",          get_document),
     ("DELETE", r"^/api/documents/(?P<id>\d+)$",          delete_document),
     ("GET",    r"^/api/stats$",                          get_stats),
     ("GET",    r"^/api/export/properties.csv$",          export_properties_csv),
