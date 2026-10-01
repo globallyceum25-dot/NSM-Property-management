@@ -19,6 +19,39 @@ tint. All of it lives as CSS variables at the top of `web/css/styles.css`.
 Logo files are in `web/img/`: `serengeti-logo.png` (header), `serengeti-mark.png`
 (the building mark, used on narrow screens) and `favicon.png`, all with
 transparent backgrounds, cut from the original in `docs/brand/`.
+`serengeti-logo-dark.png` and `serengeti-mark-dark.png` are the same marks in a
+lighter teal for the dark theme.
+
+## Light and dark mode
+
+![The dashboard in dark mode](docs/screenshots/7-dark-mode.png)
+
+The sun/moon button in the header opens **Appearance**:
+
+- **Light**
+- **Dark**
+- **System** (the default), which follows the device's setting and switches
+  live when the device does, for example at sunset
+
+**Shift + D** flips between light and dark from anywhere outside a text field.
+The choice is remembered in the browser and applied before the page draws, so a
+dark page never flashes white. The browser's own tab bar follows the theme too.
+
+Dark mode is a designed palette, not an inversion:
+
+- **Surfaces:** deep teal-tinted surfaces stepped by elevation (page, card,
+  raised panel).
+- **Text:** body text at 14.8:1 contrast, secondary text at 6.6:1.
+- **Buttons:** primary buttons are bright teal with dark text, at 7:1.
+- **Status colours:** retuned for dark backgrounds.
+- **Charts:** they switch to a dark set of the same hues. That set was checked
+  with the data-viz palette validator against the dark card surface: it passes
+  colour-blind separation, the normal-vision floor and 3:1 contrast.
+- **Maps:** the maps and the property map thumbnails go dark.
+- **Logo:** the header uses the lighter-teal logo.
+
+Every colour is a CSS variable, defined once for light at the top of
+`web/css/styles.css` and once for dark below it.
 
 ## Running it
 

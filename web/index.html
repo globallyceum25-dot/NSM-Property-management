@@ -5,7 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Property Register · Serengeti Property Management</title>
 <link rel="icon" type="image/png" href="img/favicon.png">
-<meta name="theme-color" content="#00a69a">
+<meta name="theme-color" content="#ffffff">
+<meta name="color-scheme" content="light dark">
+<script>
+  /* Apply the saved theme before the first paint, so a dark page never flashes white. */
+  (function () {
+    try {
+      var t = localStorage.getItem('pr-theme');
+      if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t);
+    } catch (e) { /* storage blocked: follow the system */ }
+  })();
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap">
@@ -46,15 +56,23 @@
   <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 11.5-8.1 8.1a5 5 0 0 1-7.1-7.1l8.4-8.4a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/><path d="M12 8.5v4.5M12 16.3v.2"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.5 8.5 0 0 1 9.4 3.8a8.5 8.5 0 1 0 10.8 10.8z"/></symbol>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12.5" rx="2"/><path d="M8.5 20.5h7M12 16.5v4"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></symbol>
   <symbol id="i-verified" viewBox="0 0 24 24"><path d="M12 2.2 14.3 4l2.9-.2.9 2.8 2.4 1.7-.9 2.8.9 2.8-2.4 1.7-.9 2.8-2.9-.2L12 20.1l-2.3-1.9-2.9.2-.9-2.8-2.4-1.7.9-2.8-.9-2.8 2.4-1.7.9-2.8 2.9.2z" fill="currentColor" stroke="none"/><path d="m8.6 11.3 2.3 2.3 4.5-4.6" stroke="#fff" stroke-width="2.1"/></symbol>
 </svg>
 
 <header class="topbar">
   <a class="brand" href="#" data-go="portfolio"
      aria-label="Serengeti Property Management, Property Register: home">
-    <picture>
+    <picture class="logo-light">
       <source media="(max-width: 1180px)" srcset="img/serengeti-mark.png">
       <img class="brand-logo" src="img/serengeti-logo.png" alt="Serengeti Property Management">
+    </picture>
+    <picture class="logo-dark">
+      <source media="(max-width: 1180px)" srcset="img/serengeti-mark-dark.png">
+      <img class="brand-logo" src="img/serengeti-logo-dark.png" alt="Serengeti Property Management">
     </picture>
     <span class="brand-divider" aria-hidden="true"></span>
     <span class="brand-name">Property<br>Register</span>
@@ -76,6 +94,24 @@
         <span class="dot-badge" id="alert-count" hidden></span>
       </button>
       <div class="popover alerts-pop" id="alerts-pop" hidden></div>
+    </div>
+    <div class="pop-anchor">
+      <button class="circle-btn" id="btn-theme" aria-label="Appearance" title="Appearance" aria-haspopup="true" aria-expanded="false">
+        <svg class="ic ic-sun"><use href="#i-sun"/></svg>
+        <svg class="ic ic-moon"><use href="#i-moon"/></svg>
+      </button>
+      <div class="popover theme-pop" id="theme-pop" role="menu" aria-label="Appearance" hidden>
+        <h4>Appearance</h4>
+        <button class="theme-option" role="menuitemradio" data-theme-choice="light" aria-checked="false">
+          <svg class="ic"><use href="#i-sun"/></svg><span>Light<small>Bright surfaces, for daylight</small></span><svg class="ic tick"><use href="#i-check"/></svg>
+        </button>
+        <button class="theme-option" role="menuitemradio" data-theme-choice="dark" aria-checked="false">
+          <svg class="ic"><use href="#i-moon"/></svg><span>Dark<small>Easy on the eyes at night</small></span><svg class="ic tick"><use href="#i-check"/></svg>
+        </button>
+        <button class="theme-option" role="menuitemradio" data-theme-choice="system" aria-checked="false">
+          <svg class="ic"><use href="#i-monitor"/></svg><span>System<small>Follow this device’s setting</small></span><svg class="ic tick"><use href="#i-check"/></svg>
+        </button>
+      </div>
     </div>
     <a class="circle-btn" href="/api/export/properties.csv" title="Export the register as CSV" aria-label="Export CSV">
       <svg class="ic"><use href="#i-download"/></svg>

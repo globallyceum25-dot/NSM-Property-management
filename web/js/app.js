@@ -999,7 +999,73 @@
 
   /* ---------- popovers ---------- */
 
-  const POPOVERS = [['#btn-filters', '#filter-pop'], ['#btn-alerts', '#alerts-pop']];
+  const POPOVERS = [['#btn-filters', '#filter-pop'], ['#btn-alerts', '#alerts-pop'],
+                    ['#btn-theme', '#theme-pop']];
+
+  /* ---------- appearance: light, dark or follow the system ---------- */
+
+  const THEME_KEY = 'pr-theme';
+  const systemDark = window.matchMedia('(prefers-color-scheme: dark)');
+
+  function themeChoice() {
+    try {
+      const saved = localStorage.getItem(THEME_KEY);
+      return saved === 'light' || saved === 'dark' ? saved : 'system';
+    } catch (e) { return 'system'; }
+  }
+
+  function isDark() {
+    const choice = themeChoice();
+    return choice === 'dark' || (choice === 'system' && systemDark.matches);
+  }
+
+  function applyTheme(choice, animate) {
+    const root = document.documentElement;
+    if (animate) {
+      root.classList.add('theme-switching');
+      setTimeout(() => root.classList.remove('theme-switching'), 320);
+    }
+    if (choice === 'system') root.removeAttribute('data-theme');
+    else root.setAttribute('data-theme', choice);
+    try {
+      if (choice === 'system') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, choice);
+    } catch (e) { /* the choice still holds for this visit */ }
+    $$('[data-theme-choice]').forEach((b) =>
+      b.setAttribute('aria-checked', String(b.dataset.themeChoice === choice)));
+    // The browser's own chrome follows the page.
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', isDark() ? '#0b1514' : '#ffffff');
+    const label = 'Appearance: ' + (choice === 'system'
+      ? 'System (' + (isDark() ? 'dark' : 'light') + ')' : choice.charAt(0).toUpperCase() + choice.slice(1));
+    $('#btn-theme').setAttribute('aria-label', label);
+    $('#btn-theme').title = label;
+  }
+
+  function wireTheme() {
+    applyTheme(themeChoice(), false);
+    $('#btn-theme').addEventListener('click', (e) => {
+      e.stopPropagation(); togglePopover('#btn-theme', '#theme-pop');
+    });
+    $('#theme-pop').addEventListener('click', function (event) {
+      event.stopPropagation();
+      const option = event.target.closest('[data-theme-choice]');
+      if (!option) return;
+      applyTheme(option.dataset.themeChoice, true);
+      closePopovers();
+      $('#btn-theme').focus();
+    });
+    // With System chosen, follow the device as it changes (e.g. at sunset).
+    systemDark.addEventListener('change', function () {
+      if (themeChoice() === 'system') applyTheme('system', true);
+    });
+    // Shift+D toggles light and dark from anywhere outside a text field.
+    document.addEventListener('keydown', function (event) {
+      if (!event.shiftKey || event.key.toLowerCase() !== 'd' || event.metaKey || event.ctrlKey || event.altKey) return;
+      if (event.target.closest('input, textarea, select, [contenteditable]')) return;
+      applyTheme(isDark() ? 'light' : 'dark', true);
+    });
+  }
 
   function closePopovers() {
     POPOVERS.forEach(function (pair) {
@@ -2479,6 +2545,7 @@
   let searchTimer = null;
 
   function wireEvents() {
+    wireTheme();
     $$('.nav-pill .tab').forEach((tab) =>
       tab.addEventListener('click', function () {
         if (tab.dataset.view === 'sbus') closeSbuPage();

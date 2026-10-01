@@ -11,16 +11,19 @@
 window.Charts = (function () {
   'use strict';
 
-  // Validated in this order against the white card surface (CVD dE 9.1,
-  // normal-vision dE 19.6). Three slots sit under 3:1 contrast, which is why
-  // every donut legend prints its values.
-  const SLOTS = ['#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300'];
-  const OTHER = '#b3bfbd';          // teal-tinted grey for "Other" and context
-  const SERIES = '#00a69a';          // the logo teal: single-series bars and columns (3.0:1)
+  // Colours are CSS custom properties, so a theme change recolours every chart
+  // in place. Each mode has its own steps (styles.css), validated in this slot
+  // order against that mode's card surface: light CVD dE 9.1 / normal 19.6 on
+  // white; dark CVD dE 8.4 / normal 19.3, all >= 3:1, on #111e1d. Three light
+  // slots sit under 3:1, which is why every donut legend prints its values.
+  const SLOTS = ['var(--viz-1)', 'var(--viz-2)', 'var(--viz-3)',
+                 'var(--viz-4)', 'var(--viz-5)', 'var(--viz-6)'];
+  const OTHER = 'var(--viz-other)';     // teal-tinted grey for "Other" and context
+  const SERIES = 'var(--viz-series)';   // the logo teal: single-series bars and columns
   const STATUS = {
-    critical: { fill: '#d03b3b', track: '#f8dcdc' },
-    warning:  { fill: '#fab219', track: '#fdefcc' },
-    good:     { fill: '#0ca30c', track: '#d6f0d6' }
+    critical: { fill: 'var(--viz-critical)', track: 'var(--viz-critical-track)' },
+    warning:  { fill: 'var(--viz-warning)', track: 'var(--viz-warning-track)' },
+    good:     { fill: 'var(--viz-good)', track: 'var(--viz-good-track)' }
   };
 
   const esc = (v) => Fmt.esc(v);
@@ -46,7 +49,7 @@ window.Charts = (function () {
       const dash = Math.max(len - gap, 0.01);
       const pct = Math.round(item.value / total * 100);
       const seg = '<circle class="donut-seg" cx="' + cx + '" cy="' + cy + '" r="' + r + '" ' +
-        'fill="none" stroke="' + item.color + '" stroke-width="' + width + '" ' +
+        'fill="none" style="stroke:' + item.color + '" stroke-width="' + width + '" ' +
         'stroke-dasharray="' + dash.toFixed(2) + ' ' + C.toFixed(2) + '" ' +
         'stroke-dashoffset="' + (-offset).toFixed(2) + '"' +
         tipAttrs(item.label, fmt(item.value) + ' · ' + pct + '%') + '></circle>';
@@ -91,9 +94,9 @@ window.Charts = (function () {
 
     return '<div class="gauge-wrap">' +
       '<svg class="gauge" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(opts.ariaLabel) + '">' +
-        '<path d="' + arc(end) + '" fill="none" stroke="' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"/>' +
+        '<path d="' + arc(end) + '" fill="none" style="stroke:' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"/>' +
         (pct > 0
-          ? '<path class="gauge-fill" d="' + arc(fillTo) + '" fill="none" stroke="' + tone.fill + '" ' +
+          ? '<path class="gauge-fill" d="' + arc(fillTo) + '" fill="none" style="stroke:' + tone.fill + '" ' +
               'stroke-width="' + stroke + '" stroke-linecap="round"' +
               tipAttrs(opts.tipLabel, opts.tipValue) + '/>'
           : '') +
