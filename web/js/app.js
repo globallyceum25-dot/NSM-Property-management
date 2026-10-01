@@ -93,6 +93,31 @@
     return clean.length <= 4 ? clean : clean.slice(0, 3);
   }
 
+  // Units at reading size: "42.5 perches", "6.6 acres", "38,000 sq ft".
+  const UNIT_SHORT = {
+    PERCH: ['perch', 'perches'], ACRE: ['acre', 'acres'], ROOD: ['rood', 'roods'],
+    HECTARE: ['hectare', 'hectares'], SQ_M: ['sq m', 'sq m'], SQ_FT: ['sq ft', 'sq ft']
+  };
+
+  function unitName(unit, value) {
+    const names = UNIT_SHORT[unit] || [unit, unit];
+    return Number(value) === 1 ? names[0] : names[1];
+  }
+
+  function sqftFor(value, unit) {
+    const factor = (state.reference.sqftPerUnit || {})[unit || 'PERCH'];
+    return value === null || value === undefined || value === '' || !factor ? null : Number(value) * factor;
+  }
+
+  // An area as entered, then in square feet: "6.6 acres · 287,496 sq ft".
+  function areaText(value, unit, sqft) {
+    if (value === null || value === undefined || value === '') return '';
+    const entered = Fmt.num(value) + ' ' + unitName(unit, value);
+    if (unit === 'SQ_FT') return entered;
+    const inSqft = sqft !== null && sqft !== undefined ? sqft : sqftFor(value, unit);
+    return entered + (inSqft !== null ? ' · ' + Fmt.num(Math.round(inSqft)) + ' sq ft' : '');
+  }
+
   function toPerches(value, unit) {
     const n = Number(value) || 0;
     switch (unit) {
@@ -100,6 +125,7 @@
       case 'ROOD': return n * 40;
       case 'HECTARE': return n * 395.37;
       case 'SQ_M': return n * 0.0395369;
+      case 'SQ_FT': return n / 272.25;
       default: return n;
     }
   }
@@ -159,7 +185,9 @@
 
   function specsHtml(p) {
     const extent = Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits) ||
-      (p.building_area_sqft ? Fmt.num(p.building_area_sqft) + ' sq ft' : 'Extent not set');
+      (p.building_area_value
+        ? Fmt.num(p.building_area_value) + ' ' + unitName(p.building_area_unit, p.building_area_value)
+        : 'Extent not set');
     const docs = p.document_count;
     return '<div class="specs-wrap"><div class="specs">' +
       '<span>' + icon('home') + esc(shortLabel('propertyTypes', p.property_type)) + '</span>' +
@@ -1952,8 +1980,8 @@
       '</dl></section>' +
 
       '<section class="detail-section"><h3>Extent &amp; value</h3><dl class="detail-grid">' +
-        row('Land extent', esc(Fmt.extent(p.extent_value, p.extent_unit, state.labels.extentUnits))) +
-        row('Building area', p.building_area_sqft ? Fmt.num(p.building_area_sqft) + ' sq ft' : '') +
+        row('Land extent', esc(areaText(p.extent_value, p.extent_unit, p.extent_sqft))) +
+        row('Building area', esc(areaText(p.building_area_value, p.building_area_unit, p.building_area_sqft))) +
         row('Assessment no.', esc(p.assessment_no)) +
         row('Survey plan', esc([p.plan_no, p.lot_no ? 'Lot ' + p.lot_no : ''].filter(Boolean).join(' · '))) +
         row('Acquired', Fmt.date(p.acquisition_date)) +
@@ -2033,6 +2061,7 @@
     fillSelect(form.property_type, optionsFrom(state.reference.propertyTypes), { value: 'LAND' });
     fillSelect(form.ownership_type, optionsFrom(state.reference.ownershipTypes), { value: 'FREEHOLD' });
     fillSelect(form.extent_unit, optionsFrom(state.reference.extentUnits), { value: 'PERCH' });
+    fillSelect(form.building_area_unit, optionsFrom(state.reference.extentUnits), { value: 'PERCH' });
     form.currency.value = 'LKR';
 
     const source = propertyId
@@ -2051,7 +2080,12 @@
         }
       });
       form.sbu_id.value = source.sbu_id;
+      if (!source.building_area_unit) form.building_area_unit.value = form.extent_unit.value;
     }
+    // The building unit follows the land unit until someone picks a different one.
+    areaLink = !source || !source.building_area_value ||
+      source.building_area_unit === source.extent_unit;
+    updateAreas();
 
     $('#property-modal').hidden = false;
 
@@ -2132,6 +2166,7 @@
   }
 
   function fieldLabel(field) {
+    if (field.dataset && field.dataset.label) return field.dataset.label;
     const label = field.closest('label');
     const text = label ? label.firstChild && label.firstChild.textContent : field.name;
     return String(text || field.name).replace(/\*/g, '').trim();
@@ -2217,7 +2252,45 @@
   }
 
   const PROPERTY_NUMBERS = ['latitude', 'longitude', 'extent_value',
-    'building_area_sqft', 'acquisition_cost', 'current_value'];
+    'building_area_value', 'acquisition_cost', 'current_value'];
+
+  /* ---------- areas: land and building, each also in square feet ---------- */
+
+  let areaLink = true;    // building unit follows the land unit
+
+  function rateText(unit) {
+    const factor = (state.reference.sqftPerUnit || {})[unit];
+    if (!factor || unit === 'SQ_FT') return 'Already in square feet.';
+    return '1 ' + unitName(unit, 1) + ' = ' + Fmt.num(factor) + ' sq ft';
+  }
+
+  function derivedText(raw, unit) {
+    const parsed = parseNumber(raw);
+    if (!parsed.ok) return { text: 'Not a number', bad: true };
+    if (parsed.value === null) return { text: '—', empty: true };
+    if (parsed.value < 0) return { text: 'Cannot be negative', bad: true };
+    return { text: Fmt.num(sqftFor(parsed.value, unit)) + ' sq ft' };
+  }
+
+  function paintDerived(el, result) {
+    el.textContent = result.text;
+    el.classList.toggle('is-bad', !!result.bad);
+    el.classList.toggle('is-empty', !!result.empty);
+  }
+
+  function updateAreas() {
+    const form = $('#property-form');
+    const landUnit = form.extent_unit.value;
+    const buildUnit = form.building_area_unit.value;
+    paintDerived($('#extent-sqft'), derivedText(form.extent_value.value, landUnit));
+    paintDerived($('#building-sqft'), derivedText(form.building_area_value.value, buildUnit));
+    $('#extent-rate').textContent = rateText(landUnit);
+    $('#building-rate').textContent = rateText(buildUnit);
+    $('#building-unit-tag').textContent = '(' + unitName(buildUnit, 2) + ')';
+    $('#building-link-hint').textContent = areaLink
+      ? 'Follows the land unit — pick another to measure it differently.'
+      : 'Measured in its own unit.';
+  }
 
   async function saveProperty() {
     const form = $('#property-form');
@@ -2724,6 +2797,16 @@
     $('#doc-form').addEventListener('submit', (e) => { e.preventDefault(); saveDocument(); });
 
     const propertyForm = $('#property-form');
+    propertyForm.extent_unit.addEventListener('change', function () {
+      if (areaLink) propertyForm.building_area_unit.value = propertyForm.extent_unit.value;
+      updateAreas();
+    });
+    propertyForm.building_area_unit.addEventListener('change', function () {
+      areaLink = propertyForm.building_area_unit.value === propertyForm.extent_unit.value;
+      updateAreas();
+    });
+    propertyForm.extent_value.addEventListener('input', updateAreas);
+    propertyForm.building_area_value.addEventListener('input', updateAreas);
     propertyForm.latitude.addEventListener('change', validateCoords);
     propertyForm.longitude.addEventListener('change', validateCoords);
     propertyForm.district.addEventListener('change', function (event) {

@@ -110,7 +110,27 @@ EXTENT_UNITS = [
     ("ROOD", "Roods"),
     ("HECTARE", "Hectares"),
     ("SQ_M", "Square metres"),
+    ("SQ_FT", "Square feet"),
 ]
+
+# Square feet in one of each unit: the one table every area conversion uses.
+# 1 perch = 272.25 sq ft (16.5 ft square), 1 rood = 40 perches,
+# 1 acre = 160 perches = 43,560 sq ft, 1 m = 3.28084 ft.
+SQFT_PER_UNIT = {
+    "PERCH": 272.25,
+    "ROOD": 10890.0,
+    "ACRE": 43560.0,
+    "HECTARE": 107639.104,
+    "SQ_M": 10.7639104,
+    "SQ_FT": 1.0,
+}
+
+
+def to_sqft(value, unit):
+    """An area in square feet, or None when there is no value."""
+    if value is None:
+        return None
+    return round(value * SQFT_PER_UNIT.get(unit or "PERCH", 1.0), 2)
 
 DOCUMENT_TYPES = [
     ("DEED", "Deed"),

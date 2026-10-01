@@ -83,7 +83,10 @@ CREATE TABLE IF NOT EXISTS property (
 
     extent_value      REAL,
     extent_unit       TEXT DEFAULT 'PERCH',
-    building_area_sqft REAL,
+    building_area_sqft REAL,          -- derived: building_area_value in sq ft
+    building_area_value REAL,         -- as entered, in building_area_unit
+    building_area_unit TEXT DEFAULT 'SQ_FT',
+    extent_sqft       REAL,           -- derived: extent_value in sq ft
 
     assessment_no     TEXT,
     plan_no           TEXT,
@@ -177,7 +180,30 @@ MIGRATIONS = [
     ("sbu", "cost_centre", "TEXT"),
     ("property", "legal_entity_id", "INTEGER REFERENCES legal_entity(id)"),
     ("property", "location_id", "INTEGER REFERENCES location(id)"),
+    ("property", "building_area_value", "REAL"),
+    ("property", "building_area_unit", "TEXT DEFAULT 'SQ_FT'"),
+    ("property", "extent_sqft", "REAL"),
 ]
+
+
+def normalise_areas(conn):
+    """Every property's land and building area, also in square feet.
+
+    Building area used to be recorded in sq ft only, so an existing figure
+    becomes a value in SQ_FT before the conversion runs.
+    """
+    conn.execute("""UPDATE property SET building_area_value = building_area_sqft,
+                                        building_area_unit = 'SQ_FT'
+                    WHERE building_area_value IS NULL AND building_area_sqft IS NOT NULL""")
+    for row in conn.execute("""SELECT id, extent_value, extent_unit, building_area_value,
+                                      building_area_unit, extent_sqft, building_area_sqft
+                               FROM property""").fetchall():
+        extent = srilanka.to_sqft(row["extent_value"], row["extent_unit"])
+        building = srilanka.to_sqft(row["building_area_value"], row["building_area_unit"])
+        if extent != row["extent_sqft"] or building != row["building_area_sqft"]:
+            conn.execute("UPDATE property SET extent_sqft = ?, building_area_sqft = ? WHERE id = ?",
+                         (extent, building, row["id"]))
+    conn.commit()
 
 
 def migrate(conn):
@@ -186,6 +212,8 @@ def migrate(conn):
         if column not in existing:
             conn.execute("ALTER TABLE %s ADD COLUMN %s %s" % (table, column, decl))
     conn.commit()
+
+    normalise_areas(conn)
 
     # Populate the owning-company master the first time it appears, and attach it
     # to the sample rows only -- matched by their exact seed property codes, so a
@@ -225,6 +253,7 @@ def init_db():
     conn.commit()
     if conn.execute("SELECT COUNT(*) AS n FROM sbu").fetchone()["n"] == 0:
         seed(conn)
+        normalise_areas(conn)
 
 
 # --- first-run seed ---------------------------------------------------------

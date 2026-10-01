@@ -151,6 +151,29 @@ there is none, the card shows a street map of the exact spot with a pin on the
 property's coordinates. A blue ✓ beside a name means a deed or title
 certificate is on file.
 
+**Areas in the property form** — land extent and building area are each
+entered in their own unit:
+
+- **Building area** has its own unit picker. It follows the land **Unit** until
+  you pick another, so land in perches with a building in sq ft works.
+- Two read-only fields, **Land extent (sq ft)** and **Building area (sq ft)**,
+  calculate as you type and show the rate used, for example
+  `1 acre = 43,560 sq ft`.
+
+The conversions are exact, with one table on the server (`SQFT_PER_UNIT` in
+`server/srilanka.py`) that the form also uses:
+
+- 1 perch = 272.25 sq ft
+- 1 rood = 40 perches
+- 1 acre = 160 perches = 43,560 sq ft
+- 1 hectare = 107,639.1 sq ft
+- 1 m² = 10.764 sq ft
+
+Every property's sq ft figures are worked out when it is saved. Existing
+properties were converted when the database was upgraded; their building areas
+were recorded in sq ft before, so they keep that unit. The property panel shows
+both forms, for example "6.6 acres · 287,496 sq ft". Negative areas are refused.
+
 **Search and filters** — the tenure tabs (All · Freehold · Leasehold · Rented in ·
 Leased out) and the search box sit above everything; the filter button opens
 business units, location, owning company, district, tenure, status and type.
@@ -321,8 +344,10 @@ document instead. Managed from the **Owning companies** tab.
 name, SBU, owning company (optional), **location** (optional, from the location
 master), type, ownership type, status,
 address (line 1/2, city, district,
-province, postal code), **latitude, longitude**, extent value + unit
-(perch/acre/rood/hectare/m²), building area, assessment no., survey plan no.,
+province, postal code), **latitude, longitude**, land extent value + unit
+(perch/acre/rood/hectare/m²/sq ft), building area value + unit, **both areas in
+square feet** (`extent_sqft`, `building_area_sqft` — calculated on every save),
+assessment no., survey plan no.,
 lot no., acquisition date and cost, current value, currency, current use,
 custodian, contact phone, notes.
 

@@ -19,7 +19,8 @@ ALLOWED_EXTENSIONS = {
 PROPERTY_FIELDS = [
     "name", "property_type", "ownership_type", "status",
     "address_line1", "address_line2", "city", "district", "province", "postal_code",
-    "extent_value", "extent_unit", "building_area_sqft",
+    "extent_value", "extent_unit", "extent_sqft",
+    "building_area_value", "building_area_unit", "building_area_sqft",
     "assessment_no", "plan_no", "lot_no",
     "acquisition_date", "acquisition_cost", "current_value", "currency",
     "current_use", "custodian", "contact_phone", "notes",
@@ -121,6 +122,7 @@ def get_reference(ctx):
         "ownershipTypes": srilanka.as_options(srilanka.OWNERSHIP_TYPES),
         "statuses": srilanka.as_options(srilanka.PROPERTY_STATUSES),
         "extentUnits": srilanka.as_options(srilanka.EXTENT_UNITS),
+        "sqftPerUnit": srilanka.SQFT_PER_UNIT,
         "documentTypes": srilanka.as_options(srilanka.DOCUMENT_TYPES),
         "bounds": srilanka.SRI_LANKA_BOUNDS,
         "mapCenter": srilanka.MAP_CENTER,
@@ -495,12 +497,30 @@ def _property_payload(ctx, conn):
         "district": district,
         "province": province,
         "extent_value": _as_float(data.get("extent_value"), "Land extent", "extent_value"),
-        "building_area_sqft": _as_float(data.get("building_area_sqft"), "Building area", "building_area_sqft"),
+        "building_area_value": _as_float(data.get("building_area_value"), "Building area", "building_area_value"),
         "acquisition_cost": _as_float(data.get("acquisition_cost"), "Acquisition cost", "acquisition_cost"),
         "current_value": _as_float(data.get("current_value"), "Current value", "current_value"),
         "acquisition_date": _as_date(data.get("acquisition_date"), "Acquisition date", "acquisition_date"),
         "currency": _clean_str(data.get("currency")) or "LKR",
     }
+    # Building area in its own unit (the land unit unless chosen otherwise). A
+    # client that still sends only building_area_sqft is read as square feet.
+    if payload["building_area_value"] is None and data.get("building_area_value") in (None, "") \
+            and data.get("building_area_sqft") not in (None, ""):
+        payload["building_area_value"] = _as_float(data.get("building_area_sqft"), "Building area",
+                                                   "building_area_sqft")
+        payload["building_area_unit"] = "SQ_FT"
+    else:
+        payload["building_area_unit"] = _check_enum(
+            data.get("building_area_unit"), srilanka.EXTENT_UNITS, "Building area unit",
+            payload["extent_unit"])
+    for key, label in (("extent_value", "Land extent"), ("building_area_value", "Building area")):
+        if payload[key] is not None and payload[key] < 0:
+            raise ApiError("%s cannot be negative." % label, field=key)
+    # Both areas, also in square feet, so every property compares on one scale.
+    payload["extent_sqft"] = srilanka.to_sqft(payload["extent_value"], payload["extent_unit"])
+    payload["building_area_sqft"] = srilanka.to_sqft(payload["building_area_value"],
+                                                     payload["building_area_unit"])
     for field in ("address_line1", "address_line2", "city", "postal_code",
                   "assessment_no", "plan_no", "lot_no", "current_use",
                   "custodian", "contact_phone", "notes"):
@@ -804,6 +824,7 @@ def get_stats(ctx):
                                     WHEN f.extent_unit='ROOD' THEN f.extent_value*40
                                     WHEN f.extent_unit='HECTARE' THEN f.extent_value*395.37
                                     WHEN f.extent_unit='SQ_M' THEN f.extent_value*0.0395369
+                                    WHEN f.extent_unit='SQ_FT' THEN f.extent_value/272.25
                                     ELSE f.extent_value END), 0) AS extent_perches
            FROM sbu s LEFT JOIN (%s) f ON f.sbu_id = s.id
            GROUP BY s.id ORDER BY property_count DESC, s.name""" % subset)]
@@ -908,7 +929,8 @@ def export_properties_csv(ctx):
                "location_code", "location_name", "property_type",
                "ownership_type", "status", "address_line1", "address_line2", "city",
                "district", "province", "postal_code", "latitude", "longitude",
-               "extent_value", "extent_unit", "building_area_sqft", "assessment_no",
+               "extent_value", "extent_unit", "extent_sqft",
+               "building_area_value", "building_area_unit", "building_area_sqft", "assessment_no",
                "plan_no", "lot_no", "acquisition_date", "acquisition_cost",
                "current_value", "currency", "current_use", "custodian",
                "contact_phone", "document_count", "notes"]

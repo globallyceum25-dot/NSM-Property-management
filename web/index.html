@@ -471,14 +471,32 @@
         <legend>Extent &amp; value</legend>
         <div class="grid-3">
           <label>Land extent
-            <input name="extent_value" inputmode="decimal">
+            <input name="extent_value" inputmode="decimal" placeholder="0">
           </label>
           <label>Unit
-            <select name="extent_unit"></select>
+            <select name="extent_unit" id="pf-extent-unit"></select>
           </label>
-          <label>Building area (sq ft)
-            <input name="building_area_sqft" inputmode="decimal">
-          </label>
+          <div class="field-block derived-field">
+            <span class="derived-label">Land extent (sq ft)</span>
+            <output id="extent-sqft" class="derived" aria-live="polite" for="pf-extent-unit">—</output>
+            <span class="hint" id="extent-rate"></span>
+          </div>
+          <div class="field-block">
+            <label class="block-label" for="pf-building-value">Building area
+              <span class="unit-tag" id="building-unit-tag">(perches)</span></label>
+            <div class="unit-input">
+              <input id="pf-building-value" name="building_area_value" inputmode="decimal"
+                     placeholder="0" data-label="Building area">
+              <select name="building_area_unit" aria-label="Building area unit" data-label="Building area unit"></select>
+            </div>
+            <span class="hint" id="building-link-hint">Follows the land unit — pick another to measure it differently.</span>
+          </div>
+          <div class="field-block derived-field">
+            <span class="derived-label">Building area (sq ft)</span>
+            <output id="building-sqft" class="derived" aria-live="polite">—</output>
+            <span class="hint" id="building-rate"></span>
+          </div>
+          <div class="grid-spacer" aria-hidden="true"></div>
           <label>Assessment no.
             <input name="assessment_no" maxlength="60">
           </label>

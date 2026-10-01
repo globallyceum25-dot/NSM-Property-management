@@ -2052,3 +2052,53 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   :root:not([data-theme]) #btn-theme .ic-sun { display: none; }
   :root:not([data-theme]) #btn-theme .ic-moon { display: block; }
 }
+
+/* ==========================================================================
+   Property form: areas, each shown in square feet as you type
+   ========================================================================== */
+
+.modal-body .block-label { margin-bottom: 0; }
+.unit-tag { font-weight: 500; color: var(--text-muted); }
+
+/* a number with its unit attached on the right, read as one field */
+.unit-input {
+  display: flex; margin-top: 6px;
+  border-radius: 12px; background: var(--surface-2);
+  border: 1.5px solid transparent;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.unit-input:focus-within { border-color: var(--accent); background: var(--field-focus); box-shadow: 0 0 0 4px var(--accent-soft); }
+.modal-body .unit-input input, .modal-body .unit-input select {
+  margin-top: 0; background-color: transparent; border: none; box-shadow: none;
+}
+.modal-body .unit-input input { flex: 1 1 auto; min-width: 0; }
+.modal-body .unit-input input:focus, .modal-body .unit-input select:focus { box-shadow: none; outline: none; background-color: transparent; border-color: transparent; }
+.modal-body .unit-input select {
+  flex: 0 0 auto; width: auto; max-width: 52%;
+  border-left: 1px solid var(--border-strong); border-radius: 0 12px 12px 0;
+  font-weight: 600; color: var(--accent-text);
+}
+.modal-body .unit-input input.is-invalid { box-shadow: none; }
+.unit-input:has(.is-invalid) { border-color: var(--danger); }
+
+/* calculated, not typed: a quiet read-out in the shape of a field */
+.derived-label { display: block; font-size: 12.5px; font-weight: 600; color: var(--text-2); }
+.derived {
+  display: flex; align-items: center; gap: 8px;
+  height: 44px; margin-top: 6px; padding: 0 14px;
+  border: 1.5px dashed var(--border-strong); border-radius: 12px;
+  font-size: 14px; font-weight: 700; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.derived::before {
+  content: "="; flex: 0 0 auto;
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px;
+  background: var(--accent-soft); color: var(--accent-text); font-size: 13px; font-weight: 700;
+}
+.derived.is-empty { color: var(--text-faint); font-weight: 500; }
+.derived.is-bad { color: var(--danger); border-color: var(--danger-border); }
+
+@media (max-width: 720px) {
+  .grid-spacer { display: none; }
+}
+.modal-body .unit-input select:focus { border-left-color: var(--border-strong); }
