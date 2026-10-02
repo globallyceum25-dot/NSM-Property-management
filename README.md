@@ -1,6 +1,7 @@
 # Property Register — Stage 1
 
-A property database organised by **SBU (Strategic Business Unit)**, with deeds,
+A property database organised by **property type** (Educational, Warehouse,
+Corporate Office, …), with deeds,
 lease agreements and other documents attached to each property, and every
 property plotted on a map of Sri Lanka by latitude/longitude.
 
@@ -86,18 +87,48 @@ maps go blank and the text falls back to the system font.
 
 ![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
 
-More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property’s detail panel, the dashboard, the Documents module and a business unit's page.
+More in [`docs/screenshots/`](docs/screenshots/): the grid layout, a property’s detail panel, the dashboard, the Documents module and a property type's page.
 
-**Three things kept apart.** The register separates who *occupies* a property
-(the SBU), who *owns* it (the legal entity), and how it is *held* (tenure).
+**Three things kept apart.** The register separates what a property is *used
+for* (its property type), who *owns* it (the legal entity), and how it is *held*
+(tenure).
 Conflating them is the defect the blueprint flags in the current property sheet,
 where the Ownership column mixes owning companies with "Rent" and "Lease".
 
-**Properties by SBU** — every property belongs to exactly one business unit.
-SBUs are created and edited in the app (name, code, description, map colour),
-and an SBU cannot be deleted while properties still point at it.
+**Property types** — every property has exactly one type, which says what the
+property is used for. The list starts as:
 
-**Business unit pages** — click any card under Business units to open that
+1. Educational
+2. Warehouse
+3. Corporate Office
+4. Technical & Mechanical Sites
+5. Bus Yards
+6. Hostels
+7. Commercial Properties
+8. Other (always last)
+
+Types are added, renamed, recoloured or removed from the **Property types** tab
+or the master sheet. A type can't be deleted while properties still use it.
+
+Property types replaced the earlier *business units*. The six sample units were
+renamed in place, so every property, document and link stayed attached:
+
+- Head Office → Corporate Office
+- Logistics → Warehouse
+- Retail → Commercial Properties
+- Manufacturing → Technical & Mechanical Sites
+- Leisure → Hostels
+- Agriculture → Other
+
+Existing property codes such as `HO-0003` were kept; new properties get the
+type's code as their prefix (`CORP-0001`).
+
+**Structure** — separate from the property type, a property's physical form:
+Bare land, Land & building, Building only or Other. When property types
+arrived, the old Type values that described use (Office, Warehouse, Showroom,
+Factory, Residential, Estate) became *Land & building*.
+
+**Property type pages** — click any card under Property types to open that
 unit's page:
 
 - a header in the unit's colour, with its description and six figures:
@@ -122,14 +153,14 @@ You can record a document reference now and attach the scan later.
 
 **Portfolio** — the main screen. It opens with a **summary strip** of five
 figures, each with context rather than a bare number: properties (owned vs
-leased or rented in), business units (across how many districts), documents
+leased or rented in), property types (how many of the list are in use), documents
 (how many expire within 180 days), files stored (share of documents scanned)
 and properties **without a deed or title** (share of the portfolio). Every
 figure covers exactly what is on screen, so a search or filter narrows the
 summary too. Every card is a shortcut, marked with a ↗ arrow:
 
 - **Properties** opens the register table.
-- **Business units** opens the business-unit list.
+- **Property types** opens the property-type list.
 - **Documents** opens the Documents module.
 - **Files stored** opens the Documents module on the *With file* tab.
 - **Without deed / title** lists just the properties missing one. Click it again to clear.
@@ -137,7 +168,7 @@ summary too. Every card is a shortcut, marked with a ↗ arrow:
 Below the summary, three layouts:
 
 - **Map** — property cards beside a light-grey map of Sri Lanka. Pins are coloured
-  by business unit and labelled with their property code wherever there is room;
+  by property type and labelled with their property code wherever there is room;
   labels that would overlap are hidden until you zoom in or hover. Clicking a pin
   opens a floating card; hovering a card lights up its pin. The map can expand to
   full width, switch to the colour style, and zoom to fit every property. The
@@ -185,13 +216,13 @@ both forms, for example "6.6 acres · 287,496 sq ft". Negative areas are refused
 
 **Search and filters** — the tenure tabs (All · Freehold · Leasehold · Rented in ·
 Leased out) and the search box sit above everything; the filter button opens
-business units, location, owning company, district, tenure, status and type.
+property types, location, owning company, district, tenure, status and structure.
 Every active filter shows as a removable chip under the heading, and the count
 reads "2 of 13" while any filter is on. Sort by latest, code, name, largest
 extent or most documents.
 
 **Documents module** — every document in the register on one page, whichever
-property it belongs to. Each row is marked with its **business unit**: the
+property it belongs to. Each row is marked with its **property type**: the
 unit's colour dot, code and name. The row also shows:
 
 - the property
@@ -201,14 +232,14 @@ unit's colour dot, code and name. The row also shows:
 
 Tabs split the list into All · With file · No file · Expiring soon ·
 Expired, each with its count. You can narrow it by document type and sort it by
-latest, expiry, business unit, property or title. The toolbar's search, tenure
+latest, expiry, property type, property or title. The toolbar's search, tenure
 tabs and filters apply here too, so searching "Colombo" lists only documents on
 properties in Colombo. **Attach document** records a new one: you pick the
 property in the form, and you stay on the list afterwards.
 
 Click a row to open the **document panel**, which shows:
 
-- the document's type, title, business unit and reference
+- the document's type, title, property type and reference
 - a preview of the file: images and PDFs inline, other formats as a download
 - **View file**, **Download** and **Open property**
 - every detail recorded for it
@@ -283,9 +314,9 @@ What each chart filters on:
 | Documents by type | Holding a document of that type |
 | Renewal pipeline | Having a document in that expiry band |
 | Province | Province |
-| Property types | Type |
-| Business unit (charts, area bars and breakdown) | Business unit |
-| Owning company (bar name, segment or legend) | Owning company, and business unit for a segment |
+| Structure | Structure |
+| Property type (charts, area bars and breakdown) | Property type |
+| Owning company (bar name, segment or legend) | Owning company, and property type for a segment |
 | Status | Status |
 | District | District |
 
@@ -298,7 +329,7 @@ Below the band come five sections, each headed by a rule:
   - **Total land area** and **Total floor area** — the sum over every property
     shown, in square feet. Land is also given in acres and hectares, floor area
     in m² and acres.
-  - Each total has a bar split by business unit in the unit's colour, with a
+  - Each total has a bar split by property type in the type's colour, with a
     legend of each unit's share.
   - A line underneath says how many properties have the area recorded
     ("Recorded for 12 of 14 properties"), so a partial total never passes for
@@ -317,23 +348,23 @@ Below the band come five sections, each headed by a rule:
     first, each with its date, business-unit dot and days left. Click one to
     open its property.
 - *Land & location*:
-  - **Land by business unit** — square feet and share of all land.
+  - **Land by property type** — square feet and share of all land.
   - **Largest holdings** — the five biggest properties by land, in sq ft.
   - **Properties by province** — all nine provinces, shown as bars instead of
     columns on a phone.
-  - **Property types**.
+  - **Structure** — bare land, land & building, building only.
 - *Breakdowns*:
   - **Properties by owning company** — the full total and how much of it a group
     company owns ("14 properties · 8 owned by group companies (57%) · 6 with no
     group owner").
     - **By company** shows a stacked bar per company, split by the business
       units that use its properties, with "Not recorded" last.
-    - **By business unit** shows a bar per unit, split by the companies that own
+    - **By property type** shows a bar per type, split by the companies that own
       what it uses.
     - Each company and unit keeps a fixed colour and position in every bar.
     - Click a bar's name to filter by that company or unit. Click a segment to
       filter by both, e.g. NCGE within Head Office.
-  - Properties by status and by business unit (in each unit's map colour).
+  - Properties by status and by property type (in each type's map colour).
   - Properties by district, in columns across a wide card.
 
 Card headers carry shortcuts where there is a list to go to: *Documents*,
@@ -352,7 +383,7 @@ A banner names the active filters and says how many of the register they cover
 codes and place names are maintained in a single place rather than retyped.
 
 *Editable:* **Locations** (every place the group operates, with district, province
-and coordinates), **Location codes**, **Business units (SBU)** and **Owning
+and coordinates), **Location codes**, **Property types** and **Owning
 companies**. A location code is `UNIQUE`, so one code can never stand for two
 places — the LLKO-means-both-Kottawa-and-Kegalle defect the blueprint reports is
 impossible by construction. A row cannot be deleted while something still points
@@ -364,7 +395,7 @@ when they are still blank* — a pin you have already placed is never overwritte
 The address lines stay free text for the street detail. Locations added under
 Master sheets appear in the property form immediately.
 
-*System lists* (read-only in Stage 1): provinces, districts, property types,
+*System lists* (read-only in Stage 1): provinces, districts, structures,
 ownership/tenure types, property statuses, document types and extent units.
 These are compiled into the application; the sheet shows exactly what each
 drop-down offers.
@@ -401,19 +432,20 @@ property-system/
 
 ## Data model
 
-`sbu` — code, name, sector, cost centre, description, map colour, active flag.
-An SBU is the sector/business unit/department that **occupies** a property and
-carries its costs. It is deliberately *not* the owning legal entity and *not* the
-tenure; those are `legal_entity` and `ownership_type`.
+`sbu` — the **property types**: code, name, description, map colour, sort
+order, active flag. The table keeps its original name (it started as business
+units), so `sbu_id` on a property is its property type. It is deliberately *not*
+the owning legal entity and *not* the tenure; those are `legal_entity` and
+`ownership_type`.
 
 `legal_entity` — short code, registered name, registration no., notes, active
 flag. The group company that **holds title**. A property leased or rented *in*
 has none: an outside landlord owns it, and that party is recorded on the lease
 document instead. Managed from the **Owning companies** tab.
 
-`property` — property code (unique, auto-generated as `SBU-0001` if left blank),
-name, SBU, owning company (optional), **location** (optional, from the location
-master), type, ownership type, status,
+`property` — property code (unique, auto-generated as `CORP-0001` from the type's
+code if left blank), name, property type (`sbu_id`), owning company (optional), **location** (optional, from the location
+master), structure (`property_type`), ownership type, status,
 address (line 1/2, city, district,
 province, postal code), **latitude, longitude**, land extent value + unit
 (perch/acre/rood/hectare/m²/sq ft), building area value + unit, **both areas in
@@ -433,8 +465,8 @@ Sri Lanka; selecting a district fills the province automatically.
 | Method | Path | Purpose |
 | --- | --- | --- |
 | GET | `/api/reference` | districts, provinces, enumerations, map bounds |
-| GET/POST | `/api/sbus` | list / create SBUs |
-| PUT/DELETE | `/api/sbus/{id}` | update / delete an SBU |
+| GET/POST | `/api/sbus` | list / create property types |
+| PUT/DELETE | `/api/sbus/{id}` | update / delete a property type |
 | GET/POST | `/api/legal-entities` | list / create owning companies |
 | PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
 | GET | `/api/locations` | slim location list for the property form |
@@ -442,8 +474,8 @@ Sri Lanka; selecting a district fills the province automatically.
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |
-| GET | `/api/documents` | every document with its property and SBU; takes the property filters above plus `doc_status` (`file`, `nofile`, `expiring`, `expired`), `doc_type` and `sort` (`newest`, `expiry`, `sbu`, `property`, `title`), and returns per-tab counts |
-| GET | `/api/documents/{id}` | one document with its property and SBU |
+| GET | `/api/documents` | every document with its property and property type; takes the property filters above plus `doc_status` (`file`, `nofile`, `expiring`, `expired`), `doc_type` and `sort` (`newest`, `expiry`, `sbu`, `property`, `title`), and returns per-tab counts |
+| GET | `/api/documents/{id}` | one document with its property and property type |
 | GET | `/api/documents/{id}/file` | view; add `?disposition=attachment` to download |
 | DELETE | `/api/documents/{id}` | remove document and its file |
 | GET | `/api/masters` | list the master sheets |
@@ -455,7 +487,7 @@ Sri Lanka; selecting a district fills the province automatically.
 
 ## Sample data
 
-The first run seeds 6 placeholder SBUs, 13 properties across Sri Lanka and 9
+The first run seeds the 8 property types, 13 sample properties across Sri Lanka and 9
 document records so the map and lists are not empty. **Replace these with the
 real register.**
 

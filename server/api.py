@@ -140,7 +140,7 @@ def list_sbus(ctx):
     rows = conn.execute(
         """SELECT s.*,
                   (SELECT COUNT(*) FROM property p WHERE p.sbu_id = s.id) AS property_count
-           FROM sbu s ORDER BY s.name"""
+           FROM sbu s ORDER BY COALESCE(s.sort_order, 500), s.name"""
     ).fetchall()
     return 200, [_row_to_dict(r) for r in rows]
 
@@ -150,9 +150,9 @@ def _sbu_payload(ctx, require_code=True):
     code = _clean_str(data.get("code"))
     name = _clean_str(data.get("name"))
     if require_code and not code:
-        raise ApiError("SBU code is required.", field="code")
+        raise ApiError("Property type code is required.", field="code")
     if not name:
-        raise ApiError("SBU name is required.", field="name")
+        raise ApiError("Property type name is required.", field="name")
     color = _clean_str(data.get("color")) or srilanka.SBU_COLORS[0]
     if not re.match(r"^#[0-9a-fA-F]{6}$", color):
         raise ApiError("Colour must be a hex value like #1f77b4.", field="color")
@@ -171,7 +171,7 @@ def create_sbu(ctx):
     payload = _sbu_payload(ctx)
     conn = db.get_conn()
     if conn.execute("SELECT 1 FROM sbu WHERE code = ?", (payload["code"],)).fetchone():
-        raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
+        raise ApiError("A property type with code '%s' already exists." % payload["code"], 409, "code")
     cur = conn.execute(
         """INSERT INTO sbu (code, name, sector, cost_centre, description, color, is_active)
            VALUES (:code, :name, :sector, :cost_centre, :description, :color, :is_active)""",
@@ -185,12 +185,12 @@ def update_sbu(ctx):
     sbu_id = int(ctx.match.group("id"))
     conn = db.get_conn()
     if not conn.execute("SELECT 1 FROM sbu WHERE id = ?", (sbu_id,)).fetchone():
-        raise ApiError("SBU not found.", 404)
+        raise ApiError("Property type not found.", 404)
     payload = _sbu_payload(ctx)
     clash = conn.execute("SELECT 1 FROM sbu WHERE code = ? AND id <> ?",
                          (payload["code"], sbu_id)).fetchone()
     if clash:
-        raise ApiError("An SBU with code '%s' already exists." % payload["code"], 409, "code")
+        raise ApiError("A property type with code '%s' already exists." % payload["code"], 409, "code")
     payload["id"] = sbu_id
     conn.execute(
         """UPDATE sbu SET code=:code, name=:name, sector=:sector,
@@ -292,7 +292,7 @@ def delete_sbu(ctx):
                      (sbu_id,)).fetchone()["n"]
     if n:
         raise ApiError(
-            "This SBU still has %d propert%s. Move or delete them first."
+            "This property type still has %d propert%s. Move them to another type first."
             % (n, "y" if n == 1 else "ies"), 409)
     conn.execute("DELETE FROM sbu WHERE id = ?", (sbu_id,))
     conn.commit()
@@ -454,9 +454,9 @@ def _property_payload(ctx, conn):
     try:
         sbu_id = int(data.get("sbu_id"))
     except (TypeError, ValueError):
-        raise ApiError("Please select an SBU.", field="sbu_id")
+        raise ApiError("Please choose a property type.", field="sbu_id")
     if not conn.execute("SELECT 1 FROM sbu WHERE id = ?", (sbu_id,)).fetchone():
-        raise ApiError("The selected SBU does not exist.", field="sbu_id")
+        raise ApiError("The selected property type does not exist.", field="sbu_id")
 
     # Optional: a property leased or rented IN is owned by an outside landlord,
     # who belongs on the lease document rather than in the group company master.
@@ -718,7 +718,7 @@ _DOC_SORT = {
 
 
 def list_all_documents(ctx):
-    """Every document, with its property and business unit.
+    """Every document, with its property and property type.
 
     Scoped by the same property filters as the portfolio (so the Documents
     card and this list agree), plus document filters: type, status, and a
@@ -769,7 +769,7 @@ def list_all_documents(ctx):
 
 
 def get_document(ctx):
-    """One document with its property and business unit, for the document panel."""
+    """One document with its property and property type, for the document panel."""
     conn = db.get_conn()
     doc_id = int(ctx.match.group("id"))
     row = conn.execute(
@@ -957,7 +957,7 @@ def get_stats(ctx):
 
 def export_properties_csv(ctx):
     conn = db.get_conn()
-    rows = conn.execute(_PROPERTY_SELECT + " ORDER BY s.name, p.property_code").fetchall()
+    rows = conn.execute(_PROPERTY_SELECT + " ORDER BY COALESCE(s.sort_order, 500), s.name, p.property_code").fetchall()
     buf = io.StringIO()
     headers = ["property_code", "name", "sbu_code", "sbu_name",
                "entity_code", "entity_name",
@@ -970,7 +970,11 @@ def export_properties_csv(ctx):
                "current_value", "currency", "current_use", "custodian",
                "contact_phone", "document_count", "notes"]
     writer = csv.writer(buf)
-    writer.writerow(headers)
+    # Column titles as the app names them: the `sbu` table holds property types,
+    # and the `property_type` column holds the structure.
+    titles = {"sbu_code": "property_type_code", "sbu_name": "property_type",
+              "property_type": "structure"}
+    writer.writerow([titles.get(h, h) for h in headers])
     for r in rows:
         writer.writerow([r[h] if r[h] is not None else "" for h in headers])
     return 200, {

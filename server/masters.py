@@ -87,13 +87,13 @@ MASTERS = [
     },
     {
         "key": "sbu",
-        "label": "Business units (SBU)",
+        "label": "Property types",
         "group": "Editable",
-        "description": "The sector, business unit or department that occupies a "
-                       "property and carries its costs.",
+        "description": "What each property is used for: Educational, Warehouse, "
+                       "Corporate Office and so on.",
         "editable": True,
         "table": "sbu",
-        "order_by": "code",
+        "order_by": "COALESCE(sort_order, 500), name",
         "display": "name",
         "blocked_by": [("property", "sbu_id", "property")],
         "columns": [
@@ -101,9 +101,6 @@ MASTERS = [
              "unique": True, "maxlength": 16, "upper": True},
             {"name": "name", "label": "Name", "type": "text", "required": True,
              "maxlength": 120},
-            {"name": "sector", "label": "Sector", "type": "text", "maxlength": 80},
-            {"name": "cost_centre", "label": "Cost centre", "type": "text",
-             "maxlength": 40},
             {"name": "color", "label": "Map colour", "type": "color",
              "default": "#1f77b4"},
             {"name": "description", "label": "Description", "type": "textarea",
@@ -164,9 +161,9 @@ MASTERS = [
     },
     {
         "key": "property_type",
-        "label": "Property types",
+        "label": "Structures",
         "group": "System lists",
-        "description": "Choices offered by the Property type field.",
+        "description": "Choices offered by the Structure field: the physical form of a property.",
         "editable": False,
         "static": _static(_option_rows(srilanka.PROPERTY_TYPES), CODE_LABEL_COLUMNS),
     },

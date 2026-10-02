@@ -74,18 +74,37 @@ DISTRICT_NAMES = [d["district"] for d in DISTRICTS]
 PROVINCE_NAMES = [p[0] for p in PROVINCES]
 DISTRICT_BY_NAME = {d["district"]: d for d in DISTRICTS}
 
+# Structure: the physical form of a property. (Stored as `property_type`;
+# what a property is used for is its property type category, the `sbu` table.)
 PROPERTY_TYPES = [
     ("LAND", "Bare land"),
     ("LAND_AND_BUILDING", "Land & building"),
     ("BUILDING", "Building only"),
-    ("OFFICE", "Office"),
-    ("WAREHOUSE", "Warehouse / stores"),
-    ("FACTORY", "Factory / plant"),
-    ("SHOWROOM", "Showroom / retail outlet"),
-    ("RESIDENTIAL", "Residential / bungalow"),
-    ("ESTATE", "Estate / plantation"),
     ("OTHER", "Other"),
 ]
+
+# Earlier structure values that described use rather than form; they now
+# read as land with a building on it.
+RETIRED_STRUCTURES = ("OFFICE", "WAREHOUSE", "FACTORY", "SHOWROOM", "RESIDENTIAL", "ESTATE")
+
+# Property types: what each property is used for. Stored in the `sbu` table,
+# editable from the app; this is the starting list, in display order.
+PROPERTY_CATEGORIES = [
+    # code, name, description, map colour
+    ("EDU", "Educational", "Schools, campuses and other teaching premises", "#e377c2"),
+    ("WH", "Warehouse", "Warehouses, stores and distribution centres", "#9467bd"),
+    ("CORP", "Corporate Office", "Head office and administrative offices", "#1f77b4"),
+    ("TECH", "Technical & Mechanical Sites", "Workshops, plants and technical installations", "#2ca02c"),
+    ("BUS", "Bus Yards", "Yards and depots for the bus fleet", "#d4a017"),
+    ("HOST", "Hostels", "Student and staff accommodation", "#8c564b"),
+    ("COMM", "Commercial Properties", "Showrooms, shops and premises let commercially", "#ff7f0e"),
+    ("OTHER", "Other", "Properties that fit none of the types above", "#7f8c8d"),
+]
+
+# The first sample business units, and the property type each became.
+BUSINESS_UNIT_TO_CATEGORY = {
+    "HO": "CORP", "LOG": "WH", "RETAIL": "COMM", "MFG": "TECH", "LEIS": "HOST", "AGRI": "OTHER",
+}
 
 OWNERSHIP_TYPES = [
     ("FREEHOLD", "Freehold (owned)"),

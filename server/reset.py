@@ -1,6 +1,6 @@
 """Maintenance helper.
 
-    python3 -m server.reset --wipe     delete every property, document and SBU
+    python3 -m server.reset --wipe     delete every property, document and property type
                                        (including the sample seed data) and the
                                        uploaded files, then recreate an empty
                                        schema.

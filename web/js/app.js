@@ -89,6 +89,13 @@
     return list.map((x) => ({ value: x.value, label: x.label }));
   }
 
+  // A round badge in the type's colour; four-letter codes set a size smaller.
+  function avatarHtml(code, colour, size) {
+    const text = initials(code);
+    return '<span class="avatar' + (size ? ' ' + size : '') + (text.length > 3 ? ' is-long' : '') + '"' +
+      ' style="background:' + esc(colour) + '">' + esc(text) + '</span>';
+  }
+
   // Avatar text: short codes as they are, longer ones cut to three (RETAIL -> RET).
   function initials(code) {
     const clean = String(code || '?').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
@@ -248,8 +255,7 @@
         '<span class="media-badge" title="Documents on file">' + icon('file') +
           p.document_count + '</span>' +
         '<div class="media-overlay">' +
-          '<span class="avatar" style="background:' + esc(p.sbu_color) + '">' +
-            esc(initials(p.sbu_code)) + '</span>' +
+          avatarHtml(p.sbu_code, p.sbu_color, '') +
           '<div class="ov-text">' +
             '<div class="ov-title">' + esc(p.sbu_name) + '</div>' +
             '<div class="ov-sub">' + icon('pin') + esc(locationLine(p)) + '</div>' +
@@ -441,7 +447,7 @@
     const select = $('#property-form').sbu_id;
     const keep = select.value;
     fillSelect(select, state.sbus.map((s) => ({ value: s.id, label: s.code + ' — ' + s.name })),
-      { placeholder: 'Select a business unit' });
+      { placeholder: 'Select a property type' });
     if (keep) select.value = keep;
   }
 
@@ -586,8 +592,8 @@
       const names = state.sbus
         .filter((s) => state.selectedSbus.indexOf(s.id) !== -1).map((s) => s.code);
       chips.push({
-        label: names.length ? 'Business unit' + (names.length === 1 ? ': ' : 's: ') + names.join(', ')
-                            : 'No business unit selected',
+        label: names.length ? 'Property type' + (names.length === 1 ? ': ' : 's: ') + names.join(', ')
+                            : 'No property type selected',
         sbu: true,
         clear: () => { state.selectedSbus = null; renderSbuFilters(); }
       });
@@ -615,7 +621,7 @@
                    clear: clearSelect('status', '#filter-status') });
     }
     if (f.property_type) {
-      chips.push({ label: 'Type: ' + shortLabel('propertyTypes', f.property_type),
+      chips.push({ label: 'Structure: ' + shortLabel('propertyTypes', f.property_type),
                    clear: clearSelect('property_type', '#filter-type') });
     }
     // Set by clicking a dashboard chart.
@@ -751,9 +757,10 @@
       kpiHtml({ cls: 'hero', icon: 'home', value: t.properties, label: 'Properties',
                 action: 'properties', go: 'Open the property list',
                 sub: esc(tenureSplit(s.byTenure)) }),
-      kpiHtml({ cls: 't-units', icon: 'building', value: t.sbus, label: 'Business units',
-                action: 'sbus', go: 'Open business units',
-                sub: sub(districts ? 'across ' + plural(districts, 'district', 'districts') : 'No districts recorded') }),
+      kpiHtml({ cls: 't-units', icon: 'building', value: t.sbus, label: 'Property types',
+                action: 'sbus', go: 'Open property types',
+                sub: sub((state.sbus.length ? 'of ' + state.sbus.length + ' in use' : '') +
+                  (districts ? ' · ' + plural(districts, 'district', 'districts') : '')) }),
       kpiHtml({ cls: 't-docs', icon: 'file', value: t.documents, label: 'Documents',
                 action: 'documents', go: 'Open all documents',
                 sub: sub(expiring ? '<b>' + expiring + ' expiring</b> within 180 days'
@@ -808,7 +815,7 @@
       .filter((s) => counts[s.id])
       .map((s) => '<button class="legend-chip' + (solo === s.id ? ' is-solo' : '') + '" ' +
           'data-legend-sbu="' + s.id + '" title="' +
-          (solo === s.id ? 'Show all business units' : 'Show only ' + esc(s.name)) + '">' +
+          (solo === s.id ? 'Show all property types' : 'Show only ' + esc(s.name)) + '">' +
         '<i style="background:' + esc(s.color) + '"></i>' + esc(s.name) +
         ' <b>' + counts[s.id] + '</b></button>')
       .join('');
@@ -863,8 +870,8 @@
         '<td class="code">' + esc(p.property_code) + '</td>' +
         '<td class="prop-cell"><span class="prop-name">' + esc(p.name) + verifiedHtml(p) + '</span>' +
           '<span class="prop-sub">' + esc([p.address_line1, p.city].filter(Boolean).join(', ')) + '</span></td>' +
-        '<td><span class="sbu-pill"><span class="swatch" style="background:' +
-          esc(p.sbu_color) + '"></span>' + esc(p.sbu_code) + '</span></td>' +
+        '<td class="type-cell"><span class="sbu-pill" title="' + esc(p.sbu_code) + '"><span class="swatch" style="background:' +
+          esc(p.sbu_color) + '"></span>' + esc(p.sbu_name) + '</span></td>' +
         '<td>' + (p.entity_code
           ? '<span title="' + esc(p.entity_name) + '">' + esc(p.entity_code) + '</span>'
           : '<span class="muted-inline" title="Leased or rented in — owned by an outside landlord">—</span>') + '</td>' +
@@ -904,8 +911,7 @@
       : '';
     return '<div class="tile' + (opts.openId ? ' is-link' : '') + '"' + open + '>' +
       '<div class="tile-top">' +
-        '<span class="avatar lg" style="background:' + esc(opts.color) + '">' +
-          esc(initials(opts.code)) + '</span>' +
+        avatarHtml(opts.code, opts.color, 'lg') +
         '<div class="tile-actions">' +
           '<button class="circle-btn sm" ' + opts.editAttr + ' title="Edit" aria-label="Edit">' +
             icon('pencil') + '</button>' +
@@ -925,7 +931,7 @@
   function renderSbuCards() {
     const host = $('#sbu-cards');
     if (!state.sbus.length) {
-      host.innerHTML = '<p class="empty">No business units yet. Every property belongs to one, ' +
+      host.innerHTML = '<p class="empty">No property types yet. Every property needs one, ' +
         'so add these first.</p>';
       return;
     }
@@ -1325,7 +1331,7 @@
       ? 'A filtered view: ' + n + ' of ' + plural(t.allProperties, 'property', 'properties') +
         '. Every figure on this page follows the filters.'
       : plural(n, 'property', 'properties') + ' across ' +
-        plural(t.sbus, 'business unit', 'business units') + ' and ' +
+        plural(t.sbus, 'property type', 'property types') + ' and ' +
         plural(stats.byDistrict.length, 'district', 'districts') + ', holding ' +
         plural(t.documents, 'document', 'documents') + '.';
 
@@ -1506,7 +1512,7 @@
         ? Fmt.num(total / 43560, 1) + ' acres · ' + Fmt.num(total / 107639.104, 1) + ' hectares'
         : Fmt.num(Math.round(total / 10.7639104)) + ' m² · ' + Fmt.num(total / 43560, 2) + ' acres';
       // One bar, split by business unit in each unit's own colour.
-      const bar = '<div class="area-bar" role="img" aria-label="' + esc(title + ' by business unit') + '">' +
+      const bar = '<div class="area-bar" role="img" aria-label="' + esc(title + ' by property type') + '">' +
         parts.map(function (x) {
           const share = x[key] / total * 100;
           return '<span class="' + Charts.xfClass(xf('sbu'), x.id).trim() + '" style="flex-grow:' + share.toFixed(3) + ';background:' + esc(x.color) + '"' +
@@ -1543,13 +1549,13 @@
     const chip = (id, on, inner, label) =>
       '<button type="button" class="df-chip' + (on ? ' is-on' : '') + '" data-dash-sbu="' + id + '" ' +
         'aria-pressed="' + on + '"' + (label ? ' title="' + esc(label) + '"' : '') + '>' + inner + '</button>';
-    return '<div class="dash-filter" role="group" aria-label="Filter the dashboard by business unit">' +
-      '<span class="df-label">' + icon('building') + 'Business unit</span>' +
+    return '<div class="dash-filter" role="group" aria-label="Filter the dashboard by property type">' +
+      '<span class="df-label">' + icon('building') + 'Property type</span>' +
       '<div class="df-chips">' +
-        chip('all', !sel, 'All units <b>' + total + '</b>') +
+        chip('all', !sel, 'All types <b>' + total + '</b>') +
         state.sbus.map((x) => chip(x.id, !!sel && sel.indexOf(x.id) !== -1,
           '<i style="background:' + esc(x.color) + '"></i>' + esc(x.name) + ' <b>' + x.property_count + '</b>',
-          x.code + ' — ' + x.name + (sel ? '' : ' · click to show only this unit; add more to compare')
+          x.code + ' — ' + x.name + (sel ? '' : ' · click to show only this type; add more to compare')
         )).join('') +
       '</div>' +
     '</div>';
@@ -1635,13 +1641,13 @@
       '</div>' +
       sectionHead('Land & location') +
       '<div class="chart-grid">' +
-        chartCard({ span: 7, title: 'Land by business unit', sub: 'Square feet and share of all land, largest first',
+        chartCard({ span: 7, title: 'Land by property type', sub: 'Square feet and share of all land, largest first',
                     body: landBars(forDim('sbu')), xf: 'sbu' }) +
         chartCard({ span: 5, title: 'Largest holdings', sub: 'By land extent · click to open',
                     body: largestHoldings(), link: { go: 'register', label: 'Register' } }) +
         chartCard({ span: 7, title: 'Properties by province', sub: 'All nine provinces, including any with none',
                     body: provinceColumns(forDim('province')), xf: 'province' }) +
-        chartCard({ span: 5, title: 'Property types', sub: 'Number of properties of each type',
+        chartCard({ span: 5, title: 'Structure', sub: 'Bare land, land & building, or a building only',
                     body: typeBars(forDim('type')), xf: 'type' }) +
       '</div>';
   }
@@ -1745,14 +1751,14 @@
     }).join('') + '</ul>';
 
     return summary + '<div class="own-chart' + (hasSel ? ' has-selection' : '') + '">' + body + '</div>' +
-      '<p class="own-legend-title">' + (byCompany ? 'Business units' : 'Owning companies') + '</p>' + legend;
+      '<p class="own-legend-title">' + (byCompany ? 'Property types' : 'Owning companies') + '</p>' + legend;
   }
 
   function ownershipTools() {
     const b = (key, label) => '<button type="button" data-own-pivot="' + key + '" aria-pressed="' +
       (state.ownPivot === key) + '"' + (state.ownPivot === key ? ' class="is-on"' : '') + '>' + label + '</button>';
     return '<div class="seg-mini" role="group" aria-label="Group the bars by">' +
-      b('company', 'By company') + b('sbu', 'By business unit') + '</div>';
+      b('company', 'By company') + b('sbu', 'By property type') + '</div>';
   }
 
   function breakdownBars(rows, labelKey, valueKey, colorFor, emptyNote, dim, keyOf) {
@@ -1783,14 +1789,14 @@
       '<div class="chart-grid breakdowns">' +
         chartCard({ span: 8, title: 'Properties by owning company',
                     sub: state.ownPivot === 'sbu'
-                      ? 'Each business unit, split by the group company holding title'
-                      : 'Each group company holding title, split by the business unit using the property',
+                      ? 'Each property type, split by the group company holding title'
+                      : 'Each group company holding title, split by what its properties are used for',
                     xf: 'entity,sbu', tools: ownershipTools(),
                     body: ownershipHtml(forDim('entity,sbu')) }) +
         chartCard({ span: 4, title: 'By status', sub: 'How each property is being used', xf: 'status',
                     body: breakdownBars(forDim('status').byStatus.map((x) => ({ code: x.status, label: labelFor('statuses', x.status), n: x.n })),
                       'label', 'n', series, emptyNote, 'status', (r) => r.code) }) +
-        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour', xf: 'sbu',
+        chartCard({ span: 4, title: 'Properties by property type', sub: 'In each type’s map colour', xf: 'sbu',
                     body: breakdownBars(forDim('sbu').bySbu.filter((r) => r.property_count), 'name', 'property_count',
                       (r) => r.color, emptyNote, 'sbu', (r) => r.id) }) +
         chartCard({ span: 8, title: 'Properties by district', sub: 'Every district with at least one property', xf: 'district',
@@ -2056,7 +2062,7 @@
       '<td>' + esc(TENURE_SHORT[p.ownership_type] || labelFor('ownershipTypes', p.ownership_type)) + '</td>' +
       '<td><span class="badge ' + esc(p.status) + '">' + esc(shortLabel('statuses', p.status)) + '</span></td>' +
       '<td class="num">' + (p.document_count
-        ? '<button class="count-chip" data-sbu-tab="documents" title="See this unit’s documents">' +
+        ? '<button class="count-chip" data-sbu-tab="documents" title="See this type’s documents">' +
             icon('file') + p.document_count + '</button>'
         : '<span class="muted-inline">0</span>') + '</td>' +
       '<td class="row-actions">' +
@@ -2094,7 +2100,7 @@
     const sbu = state.sbus.filter((x) => x.id === id)[0];
     if (!sbu) {
       host.innerHTML = '<button class="crumb-back" data-sbu-back>' + icon('chevron') +
-        'All business units</button><p class="empty">This business unit no longer exists.</p>';
+        'All property types</button><p class="empty">This property type no longer exists.</p>';
       return;
     }
     const seq = ++sbuRequest;
@@ -2107,7 +2113,7 @@
       ]);
       props = results[0]; docs = results[1]; stats = results[2];
     } catch (err) {
-      host.innerHTML = '<p class="empty">Could not load this business unit: ' + esc(err.message) + '</p>';
+      host.innerHTML = '<p class="empty">Could not load this property type: ' + esc(err.message) + '</p>';
       return;
     }
     if (seq !== sbuRequest || state.sbuPage.id !== id) return;
@@ -2117,17 +2123,17 @@
     const acres = perches / 160;
     const expiring = stats.expiringSoon.length;
     const tab = state.sbuPage.tab;
-    const meta = ['Business unit', sbu.code, sbu.sector, sbu.cost_centre ? 'Cost centre ' + sbu.cost_centre : '']
+    const meta = ['Property type', sbu.code, sbu.sector, sbu.cost_centre ? 'Cost centre ' + sbu.cost_centre : '']
       .filter(Boolean).join(' · ');
 
     const head =
       '<nav class="crumbs" aria-label="Breadcrumb">' +
-        '<button class="crumb-back" data-sbu-back>' + icon('chevron') + 'Business units</button>' +
+        '<button class="crumb-back" data-sbu-back>' + icon('chevron') + 'Property types</button>' +
         '<span aria-hidden="true">/</span><span aria-current="page">' + esc(sbu.name) + '</span>' +
       '</nav>' +
       '<section class="sbu-hero" style="--c:' + esc(sbu.color) + '">' +
         '<div class="sh-id">' +
-          '<span class="avatar xl" style="background:' + esc(sbu.color) + '">' + esc(initials(sbu.code)) + '</span>' +
+          avatarHtml(sbu.code, sbu.color, 'xl') +
           '<div class="sh-text"><p class="sh-meta">' + esc(meta) + '</p>' +
             '<h1>' + esc(sbu.name) + '</h1>' +
             (sbu.description ? '<p class="sh-desc">' + esc(sbu.description) + '</p>' : '') + '</div>' +
@@ -2166,7 +2172,7 @@
             '<th>Property</th><th>Location</th><th>Type</th><th>Tenure</th><th>Status</th>' +
             '<th class="num">Docs</th><th class="row-actions"><span class="sr-only">Actions</span></th>' +
           '</tr></thead><tbody>' + props.map(sbuPropertyRow).join('') + '</tbody></table></div>'
-        : '<p class="empty">No properties in this business unit yet.</p>';
+        : '<p class="empty">No properties of this type yet.</p>';
     } else {
       body = docs.documents.length
         ? '<div class="table-wrap sbu-table"><table class="grid sbu-grid docs-grid"><thead><tr>' +
@@ -2174,7 +2180,7 @@
             '<th class="row-actions"><span class="sr-only">Actions</span></th>' +
           '</tr></thead><tbody>' + docs.documents.map(sbuDocumentRow).join('') + '</tbody></table></div>' +
           '<p class="sbu-note">Soonest expiry first. Click a document to open it in the Documents module.</p>'
-        : '<p class="empty">No documents recorded against this unit’s properties yet.</p>';
+        : '<p class="empty">No documents recorded against these properties yet.</p>';
     }
 
     host.innerHTML = head + tabs + body;
@@ -2356,14 +2362,14 @@
         '<button class="btn btn-danger btn-sm" data-delete="' + p.id + '">Delete</button>' +
       '</div>' +
       '<section class="detail-section"><h3>Classification</h3><dl class="detail-grid">' +
-        row('Business unit', '<span class="sbu-pill"><span class="swatch" style="background:' +
+        row('Property type', '<span class="sbu-pill"><span class="swatch" style="background:' +
             esc(p.sbu_color) + '"></span>' + esc(p.sbu_code + ' — ' + p.sbu_name) + '</span>') +
         row('Owned by', p.entity_code
             ? esc(p.entity_code + ' — ' + p.entity_name)
             : '<span class="muted-inline">No group company — leased or rented in</span>') +
         row('Sector', esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
             .filter(Boolean).join(' · '))) +
-        row('Type', esc(labelFor('propertyTypes', p.property_type))) +
+        row('Structure', esc(labelFor('propertyTypes', p.property_type))) +
         row('Ownership', esc(labelFor('ownershipTypes', p.ownership_type))) +
         row('Status', '<span class="badge ' + esc(p.status) + '">' +
             esc(labelFor('statuses', p.status)) + '</span>') +
@@ -2450,7 +2456,7 @@
 
   function openPropertyModal(propertyId) {
     if (!state.sbus.length) {
-      toast('Create a business unit first — every property belongs to one.', true);
+      toast('Create a property type first — every property needs one.', true);
       switchView('sbus');
       return;
     }
@@ -2744,13 +2750,11 @@
     form.reset();
     $('#sbu-form-error').hidden = true;
     const sbu = sbuId ? state.sbus.filter((s) => s.id === sbuId)[0] : null;
-    $('#sbu-modal-title').textContent = sbu ? 'Edit business unit' : 'New business unit';
+    $('#sbu-modal-title').textContent = sbu ? 'Edit property type' : 'New property type';
     form.id.value = sbu ? sbu.id : '';
     if (sbu) {
       form.code.value = sbu.code;
       form.name.value = sbu.name;
-      form.sector.value = sbu.sector || '';
-      form.cost_centre.value = sbu.cost_centre || '';
       form.description.value = sbu.description || '';
       form.color.value = sbu.color;
       form.is_active.checked = !!sbu.is_active;
@@ -2782,7 +2786,7 @@
       $('#sbu-modal').hidden = true;
       await refreshSbus();
       await refreshProperties();
-      toast(id ? 'Business unit updated.' : 'Business unit added.');
+      toast(id ? 'Property type updated.' : 'Property type added.');
     } catch (err) {
       showFormError(form, errorBox, err.message, err.field);
     } finally {
@@ -3342,12 +3346,12 @@
   async function removeSbu(sbuId) {
     const sbu = state.sbus.filter((s) => s.id === sbuId)[0];
     if (!sbu) return;
-    if (!window.confirm('Delete business unit "' + sbu.name + '"?')) return;
+    if (!window.confirm('Delete property type "' + sbu.name + '"?')) return;
     try {
       await API.deleteSbu(sbuId);
       await refreshSbus();
       await refreshProperties();
-      toast('Business unit deleted.');
+      toast('Property type deleted.');
     } catch (err) { toast(err.message, true); }
   }
 

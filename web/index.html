@@ -82,7 +82,7 @@
     <button class="tab is-active" data-view="portfolio" title="Portfolio"><svg class="ic"><use href="#i-map"/></svg><span class="tab-label">Portfolio</span></button>
     <button class="tab" data-view="documents" title="Documents"><svg class="ic"><use href="#i-file"/></svg><span class="tab-label">Documents</span></button>
     <button class="tab" data-view="dashboard" title="Dashboard"><svg class="ic"><use href="#i-chart"/></svg><span class="tab-label">Dashboard</span></button>
-    <button class="tab" data-view="sbus" title="Business units"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Business units</span></button>
+    <button class="tab" data-view="sbus" title="Property types"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Property types</span></button>
     <button class="tab" data-view="entities" title="Owning companies"><svg class="ic"><use href="#i-landmark"/></svg><span class="tab-label">Owning companies</span></button>
     <button class="tab" data-view="masters" title="Master sheets"><svg class="ic"><use href="#i-database"/></svg><span class="tab-label">Master sheets</span></button>
   </nav>
@@ -148,7 +148,7 @@
         </div>
         <div class="pop-section">
           <div class="pop-label-row">
-            <span>Business units</span>
+            <span>Property types</span>
             <button class="link-btn" id="btn-sbu-all">Select all</button>
           </div>
           <div id="sbu-filters" class="chip-set"></div>
@@ -159,7 +159,7 @@
           <label>District<select id="filter-district"></select></label>
           <label>Tenure<select id="filter-tenure"></select></label>
           <label>Status<select id="filter-status"></select></label>
-          <label>Type<select id="filter-type"></select></label>
+          <label>Structure<select id="filter-type"></select></label>
         </div>
         <div class="pop-foot">
           <button class="btn btn-dark btn-block" id="btn-filters-done">Show properties</button>
@@ -230,7 +230,7 @@
           <table class="grid">
             <thead>
               <tr>
-                <th>Code</th><th>Property</th><th>SBU</th><th>Owned by</th><th>Type</th>
+                <th>Code</th><th>Property</th><th>Property type</th><th>Owned by</th><th>Structure</th>
                 <th>Location</th><th class="num">Land (sq ft)</th><th class="num">Floor area (sq ft)</th><th>Status</th>
                 <th>Docs</th><th class="coords">Coordinates</th><th class="row-actions"><span class="sr-only">Actions</span></th>
               </tr>
@@ -272,7 +272,7 @@
             <select id="doc-sort">
               <option value="newest">Latest</option>
               <option value="expiry">Expiry, soonest</option>
-              <option value="sbu">Business unit</option>
+              <option value="sbu">Property type</option>
               <option value="property">Property</option>
               <option value="title">Title</option>
             </select>
@@ -284,7 +284,7 @@
         <table class="grid docs-grid">
           <thead>
             <tr>
-              <th>Document</th><th>Business unit</th><th>Property</th><th>Issued</th>
+              <th>Document</th><th>Property type</th><th>Property</th><th>Issued</th>
               <th>Expiry</th><th>Counterparty</th><th class="num">Amount</th>
               <th class="row-actions"><span class="sr-only">Actions</span></th>
             </tr>
@@ -301,15 +301,15 @@
   </section>
 
   <section class="view" id="view-sbus">
-    <!-- One business unit: its properties and documents -->
+    <!-- One property type: its properties and documents -->
     <div class="page sbu-page" id="sbu-detail" hidden></div>
     <div class="page" id="sbu-index">
       <div class="page-head">
         <div>
-          <h1>Business units</h1>
-          <p class="found">The sector, business unit or department that occupies a property and carries its costs.</p>
+          <h1>Property types</h1>
+          <p class="found">What each property is used for &mdash; Educational, Warehouse, Corporate Office and so on. Every property has one; open a type to see its properties and documents.</p>
         </div>
-        <button class="btn btn-dark" id="btn-new-sbu"><svg class="ic"><use href="#i-plus"/></svg>New business unit</button>
+        <button class="btn btn-dark" id="btn-new-sbu"><svg class="ic"><use href="#i-plus"/></svg>New property type</button>
       </div>
       <div id="sbu-cards" class="tile-grid"></div>
     </div>
@@ -321,8 +321,8 @@
         <div>
           <h1>Owning companies</h1>
           <p class="found">
-            The group company that holds title &mdash; separate from the business unit that
-            <em>occupies</em> the property, and from how it is <em>held</em>. A property leased or
+            The group company that holds title &mdash; separate from the property type, which says
+            what the property is <em>used for</em>, and from how it is <em>held</em>. A property leased or
             rented in from an outside landlord has no owning company here; that party belongs on
             the lease document.
           </p>
@@ -402,7 +402,7 @@
           <label>Property code
             <input name="property_code" maxlength="40" placeholder="auto-generated if blank">
           </label>
-          <label>Business unit (SBU) <span class="req">*</span>
+          <label>Property type <span class="req">*</span>
             <select name="sbu_id" required></select>
           </label>
           <label>Owning company
@@ -416,8 +416,9 @@
           <label>Ownership
             <select name="ownership_type"></select>
           </label>
-          <label>Property type
+          <label>Structure
             <select name="property_type"></select>
+            <span class="hint">The physical form: bare land, land &amp; building, or a building only.</span>
           </label>
         </div>
       </fieldset>
@@ -548,34 +549,26 @@
   </div>
 </div>
 
-<!-- SBU form modal -->
+<!-- Property type form modal -->
 <div class="modal" id="sbu-modal" hidden>
   <div class="modal-card">
     <header class="modal-head">
-      <h2 id="sbu-modal-title">New business unit</h2>
+      <h2 id="sbu-modal-title">New property type</h2>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
     <form id="sbu-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
       <div class="grid-2">
         <label>Code <span class="req">*</span>
-          <input name="code" required maxlength="16" placeholder="e.g. RETAIL">
+          <input name="code" required maxlength="16" placeholder="e.g. EDU">
         </label>
         <label>Map colour
           <input name="color" type="color" value="#1f77b4">
         </label>
       </div>
       <label>Name <span class="req">*</span>
-        <input name="name" required maxlength="120">
+        <input name="name" required maxlength="120" placeholder="e.g. Educational">
       </label>
-      <div class="grid-2">
-        <label>Sector
-          <input name="sector" maxlength="80" placeholder="e.g. Education">
-        </label>
-        <label>Cost centre
-          <input name="cost_centre" maxlength="40">
-        </label>
-      </div>
       <label>Description
         <textarea name="description" rows="3" maxlength="500"></textarea>
       </label>

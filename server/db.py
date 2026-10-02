@@ -183,7 +183,48 @@ MIGRATIONS = [
     ("property", "building_area_value", "REAL"),
     ("property", "building_area_unit", "TEXT DEFAULT 'SQ_FT'"),
     ("property", "extent_sqft", "REAL"),
+    ("sbu", "sort_order", "INTEGER"),
 ]
+
+
+def adopt_property_categories(conn):
+    """Business units became property types (Educational, Warehouse, ...).
+
+    The six sample business units are renamed in place, so every property,
+    document and link keeps pointing at the same row; the remaining types
+    are added. Runs once: afterwards none of the old codes exist.
+    """
+    old = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM sbu")}
+    if not any(code in old for code in srilanka.BUSINESS_UNIT_TO_CATEGORY):
+        return
+    categories = {c[0]: c for c in srilanka.PROPERTY_CATEGORIES}
+    for unit, code in srilanka.BUSINESS_UNIT_TO_CATEGORY.items():
+        if unit in old and code not in old:
+            _, name, description, colour = categories[code]
+            conn.execute("""UPDATE sbu SET code = ?, name = ?, description = ?, color = ?,
+                                          sector = NULL, cost_centre = NULL WHERE id = ?""",
+                         (code, name, description, colour, old[unit]))
+    existing = {r["code"] for r in conn.execute("SELECT code FROM sbu")}
+    for code, name, description, colour in srilanka.PROPERTY_CATEGORIES:
+        if code not in existing:
+            conn.execute("INSERT INTO sbu (code, name, description, color) VALUES (?, ?, ?, ?)",
+                         (code, name, description, colour))
+    order_categories(conn)
+    conn.commit()
+
+
+def order_categories(conn):
+    """The starting list keeps its order; "Other" always sorts last."""
+    for i, (code, *_rest) in enumerate(srilanka.PROPERTY_CATEGORIES):
+        conn.execute("UPDATE sbu SET sort_order = ? WHERE code = ?",
+                     (1000 if code == "OTHER" else (i + 1) * 10, code))
+
+
+def normalise_structures(conn):
+    """Structure now records only physical form; use lives in the property type."""
+    conn.execute("UPDATE property SET property_type = 'LAND_AND_BUILDING' WHERE property_type IN (%s)"
+                 % ",".join("?" * len(srilanka.RETIRED_STRUCTURES)), srilanka.RETIRED_STRUCTURES)
+    conn.commit()
 
 
 def normalise_areas(conn):
@@ -214,6 +255,8 @@ def migrate(conn):
     conn.commit()
 
     normalise_areas(conn)
+    adopt_property_categories(conn)
+    normalise_structures(conn)
 
     # Populate the owning-company master the first time it appears, and attach it
     # to the sample rows only -- matched by their exact seed property codes, so a
@@ -254,6 +297,7 @@ def init_db():
     if conn.execute("SELECT COUNT(*) AS n FROM sbu").fetchone()["n"] == 0:
         seed(conn)
         normalise_areas(conn)
+        normalise_structures(conn)
 
 
 # --- first-run seed ---------------------------------------------------------
@@ -321,15 +365,6 @@ SAMPLE_PROPERTY_LOCATION = {
     "LEI-HAM-001": "Hambantota",
     "LEI-BAD-002": "Badulla",
 }
-
-SEED_SBUS = [
-    ("HO", "Head Office", "Corporate head office and shared services"),
-    ("AGRI", "Agriculture", "Estates, farms and agri processing"),
-    ("MFG", "Manufacturing", "Factories, plants and stores"),
-    ("RETAIL", "Retail", "Showrooms, outlets and depots"),
-    ("LOG", "Logistics", "Warehouses and distribution centres"),
-    ("LEIS", "Leisure", "Hotels, resorts and bungalows"),
-]
 
 SEED_PROPERTIES = [
     # (sbu_code, code, name, type, ownership, status, addr, city, district,
@@ -447,12 +482,17 @@ def assign_sample_locations(conn):
 def seed(conn):
     seed_legal_entities(conn)
     seed_locations(conn)
-    for i, (code, name, desc) in enumerate(SEED_SBUS):
+    for code, name, desc, colour in srilanka.PROPERTY_CATEGORIES:
         conn.execute(
             "INSERT INTO sbu (code, name, description, color) VALUES (?,?,?,?)",
-            (code, name, desc, srilanka.SBU_COLORS[i % len(srilanka.SBU_COLORS)]),
+            (code, name, desc, colour),
         )
+    order_categories(conn)
     sbu_ids = {r["code"]: r["id"] for r in conn.execute("SELECT id, code FROM sbu")}
+    # The sample properties were written against business units; place each
+    # under the property type its unit became.
+    sbu_ids.update({unit: sbu_ids[code]
+                    for unit, code in srilanka.BUSINESS_UNIT_TO_CATEGORY.items()})
 
     for row in SEED_PROPERTIES:
         (sbu_code, code, name, ptype, ownership, status, addr, city, district,
