@@ -900,6 +900,12 @@ def get_stats(ctx):
            FROM (%s) f LEFT JOIN legal_entity e ON e.id = f.legal_entity_id
            GROUP BY f.legal_entity_id ORDER BY n DESC""" % subset)]
 
+    # Owning company x business unit: who owns what each unit occupies.
+    by_entity_sbu = [_row_to_dict(r) for r in run(
+        """SELECT COALESCE(CAST(f.legal_entity_id AS TEXT), 'none') AS entity_id,
+                  f.sbu_id, COUNT(*) AS n
+           FROM (%s) f GROUP BY f.legal_entity_id, f.sbu_id""" % subset)]
+
     # Each figure is its own query: the filtered subset appears once per
     # statement, so the bound parameters line up exactly.
     def scalar(sql):
@@ -945,7 +951,7 @@ def get_stats(ctx):
     return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
                  "byDistrict": by_district, "byEntity": by_entity,
                  "byTenure": by_tenure, "byType": by_type, "byProvince": by_province,
-                 "byDocType": by_doc_type, "renewals": renewals,
+                 "byDocType": by_doc_type, "renewals": renewals, "byEntitySbu": by_entity_sbu,
                  "expiringSoon": expiring, "filtered": bool(where)}
 
 

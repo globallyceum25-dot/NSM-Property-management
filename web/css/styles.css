@@ -2300,3 +2300,84 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
 
 /* the tooltip's third line: what a click will do */
 .chart-tip em { display: block; margin-top: 3px; font-style: normal; font-size: 11px; color: var(--hero-text-3); }
+
+/* ==========================================================================
+   Ownership chart: owning company x business unit
+   ========================================================================== */
+
+.chart-card.span-8 { grid-column: span 8; }
+.bar-cols.two { columns: 2; }
+
+/* group-by toggle in the card header */
+.seg-mini {
+  flex: 0 0 auto; display: inline-flex; padding: 3px; gap: 2px;
+  border-radius: var(--pill); background: var(--surface-2);
+}
+.seg-mini button {
+  height: 28px; padding: 0 12px; border: none; border-radius: var(--pill);
+  background: transparent; color: var(--text-muted);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.seg-mini button:hover { color: var(--text); }
+.seg-mini button.is-on { background: var(--seg-active); color: var(--text); box-shadow: var(--shadow-sm); }
+.seg-mini button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+.own-summary {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px;
+  margin: -4px 0 16px; font-size: 13px; color: var(--text-muted);
+}
+.own-summary b { font-size: 15px; color: var(--text); font-variant-numeric: tabular-nums; }
+.own-summary span { color: var(--border-strong); }
+
+.own-chart { display: flex; flex-direction: column; gap: 6px; }
+.own-row {
+  display: grid; grid-template-columns: minmax(96px, 22%) minmax(0, 1fr) 32px;
+  align-items: center; gap: 12px;
+  transition: opacity .2s ease;
+}
+.own-label {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 5px 8px; margin-left: -8px; border-radius: 8px;
+  font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer;
+}
+.own-label i { width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto; }
+.own-label:hover { background: var(--table-head); }
+.own-label[aria-pressed="true"] { background: var(--accent-soft); font-weight: 700; color: var(--text); }
+.own-row.is-unowned .own-label { color: var(--text-muted); font-style: italic; }
+.own-track { display: block; min-width: 0; }
+/* the bar's length is the row's total; its segments are the split */
+.own-bar { display: flex; gap: 2px; height: 16px; min-width: 6px; border-radius: 0 5px 5px 0; overflow: hidden; }
+.own-seg { display: block; flex-basis: 0; min-width: 4px; cursor: pointer; transition: opacity .2s ease, filter .15s; }
+.own-seg:hover, .own-seg:focus-visible { filter: brightness(1.12); outline: none; }
+.own-seg:focus-visible { box-shadow: inset 0 0 0 2px var(--text); }
+.own-seg.is-selected { box-shadow: inset 0 0 0 2px var(--surface); }
+.own-row.is-dimmed { opacity: .32; }
+.own-row.is-dimmed:hover { opacity: .7; }
+.own-n { text-align: right; font-weight: 700; font-variant-numeric: tabular-nums; }
+
+.own-legend-title {
+  margin: 18px 0 8px; font-size: 11.5px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.own-legend { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px 8px; }
+.own-legend li {
+  display: inline-flex; align-items: center; gap: 7px;
+  padding: 4px 10px; border: 1px solid var(--border); border-radius: var(--pill);
+  font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background .15s, opacity .2s;
+}
+.own-legend li i { width: 9px; height: 9px; border-radius: 50%; }
+.own-legend li b { font-weight: 700; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.own-legend li:hover { background: var(--table-head); }
+.own-legend li[aria-pressed="true"] { background: var(--inverse); border-color: var(--inverse); color: var(--on-inverse); }
+.own-legend li[aria-pressed="true"] b { color: var(--on-inverse); }
+
+@media (max-width: 1180px) {
+  .chart-card.span-8 { grid-column: span 2; }
+  .breakdowns .chart-card.span-4:nth-child(3) { grid-column: span 1; }
+}
+@media (max-width: 720px) {
+  .chart-card.span-8 { grid-column: span 1; }
+  .bar-cols.two { columns: 1; }
+  .own-row { grid-template-columns: minmax(80px, 30%) minmax(0, 1fr) 26px; gap: 8px; }
+}

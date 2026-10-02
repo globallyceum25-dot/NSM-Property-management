@@ -18,6 +18,7 @@
     docs: { status: '', type: '', sort: 'newest', fromModule: false, focus: null },
     sbuPage: { id: null, tab: 'properties' },   // one business unit's page
     currentDoc: null,            // document open in the document panel
+    ownPivot: 'company',         // ownership chart rows: 'company' or 'sbu'
     alerts: [],
     selectedSbus: null,          // null = all
     filters: emptyFilters(),
@@ -1282,7 +1283,8 @@
     return '<section class="chart-card span-' + opts.span + (opts.cls ? ' ' + opts.cls : '') + '">' +
       '<header class="chart-head"><div><h3>' + esc(opts.title) + '</h3>' +
         (opts.sub ? '<p class="chart-sub">' + esc(opts.sub) + '</p>' : '') + '</div>' +
-        (opts.xf && selectedKeys(opts.xf).length
+        (opts.tools || '') +
+        (opts.xf && opts.xf.split(',').some((d) => selectedKeys(d).length)
           ? '<button type="button" class="chart-clear" data-xf-clear="' + opts.xf + '" ' +
               'aria-label="Clear the ' + esc(opts.title) + ' filter">' + icon('x') + 'Clear</button>'
           : '') +
@@ -1644,6 +1646,115 @@
       '</div>';
   }
 
+  /* ---------- ownership: owning company x business unit ---------- */
+
+  // Each owning company keeps one colour, by a stable order (its code), so a
+  // filter never repaints it; "no group company" is the context grey.
+  function companyColours() {
+    const map = {};
+    state.entities.slice().sort((a, b) => String(a.short_code).localeCompare(String(b.short_code)))
+      .forEach(function (e, i) { map[String(e.id)] = i < Charts.SLOTS.length ? Charts.SLOTS[i] : Charts.OTHER; });
+    map.none = Charts.OTHER;
+    return map;
+  }
+
+  function ownershipHtml(stats) {
+    const cells = stats.byEntitySbu || [];
+    const total = cells.reduce((sum, c) => sum + c.n, 0);
+    if (!total) return '<div class="chart-empty">No properties match</div>';
+
+    const byCompany = state.ownPivot !== 'sbu';
+    const ents = {}; state.entities.forEach((e) => { ents[String(e.id)] = e; });
+    const units = {}; state.sbus.forEach((x) => { units[String(x.id)] = x; });
+    const colours = companyColours();
+    const companyName = (id) => (id === 'none' ? 'Not recorded' : (ents[id] ? ents[id].short_code : 'Unknown'));
+    const companyFull = (id) => (id === 'none' ? 'No group company — leased or rented in'
+      : (ents[id] ? ents[id].name : ''));
+    const unitName = (id) => (units[id] ? units[id].name : 'Unknown');
+
+    const rowKeyOf = (c) => (byCompany ? c.entity_id : String(c.sbu_id));
+    const segKeyOf = (c) => (byCompany ? String(c.sbu_id) : c.entity_id);
+    const rowName = (k) => (byCompany ? companyName(k) : unitName(k));
+    const segName = (k) => (byCompany ? unitName(k) : companyName(k));
+    const segColour = (k) => (byCompany ? (units[k] ? units[k].color : Charts.OTHER) : colours[k]);
+    const entityOf = (rowKey, segKey) => (byCompany ? rowKey : segKey);
+    const unitOf = (rowKey, segKey) => (byCompany ? segKey : rowKey);
+
+    const rows = {};
+    const segTotals = {};
+    cells.forEach(function (c) {
+      const r = rowKeyOf(c), g = segKeyOf(c);
+      rows[r] = rows[r] || { key: r, n: 0, segs: {} };
+      rows[r].n += c.n;
+      rows[r].segs[g] = (rows[r].segs[g] || 0) + c.n;
+      segTotals[g] = (segTotals[g] || 0) + c.n;
+    });
+    // Largest first; "not recorded" always last, after the companies.
+    const rowList = Object.keys(rows).map((k) => rows[k])
+      .sort((a, b) => (a.key === 'none') - (b.key === 'none') || b.n - a.n);
+    // Segments in a fixed order, so the same unit or company sits in the same
+    // place in every bar.
+    const segOrder = (byCompany
+      ? state.sbus.map((x) => String(x.id))
+      : Object.keys(colours).filter((k) => k !== 'none')
+          .sort((a, b) => companyName(a).localeCompare(companyName(b))).concat(['none'])
+    ).filter((k) => segTotals[k]);
+    const max = Math.max.apply(null, rowList.map((r) => r.n));
+
+    const eSel = selectedKeys('entity'), sSel = selectedKeys('sbu');
+    const hasSel = eSel.length > 0 || sSel.length > 0;
+    const picked = (e, u) => (!eSel.length || eSel.indexOf(e) !== -1) && (!sSel.length || sSel.indexOf(u) !== -1);
+    const rowDim = byCompany ? 'entity' : 'sbu';
+    const segDim = byCompany ? 'sbu' : 'entity';
+
+    const owned = cells.filter((c) => c.entity_id !== 'none').reduce((sum, c) => sum + c.n, 0);
+    const summary = '<p class="own-summary"><b>' + total + '</b> ' + (total === 1 ? 'property' : 'properties') +
+      '<span>·</span><b>' + owned + '</b> owned by group companies (' + pct(owned, total) + '%)' +
+      '<span>·</span><b>' + (total - owned) + '</b> with no group owner</p>';
+
+    const body = rowList.map(function (row) {
+      const rowPicked = segOrder.some((g) => row.segs[g] && picked(entityOf(row.key, g), unitOf(row.key, g)));
+      const label = byCompany ? companyName(row.key) : unitName(row.key);
+      const title = byCompany ? companyFull(row.key) : (units[row.key] ? units[row.key].code + ' — ' + units[row.key].name : '');
+      const segs = segOrder.filter((g) => row.segs[g]).map(function (g) {
+        const n = row.segs[g];
+        const e = entityOf(row.key, g), u = unitOf(row.key, g);
+        const on = hasSel && picked(e, u) && eSel.length && sSel.length;
+        return '<span class="own-seg' + (hasSel && !picked(e, u) ? ' is-dimmed' : '') + (on ? ' is-selected' : '') + '"' +
+          ' style="flex-grow:' + n + ';background:' + esc(segColour(g)) + '"' +
+          ' tabindex="0" role="button" aria-pressed="' + !!on + '"' +
+          ' data-xf-dim="entity" data-xf-value="' + esc(e) + '" data-xf-also="' + esc(u) + '"' +
+          ' data-tip-label="' + esc(companyName(e) + ' · ' + unitName(u)) + '"' +
+          ' data-tip-value="' + esc(plural(n, 'property', 'properties') + ' · ' + pct(n, row.n) + '% of ' + rowName(row.key)) + '"></span>';
+      }).join('');
+      return '<div class="own-row' + (hasSel && !rowPicked ? ' is-dimmed' : '') +
+          (row.key === 'none' ? ' is-unowned' : '') + '">' +
+        '<span class="own-label" tabindex="0"' + Charts.xfAttrs({ dim: rowDim, selected: byCompany ? eSel : sSel }, row.key) +
+          (title ? ' title="' + esc(title) + '"' : '') + '>' +
+          (byCompany ? '' : '<i style="background:' + esc(units[row.key] ? units[row.key].color : '') + '"></i>') +
+          esc(label) + '</span>' +
+        '<span class="own-track"><span class="own-bar" style="width:' + (row.n / max * 100).toFixed(1) + '%">' +
+          segs + '</span></span>' +
+        '<span class="own-n">' + row.n + '</span>' +
+      '</div>';
+    }).join('');
+
+    const legend = '<ul class="own-legend">' + segOrder.map(function (g) {
+      return '<li tabindex="0"' + Charts.xfAttrs({ dim: segDim, selected: byCompany ? sSel : eSel }, g) + '>' +
+        '<i style="background:' + esc(segColour(g)) + '"></i>' + esc(segName(g)) + '<b>' + segTotals[g] + '</b></li>';
+    }).join('') + '</ul>';
+
+    return summary + '<div class="own-chart' + (hasSel ? ' has-selection' : '') + '">' + body + '</div>' +
+      '<p class="own-legend-title">' + (byCompany ? 'Business units' : 'Owning companies') + '</p>' + legend;
+  }
+
+  function ownershipTools() {
+    const b = (key, label) => '<button type="button" data-own-pivot="' + key + '" aria-pressed="' +
+      (state.ownPivot === key) + '"' + (state.ownPivot === key ? ' class="is-on"' : '') + '>' + label + '</button>';
+    return '<div class="seg-mini" role="group" aria-label="Group the bars by">' +
+      b('company', 'By company') + b('sbu', 'By business unit') + '</div>';
+  }
+
   function breakdownBars(rows, labelKey, valueKey, colorFor, emptyNote, dim, keyOf) {
     if (!rows.length) return emptyNote;
     const max = Math.max.apply(null, rows.map((r) => r[valueKey]).concat([1]));
@@ -1670,18 +1781,20 @@
     const series = () => Charts.SERIES;
     return sectionHead('Breakdowns') +
       '<div class="chart-grid breakdowns">' +
-        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour', xf: 'sbu',
-                    body: breakdownBars(forDim('sbu').bySbu.filter((r) => r.property_count), 'name', 'property_count',
-                      (r) => r.color, emptyNote, 'sbu', (r) => r.id) }) +
-        chartCard({ span: 4, title: 'Properties by owning company', sub: 'The group company holding title', xf: 'entity',
-                    body: breakdownBars(forDim('entity').byEntity, 'short_code', 'n',
-                      (r) => (r.short_code === 'Not recorded' ? Charts.OTHER : Charts.SERIES), emptyNote,
-                      'entity', (r) => r.id) }) +
+        chartCard({ span: 8, title: 'Properties by owning company',
+                    sub: state.ownPivot === 'sbu'
+                      ? 'Each business unit, split by the group company holding title'
+                      : 'Each group company holding title, split by the business unit using the property',
+                    xf: 'entity,sbu', tools: ownershipTools(),
+                    body: ownershipHtml(forDim('entity,sbu')) }) +
         chartCard({ span: 4, title: 'By status', sub: 'How each property is being used', xf: 'status',
                     body: breakdownBars(forDim('status').byStatus.map((x) => ({ code: x.status, label: labelFor('statuses', x.status), n: x.n })),
                       'label', 'n', series, emptyNote, 'status', (r) => r.code) }) +
-        chartCard({ span: 12, title: 'Properties by district', sub: 'Every district with at least one property', xf: 'district',
-                    body: '<div class="bar-cols">' +
+        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour', xf: 'sbu',
+                    body: breakdownBars(forDim('sbu').bySbu.filter((r) => r.property_count), 'name', 'property_count',
+                      (r) => r.color, emptyNote, 'sbu', (r) => r.id) }) +
+        chartCard({ span: 8, title: 'Properties by district', sub: 'Every district with at least one property', xf: 'district',
+                    body: '<div class="bar-cols two">' +
                       breakdownBars(forDim('district').byDistrict, 'district', 'n', series, emptyNote,
                         'district', (r) => r.district) + '</div>' }) +
       '</div>';
@@ -1737,11 +1850,38 @@
     refreshProperties();
   }
 
-  function clearCrossFilter(dim) {
+  function clearCrossFilter(dims) {
     lastXf = null;
-    if (dim === 'sbu') { state.selectedSbus = null; renderSbuFilters(); }
-    else { state.filters[XF_KEYS[dim]] = ''; syncFilterControls(); }
+    dims.split(',').forEach(function (dim) {
+      if (dim === 'sbu') { state.selectedSbus = null; renderSbuFilters(); }
+      else { state.filters[XF_KEYS[dim]] = ''; }
+    });
+    syncFilterControls();
     refreshProperties();
+  }
+
+  // A segment of the ownership chart is one company within one business unit:
+  // it filters by both, and clicking it again clears both.
+  function crossFilterPair(entityId, sbuId) {
+    const sameEntity = state.filters.legal_entity_id === entityId;
+    const sameSbu = state.selectedSbus && state.selectedSbus.length === 1 &&
+      String(state.selectedSbus[0]) === String(sbuId);
+    if (sameEntity && sameSbu) {
+      state.filters.legal_entity_id = '';
+      state.selectedSbus = null;
+    } else {
+      state.filters.legal_entity_id = entityId;
+      state.selectedSbus = [Number(sbuId)];
+    }
+    lastXf = { dim: 'entity', value: entityId };
+    renderSbuFilters();
+    syncFilterControls();
+    refreshProperties();
+  }
+
+  function useMark(mark) {
+    if (mark.dataset.xfAlso) crossFilterPair(mark.dataset.xfValue, mark.dataset.xfAlso);
+    else crossFilter(mark.dataset.xfDim, mark.dataset.xfValue);
   }
 
   /* A chart that is filtering keeps showing every one of its categories (the
@@ -1750,11 +1890,15 @@
      dimension supplies those figures. */
   async function chartStats(main) {
     const active = XF_DIMS.filter((d) => selectedKeys(d).length);
+    // The ownership chart crosses two dimensions, so it drops both filters.
+    if (selectedKeys('entity').length || selectedKeys('sbu').length) active.push('entity,sbu');
     const byDim = {};
-    await Promise.all(active.map(async function (dim) {
+    await Promise.all(active.map(async function (dims) {
       const filters = activeFilters();
-      if (dim === 'sbu') delete filters.sbu_id; else delete filters[XF_KEYS[dim]];
-      try { byDim[dim] = await API.stats(filters); } catch (e) { /* fall back to the filtered figures */ }
+      dims.split(',').forEach(function (dim) {
+        if (dim === 'sbu') delete filters.sbu_id; else delete filters[XF_KEYS[dim]];
+      });
+      try { byDim[dims] = await API.stats(filters); } catch (e) { /* fall back to the filtered figures */ }
     }));
     return (dim) => byDim[dim] || main;
   }
@@ -1836,8 +1980,16 @@
         }
         const clear = event.target.closest('[data-xf-clear]');
         if (clear) { clearCrossFilter(clear.dataset.xfClear); return; }
+        const pivot = event.target.closest('[data-own-pivot]');
+        if (pivot) {
+          if (state.ownPivot !== pivot.dataset.ownPivot) {
+            state.ownPivot = pivot.dataset.ownPivot;
+            renderDashboard();
+          }
+          return;
+        }
         const mark = event.target.closest('[data-xf-dim]');
-        if (mark) { crossFilter(mark.dataset.xfDim, mark.dataset.xfValue); return; }
+        if (mark) { useMark(mark); return; }
         const target = event.target.closest('[data-dash-go]');
         if (target) goFromDashboard(target.dataset.dashGo);
       });
@@ -1846,7 +1998,7 @@
         const mark = event.target.closest('[data-xf-dim]');
         if (!mark || event.target !== mark) return;
         event.preventDefault();
-        crossFilter(mark.dataset.xfDim, mark.dataset.xfValue);
+        useMark(mark);
       });
     }
     // Keep focus on the mark just used, so keyboard filtering can continue.

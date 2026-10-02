@@ -285,7 +285,7 @@ What each chart filters on:
 | Province | Province |
 | Property types | Type |
 | Business unit (charts, area bars and breakdown) | Business unit |
-| Owning company | Owning company |
+| Owning company (bar name, segment or legend) | Owning company, and business unit for a segment |
 | Status | Status |
 | District | District |
 
@@ -322,9 +322,19 @@ Below the band come five sections, each headed by a rule:
   - **Properties by province** — all nine provinces, shown as bars instead of
     columns on a phone.
   - **Property types**.
-- *Breakdowns* — properties by business unit (in each unit's map colour), by
-  owning company and by status. Properties by district runs in columns across
-  one wide card.
+- *Breakdowns*:
+  - **Properties by owning company** — the full total and how much of it a group
+    company owns ("14 properties · 8 owned by group companies (57%) · 6 with no
+    group owner").
+    - **By company** shows a stacked bar per company, split by the business
+      units that use its properties, with "Not recorded" last.
+    - **By business unit** shows a bar per unit, split by the companies that own
+      what it uses.
+    - Each company and unit keeps a fixed colour and position in every bar.
+    - Click a bar's name to filter by that company or unit. Click a segment to
+      filter by both, e.g. NCGE within Head Office.
+  - Properties by status and by business unit (in each unit's map colour).
+  - Properties by district, in columns across a wide card.
 
 Card headers carry shortcuts where there is a list to go to: *Documents*,
 *View all* and *Register*. Every chart mark has a tooltip on hover and on
