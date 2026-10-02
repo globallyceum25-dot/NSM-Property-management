@@ -346,6 +346,18 @@ _PROPERTY_SELECT = """
 """
 
 
+# The 3 / 6 / 9 / 12-month reminder ladder, as conditions on a document's expiry
+# date; the same edges the renewal pipeline chart counts with.
+_RENEWAL_BUCKETS = {
+    "expired": "dr.expiry_date < date('now')",
+    "m3": "dr.expiry_date >= date('now') AND dr.expiry_date <= date('now', '+3 months')",
+    "m6": "dr.expiry_date > date('now', '+3 months') AND dr.expiry_date <= date('now', '+6 months')",
+    "m9": "dr.expiry_date > date('now', '+6 months') AND dr.expiry_date <= date('now', '+9 months')",
+    "m12": "dr.expiry_date > date('now', '+9 months') AND dr.expiry_date <= date('now', '+12 months')",
+    "later": "dr.expiry_date > date('now', '+12 months')",
+}
+
+
 def _property_filters(q):
     """Build the WHERE clauses shared by the property list and the dashboard.
 
@@ -390,6 +402,14 @@ def _property_filters(q):
     if q.get("property_type"):
         where.append("p.property_type = ?")
         params.append(q["property_type"])
+    # Properties holding at least one document of a type (dashboard cross-filter).
+    if q.get("has_doc_type"):
+        where.append("EXISTS (SELECT 1 FROM document dt WHERE dt.property_id = p.id AND dt.doc_type = ?)")
+        params.append(q["has_doc_type"])
+    # Properties with a document in one bucket of the renewal ladder.
+    if q.get("has_renewal") in _RENEWAL_BUCKETS:
+        where.append("EXISTS (SELECT 1 FROM document dr WHERE dr.property_id = p.id AND dr.expiry_date IS NOT NULL AND %s)"
+                     % _RENEWAL_BUCKETS[q["has_renewal"]])
     if q.get("q"):
         term = "%" + q["q"].strip() + "%"
         where.append("""(p.name LIKE ? OR p.property_code LIKE ? OR p.city LIKE ?
@@ -873,7 +893,8 @@ def get_stats(ctx):
         """SELECT district, province, COUNT(*) AS n FROM (%s)
            WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""" % subset)]
     by_entity = [_row_to_dict(r) for r in run(
-        """SELECT COALESCE(e.short_code, 'Not recorded') AS short_code,
+        """SELECT COALESCE(CAST(e.id AS TEXT), 'none') AS id,
+                  COALESCE(e.short_code, 'Not recorded') AS short_code,
                   COALESCE(e.name, 'No group company (leased / rented in)') AS name,
                   COUNT(f.id) AS n
            FROM (%s) f LEFT JOIN legal_entity e ON e.id = f.legal_entity_id

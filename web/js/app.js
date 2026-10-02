@@ -4,7 +4,8 @@
 
   function emptyFilters() {
     return { q: '', district: '', status: '', property_type: '',
-             legal_entity_id: '', location_id: '', ownership_type: '', has_deed: '' };
+             legal_entity_id: '', location_id: '', ownership_type: '', has_deed: '',
+             province: '', has_doc_type: '', has_renewal: '' };
   }
 
   const state = {
@@ -586,6 +587,7 @@
       chips.push({
         label: names.length ? 'Business unit' + (names.length === 1 ? ': ' : 's: ') + names.join(', ')
                             : 'No business unit selected',
+        sbu: true,
         clear: () => { state.selectedSbus = null; renderSbuFilters(); }
       });
     }
@@ -615,6 +617,19 @@
       chips.push({ label: 'Type: ' + shortLabel('propertyTypes', f.property_type),
                    clear: clearSelect('property_type', '#filter-type') });
     }
+    // Set by clicking a dashboard chart.
+    if (f.province) {
+      chips.push({ label: 'Province: ' + f.province, popover: false,
+                   clear: () => { state.filters.province = ''; } });
+    }
+    if (f.has_doc_type) {
+      chips.push({ label: 'Holds: ' + labelFor('documentTypes', f.has_doc_type), popover: false,
+                   clear: () => { state.filters.has_doc_type = ''; } });
+    }
+    if (f.has_renewal) {
+      chips.push({ label: 'Renewal: ' + (RENEWAL_LABELS[f.has_renewal] || f.has_renewal), popover: false,
+                   clear: () => { state.filters.has_renewal = ''; } });
+    }
     return chips;
   }
 
@@ -637,17 +652,6 @@
     const badge = $('#filter-count');
     badge.textContent = n;
     badge.hidden = n === 0;
-  }
-
-  function filterBannerHtml(stats) {
-    const parts = activeChips().map((c) => c.label);
-    if (!parts.length) return '';
-    return '<div class="filter-banner">' +
-      '<div><strong>Filtered view</strong> — ' + esc(parts.join(' · ')) + '. ' +
-        'Every figure below covers these ' + stats.totals.properties +
-        ' of ' + stats.totals.allProperties + ' properties.</div>' +
-      '<button class="btn btn-ghost btn-sm" id="btn-clear-from-dashboard">Clear filters</button>' +
-      '</div>';
   }
 
   /* ---------- filter popover ---------- */
@@ -1278,6 +1282,10 @@
     return '<section class="chart-card span-' + opts.span + (opts.cls ? ' ' + opts.cls : '') + '">' +
       '<header class="chart-head"><div><h3>' + esc(opts.title) + '</h3>' +
         (opts.sub ? '<p class="chart-sub">' + esc(opts.sub) + '</p>' : '') + '</div>' +
+        (opts.xf && selectedKeys(opts.xf).length
+          ? '<button type="button" class="chart-clear" data-xf-clear="' + opts.xf + '" ' +
+              'aria-label="Clear the ' + esc(opts.title) + ' filter">' + icon('x') + 'Clear</button>'
+          : '') +
         (opts.link
           ? '<button type="button" class="chart-link" data-dash-go="' + opts.link.go + '">' +
               esc(opts.link.label) + icon('open') + '</button>'
@@ -1381,18 +1389,18 @@
     const count = {};
     stats.byTenure.forEach((t) => { count[t.ownership_type] = t.n; });
     const items = TENURE_SLOTS.map((code, i) => ({
-      label: TENURE_SHORT[code], value: count[code] || 0, color: Charts.SLOTS[i]
+      key: code, label: TENURE_SHORT[code], value: count[code] || 0, color: Charts.SLOTS[i]
     }));
-    if (count.OTHER) items.push({ label: 'Other tenure', value: count.OTHER, color: Charts.OTHER });
-    return Charts.donut({ items: items, centerLabel: 'properties',
-                          ariaLabel: 'Properties by tenure', emptyText: 'No properties match' });
+    if (count.OTHER) items.push({ key: 'OTHER', label: 'Other tenure', value: count.OTHER, color: Charts.OTHER });
+    return Charts.donut(Object.assign({ items: items, centerLabel: 'properties',
+                          ariaLabel: 'Properties by tenure', emptyText: 'No properties match' }, xf('tenure')));
   }
 
   function documentsDonut(stats) {
     const count = {};
     stats.byDocType.forEach((d) => { count[d.doc_type] = d.n; });
     let items = DOC_SLOTS
-      .map((code, i) => ({ code: code, label: DOC_SHORT[code],
+      .map((code, i) => ({ key: code, code: code, label: DOC_SHORT[code],
                            value: count[code] || 0, color: Charts.SLOTS[i] }))
       .filter((i) => i.value > 0);
     let other = Object.keys(count)
@@ -1405,8 +1413,8 @@
       items = items.filter((i) => i !== smallest);
     }
     if (other) items.push({ label: 'Other documents', value: other, color: Charts.OTHER });
-    return Charts.donut({ items: items, centerLabel: 'documents',
-                          ariaLabel: 'Documents by type', emptyText: 'No documents recorded' });
+    return Charts.donut(Object.assign({ items: items, centerLabel: 'documents',
+                          ariaLabel: 'Documents by type', emptyText: 'No documents recorded' }, xf('doctype')));
   }
 
   function deedGauge(stats) {
@@ -1415,7 +1423,7 @@
     const withDeed = n - stats.totals.without_deed;
     const pctCovered = withDeed / n * 100;
     const status = pctCovered >= 80 ? 'good' : (pctCovered >= 50 ? 'warning' : 'critical');
-    return Charts.gauge({
+    return Charts.gauge(Object.assign({
       percent: pctCovered,
       status: status,
       statusLabel: { good: 'Good coverage.', warning: 'Partial coverage.', critical: 'Low coverage.' }[status],
@@ -1425,16 +1433,20 @@
       caption: 'with a deed or title',
       ariaLabel: Math.round(pctCovered) + '% of properties have a deed or title on file',
       tipLabel: 'Deed or title on file',
-      tipValue: withDeed + ' of ' + plural(n, 'property', 'properties')
-    });
+      tipValue: withDeed + ' of ' + plural(n, 'property', 'properties'),
+      trackTipLabel: 'No deed or title on file',
+      trackTipValue: stats.totals.without_deed + ' of ' + plural(n, 'property', 'properties'),
+      fillKey: '1', trackKey: '0'
+    }, xf('deed')));
   }
 
   function renewalColumns(stats) {
     const total = stats.renewals.reduce((s, r) => s + r.n, 0);
     if (!total) return '<div class="chart-empty">No documents carry an expiry date</div>';
-    return Charts.columns({
+    return Charts.columns(Object.assign({
       height: 220,
       items: stats.renewals.map((r) => ({
+        key: r.bucket,
         label: RENEWAL_LABELS[r.bucket],
         value: r.n,
         // Expired is a status, shown by its label as well as its colour;
@@ -1446,7 +1458,7 @@
           : r.bucket === 'expired' ? 'past expiry'
           : r.bucket === 'm3' ? 'renewal due soon' : 'renewal due'
       }))
-    });
+    }, xf('renewal')));
   }
 
   function landBars(stats) {
@@ -1456,11 +1468,11 @@
       .sort((a, b) => b.land_sqft - a.land_sqft)
       .map(function (s) {
         const share = s.land_sqft / total * 100;
-        return { label: s.name, value: s.land_sqft, dot: s.color,
+        return { key: s.id, label: s.name, value: s.land_sqft, dot: s.color,
                  display: sqftShort(s.land_sqft) + ' · ' + (share < 1 ? '<1' : Math.round(share)) + '%' };
       });
-    return Charts.hbars({ items: rows, className: 'wide-val', emptyText: stats.totals.properties
-      ? 'No land extent recorded' : 'No properties match' });
+    return Charts.hbars(Object.assign({ items: rows, className: 'wide-val', emptyText: stats.totals.properties
+      ? 'No land extent recorded' : 'No properties match' }, xf('sbu')));
   }
 
   /* ---------- totals: land and floor area, in square feet ---------- */
@@ -1495,13 +1507,14 @@
       const bar = '<div class="area-bar" role="img" aria-label="' + esc(title + ' by business unit') + '">' +
         parts.map(function (x) {
           const share = x[key] / total * 100;
-          return '<span style="flex-grow:' + share.toFixed(3) + ';background:' + esc(x.color) + '"' +
+          return '<span class="' + Charts.xfClass(xf('sbu'), x.id).trim() + '" style="flex-grow:' + share.toFixed(3) + ';background:' + esc(x.color) + '"' +
+            Charts.xfAttrs(xf('sbu'), x.id) +
             ' tabindex="0" data-tip-label="' + esc(x.name) + '" data-tip-value="' +
             esc(Fmt.num(Math.round(x[key])) + ' sq ft · ' + (share < 1 ? '<1' : Math.round(share)) + '%') + '"></span>';
         }).join('') + '</div>';
       const legend = '<ul class="area-legend">' + parts.map(function (x) {
         const share = x[key] / total * 100;
-        return '<li><i style="background:' + esc(x.color) + '"></i><span>' + esc(x.name) + '</span>' +
+        return '<li tabindex="0"' + Charts.xfAttrs(xf('sbu'), x.id) + '><i style="background:' + esc(x.color) + '"></i><span>' + esc(x.name) + '</span>' +
           '<b title="' + esc(Fmt.num(Math.round(x[key])) + ' sq ft') + '">' + esc(compactNum(x[key])) + '</b>' +
           '<em>' + (share < 1 ? '<1' : Math.round(share)) + '%</em></li>';
       }).join('') + '</ul>';
@@ -1560,20 +1573,20 @@
     const rows = stats.byProvince.slice()
       .sort((a, b) => b.n - a.n || a.province.localeCompare(b.province));
     // Nine columns need width; on a phone the same data reads better as bars.
-    return '<div class="only-wide">' + Charts.columns({
+    return '<div class="only-wide">' + Charts.columns(Object.assign({
         height: 220,
-        items: rows.map((p) => ({ label: p.province, value: p.n, note: p.province + ' Province' }))
-      }) + '</div>' +
-      '<div class="only-narrow">' + Charts.hbars({
-        items: rows.map((p) => ({ label: p.province, value: p.n }))
-      }) + '</div>';
+        items: rows.map((p) => ({ key: p.province, label: p.province, value: p.n, note: p.province + ' Province' }))
+      }, xf('province'))) + '</div>' +
+      '<div class="only-narrow">' + Charts.hbars(Object.assign({
+        items: rows.map((p) => ({ key: p.province, label: p.province, value: p.n }))
+      }, xf('province'))) + '</div>';
   }
 
   function typeBars(stats) {
-    return Charts.hbars({
-      items: stats.byType.map((t) => ({ label: shortLabel('propertyTypes', t.property_type), value: t.n })),
+    return Charts.hbars(Object.assign({
+      items: stats.byType.map((t) => ({ key: t.property_type, label: shortLabel('propertyTypes', t.property_type), value: t.n })),
       emptyText: 'No properties match'
-    });
+    }, xf('type')));
   }
 
   function largestHoldings() {
@@ -1598,54 +1611,58 @@
     }).join('') + '</ul>';
   }
 
-  function chartsHtml(stats) {
+  function chartsHtml(stats, forDim) {
     return sectionHead('Land & floor area') +
       '<div class="chart-grid">' + areaCardHtml(stats, 'land') + areaCardHtml(stats, 'floor') + '</div>' +
       sectionHead('Portfolio at a glance') +
       '<div class="chart-grid">' +
         chartCard({ span: 4, title: 'Tenure mix', sub: 'How the properties are held',
-                    body: tenureDonut(stats) }) +
+                    body: tenureDonut(forDim('tenure')), xf: 'tenure' }) +
         chartCard({ span: 4, title: 'Deed & title coverage', sub: 'Properties with a deed or title certificate on file',
-                    body: deedGauge(stats) }) +
+                    body: deedGauge(forDim('deed')), xf: 'deed' }) +
         chartCard({ span: 4, title: 'Documents by type', sub: 'Every document recorded against these properties',
-                    body: documentsDonut(stats), link: { go: 'all', label: 'Documents' } }) +
+                    body: documentsDonut(forDim('doctype')), xf: 'doctype', link: { go: 'all', label: 'Documents' } }) +
       '</div>' +
       sectionHead('Renewals') +
       '<div class="chart-grid">' +
         chartCard({ span: 7, title: 'Renewal pipeline',
                     sub: 'Documents by expiry, on the 3 / 6 / 9 / 12-month reminder ladder',
-                    body: renewalColumns(stats) }) +
+                    body: renewalColumns(forDim('renewal')), xf: 'renewal' }) +
         chartCard({ span: 5, title: 'Expiring within 180 days', sub: 'Soonest first · click to open the property',
                     body: upcomingHtml(stats), link: { go: 'expiring', label: 'View all' } }) +
       '</div>' +
       sectionHead('Land & location') +
       '<div class="chart-grid">' +
         chartCard({ span: 7, title: 'Land by business unit', sub: 'Square feet and share of all land, largest first',
-                    body: landBars(stats) }) +
+                    body: landBars(forDim('sbu')), xf: 'sbu' }) +
         chartCard({ span: 5, title: 'Largest holdings', sub: 'By land extent · click to open',
                     body: largestHoldings(), link: { go: 'register', label: 'Register' } }) +
         chartCard({ span: 7, title: 'Properties by province', sub: 'All nine provinces, including any with none',
-                    body: provinceColumns(stats) }) +
+                    body: provinceColumns(forDim('province')), xf: 'province' }) +
         chartCard({ span: 5, title: 'Property types', sub: 'Number of properties of each type',
-                    body: typeBars(stats) }) +
+                    body: typeBars(forDim('type')), xf: 'type' }) +
       '</div>';
   }
 
-  function breakdownBars(rows, labelKey, valueKey, colorFor, emptyNote) {
+  function breakdownBars(rows, labelKey, valueKey, colorFor, emptyNote, dim, keyOf) {
     if (!rows.length) return emptyNote;
     const max = Math.max.apply(null, rows.map((r) => r[valueKey]).concat([1]));
-    return rows.map(function (row) {
+    const opts = dim ? xf(dim) : {};
+    return '<div class="bars' + (dim ? ' is-filterable' + (opts.selected.length ? ' has-selection' : '') : '') + '">' +
+      rows.map(function (row) {
       const width = Math.max(4, Math.round((row[valueKey] / max) * 100));
-      return '<div class="bar-row">' +
+      const key = dim ? keyOf(row) : null;
+      return '<div class="bar-row' + (dim ? Charts.xfClass(opts, key) : '') + '"' +
+          (dim ? Charts.xfAttrs(opts, key) + ' tabindex="0"' : '') + '>' +
         '<span class="label" title="' + esc(row[labelKey]) + '">' + esc(row[labelKey]) + '</span>' +
         '<span class="bar-track"><span class="bar-fill" style="width:' + width + '%;background:' +
           esc(colorFor(row)) + '"></span></span>' +
         '<span class="n">' + row[valueKey] + '</span>' +
       '</div>';
-    }).join('');
+    }).join('') + '</div>';
   }
 
-  function breakdownsHtml(stats) {
+  function breakdownsHtml(stats, forDim) {
     // Under a filter an empty card means "nothing matched", not "nothing exists".
     const emptyNote = stats.filtered
       ? '<p class="muted">No properties match the current filters.</p>'
@@ -1653,18 +1670,110 @@
     const series = () => Charts.SERIES;
     return sectionHead('Breakdowns') +
       '<div class="chart-grid breakdowns">' +
-        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour',
-                    body: breakdownBars(stats.bySbu, 'name', 'property_count', (r) => r.color, emptyNote) }) +
-        chartCard({ span: 4, title: 'Properties by owning company', sub: 'The group company holding title',
-                    body: breakdownBars(stats.byEntity, 'short_code', 'n',
-                      (r) => (r.short_code === 'Not recorded' ? Charts.OTHER : Charts.SERIES), emptyNote) }) +
-        chartCard({ span: 4, title: 'By status', sub: 'How each property is being used',
-                    body: breakdownBars(stats.byStatus.map((x) => ({ label: labelFor('statuses', x.status), n: x.n })),
-                      'label', 'n', series, emptyNote) }) +
-        chartCard({ span: 12, title: 'Properties by district', sub: 'Every district with at least one property',
+        chartCard({ span: 4, title: 'Properties by business unit', sub: 'In each unit’s map colour', xf: 'sbu',
+                    body: breakdownBars(forDim('sbu').bySbu.filter((r) => r.property_count), 'name', 'property_count',
+                      (r) => r.color, emptyNote, 'sbu', (r) => r.id) }) +
+        chartCard({ span: 4, title: 'Properties by owning company', sub: 'The group company holding title', xf: 'entity',
+                    body: breakdownBars(forDim('entity').byEntity, 'short_code', 'n',
+                      (r) => (r.short_code === 'Not recorded' ? Charts.OTHER : Charts.SERIES), emptyNote,
+                      'entity', (r) => r.id) }) +
+        chartCard({ span: 4, title: 'By status', sub: 'How each property is being used', xf: 'status',
+                    body: breakdownBars(forDim('status').byStatus.map((x) => ({ code: x.status, label: labelFor('statuses', x.status), n: x.n })),
+                      'label', 'n', series, emptyNote, 'status', (r) => r.code) }) +
+        chartCard({ span: 12, title: 'Properties by district', sub: 'Every district with at least one property', xf: 'district',
                     body: '<div class="bar-cols">' +
-                      breakdownBars(stats.byDistrict, 'district', 'n', series, emptyNote) + '</div>' }) +
+                      breakdownBars(forDim('district').byDistrict, 'district', 'n', series, emptyNote,
+                        'district', (r) => r.district) + '</div>' }) +
       '</div>';
+  }
+
+  /* ---------- cross-filtering: a click on any chart filters all the others ---------- */
+
+  // Chart dimension -> the shared filter it sets. Business units use the
+  // shared unit selection instead.
+  const XF_KEYS = {
+    tenure: 'ownership_type', deed: 'has_deed', doctype: 'has_doc_type', renewal: 'has_renewal',
+    province: 'province', type: 'property_type', entity: 'legal_entity_id',
+    status: 'status', district: 'district'
+  };
+  const XF_DIMS = Object.keys(XF_KEYS).concat(['sbu']);
+  let lastXf = null;           // the mark last clicked, to keep keyboard focus on it
+  let dashChips = [];
+
+  function selectedKeys(dim) {
+    if (dim === 'sbu') return state.selectedSbus ? state.selectedSbus.map(String) : [];
+    const value = state.filters[XF_KEYS[dim]];
+    return value ? [String(value)] : [];
+  }
+
+  function xf(dim) {
+    return { dim: dim, selected: selectedKeys(dim) };
+  }
+
+  function syncFilterControls() {
+    const f = state.filters;
+    [['#filter-district', 'district'], ['#filter-status', 'status'], ['#filter-type', 'property_type'],
+     ['#filter-entity', 'legal_entity_id'], ['#filter-location', 'location_id'],
+     ['#filter-tenure', 'ownership_type']].forEach(function (pair) {
+      const el = $(pair[0]);
+      if (el) el.value = f[pair[1]] || '';
+    });
+    syncTenureTabs();
+  }
+
+  // Click a mark to filter by it; click the selected mark again to clear.
+  function crossFilter(dim, value) {
+    lastXf = { dim: dim, value: String(value) };
+    if (dim === 'sbu') {
+      const id = Number(value);
+      const solo = state.selectedSbus && state.selectedSbus.length === 1 && state.selectedSbus[0] === id;
+      state.selectedSbus = solo ? null : [id];
+      renderSbuFilters();
+    } else {
+      const key = XF_KEYS[dim];
+      state.filters[key] = state.filters[key] === String(value) ? '' : String(value);
+      syncFilterControls();
+    }
+    refreshProperties();
+  }
+
+  function clearCrossFilter(dim) {
+    lastXf = null;
+    if (dim === 'sbu') { state.selectedSbus = null; renderSbuFilters(); }
+    else { state.filters[XF_KEYS[dim]] = ''; syncFilterControls(); }
+    refreshProperties();
+  }
+
+  /* A chart that is filtering keeps showing every one of its categories (the
+     figures without its own filter), the chosen one highlighted, so you can
+     see the context and switch with one click. One request per active
+     dimension supplies those figures. */
+  async function chartStats(main) {
+    const active = XF_DIMS.filter((d) => selectedKeys(d).length);
+    const byDim = {};
+    await Promise.all(active.map(async function (dim) {
+      const filters = activeFilters();
+      if (dim === 'sbu') delete filters.sbu_id; else delete filters[XF_KEYS[dim]];
+      try { byDim[dim] = await API.stats(filters); } catch (e) { /* fall back to the filtered figures */ }
+    }));
+    return (dim) => byDim[dim] || main;
+  }
+
+  // What is filtering the dashboard, each removable; or how to start.
+  function dashActiveHtml(stats) {
+    dashChips = activeChips().filter((c) => !c.sbu);
+    if (!dashChips.length) {
+      return '<p class="xf-hint">' + icon('target') +
+        'Click any slice, bar or row to filter the whole dashboard — click it again to clear.</p>';
+    }
+    const t = stats.totals;
+    return '<div class="xf-active" aria-live="polite">' +
+      '<span class="xf-label">Filtered by</span>' +
+      dashChips.map((c, i) => '<button type="button" class="xf-pill" data-xf-chip="' + i + '" ' +
+        'aria-label="Remove filter ' + esc(c.label) + '">' + esc(c.label) + icon('x') + '</button>').join('') +
+      '<span class="xf-count">' + t.properties + ' of ' + plural(t.allProperties, 'property', 'properties') + '</span>' +
+      '<button type="button" class="xf-clear-all" data-xf-chip="all">Clear all</button>' +
+    '</div>';
   }
 
   function goFromDashboard(action) {
@@ -1686,6 +1795,8 @@
 
   /* ---------- dashboard ---------- */
 
+  let dashRequest = 0;
+
   async function renderDashboard() {
     const host = $('#dashboard');
     if (!host.innerHTML) host.innerHTML = '<p class="empty">Loading…</p>';
@@ -1700,24 +1811,50 @@
       }
     }
 
+    const seq = ++dashRequest;
+    const forDim = await chartStats(stats);
+    if (seq !== dashRequest) return;           // a newer filter has taken over
+
     host.innerHTML =
       dashFilterHtml() +
+      dashActiveHtml(stats) +
       dashHeroHtml(stats) +
-      filterBannerHtml(stats) +
-      chartsHtml(stats) +
-      breakdownsHtml(stats);
+      chartsHtml(stats, forDim) +
+      breakdownsHtml(stats, forDim);
 
     if (!host.__dashGo) {
       host.__dashGo = true;
       host.addEventListener('click', function (event) {
         const pick = event.target.closest('[data-dash-sbu]');
         if (pick) { pickDashSbu(pick.dataset.dashSbu); return; }
+        const chip = event.target.closest('[data-xf-chip]');
+        if (chip) {
+          if (chip.dataset.xfChip === 'all') { lastXf = null; resetFilters(); return; }
+          const c = dashChips[Number(chip.dataset.xfChip)];
+          if (c) { c.clear(); refreshProperties(); }
+          return;
+        }
+        const clear = event.target.closest('[data-xf-clear]');
+        if (clear) { clearCrossFilter(clear.dataset.xfClear); return; }
+        const mark = event.target.closest('[data-xf-dim]');
+        if (mark) { crossFilter(mark.dataset.xfDim, mark.dataset.xfValue); return; }
         const target = event.target.closest('[data-dash-go]');
         if (target) goFromDashboard(target.dataset.dashGo);
       });
+      host.addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const mark = event.target.closest('[data-xf-dim]');
+        if (!mark || event.target !== mark) return;
+        event.preventDefault();
+        crossFilter(mark.dataset.xfDim, mark.dataset.xfValue);
+      });
     }
-    const clear = $('#btn-clear-from-dashboard');
-    if (clear) clear.addEventListener('click', resetFilters);
+    // Keep focus on the mark just used, so keyboard filtering can continue.
+    if (lastXf) {
+      const again = host.querySelector('[data-xf-dim="' + lastXf.dim + '"][data-xf-value="' +
+        CSS.escape(lastXf.value) + '"]');
+      if (again && document.activeElement === document.body) again.focus({ preventScroll: true });
+    }
     Charts.bindTooltips(host);
   }
 

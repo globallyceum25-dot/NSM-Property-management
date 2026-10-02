@@ -261,6 +261,37 @@ unit with its colour and property count:
 It is the same business-unit filter the Portfolio and Documents use, so moving
 between modules keeps the selection.
 
+**Click any chart to filter the dashboard.** Clicking a donut slice or legend
+row, a bar, a column, a gauge arc or a breakdown row filters every other chart
+to match, and the filters combine. For example, *Freehold* in Tenure mix plus
+*Western* in Properties by province gives 2 properties.
+
+- **The clicked chart keeps its context:** it shows all its categories, the
+  chosen one highlighted and the rest dimmed, so you can compare or switch with
+  one click.
+- **Clearing:** click the chosen mark again, use the chart's **Clear** button,
+  remove a pill from the **Filtered by** row, or press **Clear all**.
+- **Tooltips** say whether a click will filter or clear.
+- **Keyboard:** Tab to a mark and press Enter or Space.
+
+What each chart filters on:
+
+| Chart | Filters properties by |
+|---|---|
+| Tenure mix | Tenure |
+| Deed & title coverage | With or without a deed |
+| Documents by type | Holding a document of that type |
+| Renewal pipeline | Having a document in that expiry band |
+| Province | Province |
+| Property types | Type |
+| Business unit (charts, area bars and breakdown) | Business unit |
+| Owning company | Owning company |
+| Status | Status |
+| District | District |
+
+These are the register's shared filters, so the Portfolio, Documents and the
+tenure tabs show the same selection.
+
 Below the band come five sections, each headed by a rule:
 
 - *Land & floor area*:
@@ -397,7 +428,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/legal-entities` | list / create owning companies |
 | PUT/DELETE | `/api/legal-entities/{id}` | update / delete an owning company |
 | GET | `/api/locations` | slim location list for the property form |
-| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id`, `location_id`, `ownership_type`, `has_deed` (`0`/`1`), `district`, `province`, `status`, `property_type`, `q` |
+| GET | `/api/properties` | list, filtered by `sbu_id`, `legal_entity_id` (or `none`), `location_id`, `ownership_type`, `has_deed` (`0`/`1`), `has_doc_type`, `has_renewal` (`expired`, `m3`, `m6`, `m9`, `m12`, `later`), `district`, `province`, `status`, `property_type`, `q` |
 | POST | `/api/properties` | create |
 | GET/PUT/DELETE | `/api/properties/{id}` | detail (with documents) / update / delete |
 | GET/POST | `/api/properties/{id}/documents` | list / attach (multipart) |

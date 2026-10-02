@@ -2208,3 +2208,95 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   .dash-filter { flex-direction: column; align-items: stretch; gap: 8px; }
   .area-total b { font-size: 32px; }
 }
+
+/* ==========================================================================
+   Dashboard cross-filtering
+   ========================================================================== */
+
+/* Every filterable mark says so on hover; a click filters the page. */
+.is-filterable [data-xf-dim], .area-bar [data-xf-dim], .area-legend [data-xf-dim] { cursor: pointer; }
+[data-xf-dim]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The chosen mark stays; the rest step back, still readable as context. */
+.is-dimmed { opacity: .3; transition: opacity .2s ease; }
+.is-dimmed:hover, .is-dimmed:focus-visible { opacity: .65; }
+
+.donut-seg.is-selected { stroke-width: 27px; }
+.gauge-track[data-xf-dim]:hover { opacity: .8; }
+
+.legend li[data-xf-dim] { margin: 0 -8px; padding: 5px 8px; border-radius: 8px; transition: background .15s; }
+.legend li[data-xf-dim]:hover { background: var(--table-head); }
+.legend li.is-selected { background: var(--accent-soft); }
+.legend li.is-selected .legend-label { font-weight: 700; color: var(--text); }
+
+.hbar-row.is-selected { background: var(--accent-soft); }
+.hbar-row.is-selected .hbar-label { font-weight: 700; color: var(--text); }
+.col.is-selected { background: var(--accent-soft); }
+.col.is-selected .col-label { font-weight: 700; color: var(--text); }
+
+.bars.is-filterable .bar-row {
+  margin: 0 -8px 4px; padding: 5px 8px; border-radius: 9px; cursor: pointer;
+  transition: background .15s;
+}
+.bars.is-filterable .bar-row:hover { background: var(--table-head); }
+.bars.is-filterable .bar-row.is-selected { background: var(--accent-soft); }
+.bar-row.is-selected .label { font-weight: 700; color: var(--text); }
+
+.area-legend li[data-xf-dim] { margin: 0 -6px; padding: 3px 6px; border-radius: 8px; }
+.area-legend li[data-xf-dim]:hover { background: var(--table-head); }
+.area-legend li[aria-pressed="true"] { background: var(--accent-soft); }
+.area-legend li[aria-pressed="true"] span { font-weight: 700; color: var(--text); }
+
+/* a chart that is filtering the page can clear itself */
+.chart-head > button + button { margin-left: -4px; }
+.chart-clear {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  padding: 5px 11px 5px 8px; border: none; border-radius: var(--pill);
+  background: var(--inverse); color: var(--on-inverse);
+  font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.chart-clear .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+.chart-clear:hover { opacity: .88; }
+.chart-clear:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* what is filtering the dashboard */
+.xf-hint {
+  display: flex; align-items: center; gap: 8px; margin: -4px 0 16px;
+  font-size: 13px; color: var(--text-muted);
+}
+.xf-hint .ic { width: 16px; height: 16px; color: var(--accent-text); }
+.xf-active {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  margin: -4px 0 16px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--r-lg);
+  background: var(--surface);
+  animation: xf-in .2s ease-out;
+}
+@keyframes xf-in { from { opacity: 0; transform: translateY(-4px); } }
+.xf-label {
+  margin-right: 2px; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--text-muted);
+}
+.xf-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 32px; padding: 0 9px 0 13px;
+  border: none; border-radius: var(--pill);
+  background: var(--accent-soft); color: var(--accent-text);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.xf-pill .ic { width: 14px; height: 14px; stroke-width: 2.4; opacity: .75; }
+.xf-pill:hover .ic { opacity: 1; }
+.xf-pill:hover { background: color-mix(in srgb, var(--accent-text) 20%, transparent); }
+.xf-pill:focus-visible, .xf-clear-all:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.xf-count { margin-left: auto; font-size: 13px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+.xf-clear-all {
+  height: 32px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: var(--pill);
+  background: var(--surface); color: var(--text);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.xf-clear-all:hover { background: var(--surface-2); }
+@media (prefers-reduced-motion: reduce) { .xf-active { animation: none; } .is-dimmed { transition: none; } }
+@media (max-width: 720px) { .xf-count { margin-left: 0; flex-basis: 100%; } }
+
+/* the tooltip's third line: what a click will do */
+.chart-tip em { display: block; margin-top: 3px; font-style: normal; font-size: 11px; color: var(--hero-text-3); }

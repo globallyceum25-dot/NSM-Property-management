@@ -33,6 +33,29 @@ window.Charts = (function () {
     return ' tabindex="0" data-tip-label="' + esc(label) + '" data-tip-value="' + esc(value) + '"';
   }
 
+  /* Cross-filtering. A chart given `dim` makes each keyed mark a filter
+     control; `selected` (a list of keys) highlights the chosen marks and dims
+     the rest, so the clicked chart keeps its context while the others filter. */
+  function selectedSet(opts) {
+    return (opts.selected || []).map(String);
+  }
+
+  function xfAttrs(opts, key) {
+    if (!opts.dim || key === undefined || key === null) return '';
+    const on = selectedSet(opts).indexOf(String(key)) !== -1;
+    return ' data-xf-dim="' + esc(opts.dim) + '" data-xf-value="' + esc(key) + '"' +
+      ' role="button" aria-pressed="' + on + '"';
+  }
+
+  function xfClass(opts, key) {
+    if (!opts.dim || !selectedSet(opts).length || key === undefined || key === null) return '';
+    return selectedSet(opts).indexOf(String(key)) !== -1 ? ' is-selected' : ' is-dimmed';
+  }
+
+  function wrapClass(opts) {
+    return opts.dim ? ' is-filterable' + (selectedSet(opts).length ? ' has-selection' : '') : '';
+  }
+
   /* ---------- donut: part-to-whole, at most six segments ---------- */
 
   // items: [{ label, value, color }] in their fixed slot order.
@@ -48,11 +71,11 @@ window.Charts = (function () {
       const len = item.value / total * C;
       const dash = Math.max(len - gap, 0.01);
       const pct = Math.round(item.value / total * 100);
-      const seg = '<circle class="donut-seg" cx="' + cx + '" cy="' + cy + '" r="' + r + '" ' +
+      const seg = '<circle class="donut-seg' + xfClass(opts, item.key) + '" cx="' + cx + '" cy="' + cy + '" r="' + r + '" ' +
         'fill="none" style="stroke:' + item.color + '" stroke-width="' + width + '" ' +
         'stroke-dasharray="' + dash.toFixed(2) + ' ' + C.toFixed(2) + '" ' +
         'stroke-dashoffset="' + (-offset).toFixed(2) + '"' +
-        tipAttrs(item.label, fmt(item.value) + ' · ' + pct + '%') + '></circle>';
+        tipAttrs(item.label, fmt(item.value) + ' · ' + pct + '%') + xfAttrs(opts, item.key) + '></circle>';
       offset += len;
       return seg;
     }).join('');
@@ -69,14 +92,16 @@ window.Charts = (function () {
     // The legend is the always-visible twin of the chart: every value, in text.
     const legend = '<ul class="legend">' + opts.items.map(function (item) {
       const pct = total ? Math.round(item.value / total * 100) : 0;
-      return '<li' + (item.value ? '' : ' class="is-zero"') + '>' +
+      const cls = (item.value ? '' : 'is-zero') + xfClass(opts, item.value ? item.key : null);
+      return '<li' + (cls.trim() ? ' class="' + cls.trim() + '"' : '') +
+        (item.value ? xfAttrs(opts, item.key) + (opts.dim && item.key !== undefined ? ' tabindex="0"' : '') : '') + '>' +
         '<span class="swatch" style="background:' + item.color + '"></span>' +
         '<span class="legend-label">' + esc(item.label) + '</span>' +
         '<span class="legend-value">' + fmt(item.value) + '</span>' +
         '<span class="legend-pct">' + pct + '%</span></li>';
     }).join('') + '</ul>';
 
-    return '<div class="donut-wrap">' + svg + legend + '</div>';
+    return '<div class="donut-wrap' + wrapClass(opts) + '">' + svg + legend + '</div>';
   }
 
   /* ---------- gauge: one ratio against the whole ---------- */
@@ -93,12 +118,13 @@ window.Charts = (function () {
     const fillTo = point(Math.PI * (1 - pct / 100));
 
     return '<div class="gauge-wrap">' +
-      '<svg class="gauge" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(opts.ariaLabel) + '">' +
-        '<path d="' + arc(end) + '" fill="none" style="stroke:' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"/>' +
+      '<svg class="gauge' + wrapClass(opts) + '" viewBox="0 0 ' + w + ' ' + h + '" role="img" aria-label="' + esc(opts.ariaLabel) + '">' +
+        '<path class="gauge-track' + xfClass(opts, opts.trackKey) + '" d="' + arc(end) + '" fill="none" style="stroke:' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"' +
+          (opts.trackTipLabel ? tipAttrs(opts.trackTipLabel, opts.trackTipValue) : '') + xfAttrs(opts, opts.trackKey) + '/>' +
         (pct > 0
-          ? '<path class="gauge-fill" d="' + arc(fillTo) + '" fill="none" style="stroke:' + tone.fill + '" ' +
+          ? '<path class="gauge-fill' + xfClass(opts, opts.fillKey) + '" d="' + arc(fillTo) + '" fill="none" style="stroke:' + tone.fill + '" ' +
               'stroke-width="' + stroke + '" stroke-linecap="round"' +
-              tipAttrs(opts.tipLabel, opts.tipValue) + '/>'
+              tipAttrs(opts.tipLabel, opts.tipValue) + xfAttrs(opts, opts.fillKey) + '/>'
           : '') +
         '<text x="' + cx + '" y="' + (cy - 26) + '" class="gauge-value">' + Math.round(pct) + '%</text>' +
         '<text x="' + cx + '" y="' + (cy - 4) + '" class="gauge-caption">' + esc(opts.caption) + '</text>' +
@@ -120,10 +146,11 @@ window.Charts = (function () {
       return '<div class="chart-empty">' + esc(opts.emptyText || 'Nothing to show') + '</div>';
     }
     const max = Math.max.apply(null, items.map((i) => i.value)) || 1;
-    return '<div class="hbars' + (opts.className ? ' ' + opts.className : '') + '" role="list">' + items.map(function (item) {
+    return '<div class="hbars' + (opts.className ? ' ' + opts.className : '') + wrapClass(opts) + '" role="list">' + items.map(function (item) {
       const width = item.value > 0 ? Math.max(1.5, item.value / max * 100) : 0;
       const shown = item.display !== undefined ? item.display : fmt(item.value);
-      return '<div class="hbar-row" role="listitem"' + tipAttrs(item.label, shown) + '>' +
+      return '<div class="hbar-row' + xfClass(opts, item.key) + '"' + (opts.dim ? '' : ' role="listitem"') + tipAttrs(item.label, shown) +
+        xfAttrs(opts, item.key) + '>' +
         '<span class="hbar-label">' +
           (item.dot ? '<span class="swatch round" style="background:' + esc(item.dot) + '"></span>' : '') +
           '<span>' + esc(item.label) + '</span></span>' +
@@ -141,9 +168,10 @@ window.Charts = (function () {
     const items = opts.items;
     const max = Math.max.apply(null, items.map((i) => i.value).concat([1]));
     const height = opts.height || 170;
-    return '<div class="cols" style="--plot:' + height + 'px">' + items.map(function (item) {
+    return '<div class="cols' + wrapClass(opts) + '" style="--plot:' + height + 'px">' + items.map(function (item) {
       const h = item.value > 0 ? Math.max(4, item.value / max * (height - 26)) : 0;
-      return '<div class="col"' + tipAttrs(item.label, fmt(item.value) + (item.note ? ' · ' + item.note : '')) + '>' +
+      return '<div class="col' + xfClass(opts, item.key) + '"' +
+        tipAttrs(item.label, fmt(item.value) + (item.note ? ' · ' + item.note : '')) + xfAttrs(opts, item.key) + '>' +
         '<div class="col-plot">' +
           '<span class="col-value">' + fmt(item.value) + '</span>' +
           '<span class="col-bar" style="height:' + h.toFixed(1) + 'px;background:' +
@@ -166,8 +194,10 @@ window.Charts = (function () {
     tip.setAttribute('role', 'status');
     const value = document.createElement('strong');
     const label = document.createElement('span');
+    const hint = document.createElement('em');
     tip.appendChild(value);
     tip.appendChild(label);
+    tip.appendChild(hint);
     document.body.appendChild(tip);
     return tip;
   }
@@ -175,8 +205,12 @@ window.Charts = (function () {
   function show(el, x, y) {
     const t = ensureTip();
     // Labels come from the database: set as text, never as markup.
-    t.firstChild.textContent = el.getAttribute('data-tip-value');
-    t.lastChild.textContent = el.getAttribute('data-tip-label');
+    t.children[0].textContent = el.getAttribute('data-tip-value');
+    t.children[1].textContent = el.getAttribute('data-tip-label');
+    const dim = el.getAttribute('data-xf-dim');
+    t.children[2].textContent = !dim ? ''
+      : (el.getAttribute('aria-pressed') === 'true' ? 'Click to clear this filter' : 'Click to filter the dashboard');
+    t.children[2].hidden = !dim;
     t.hidden = false;
     const box = t.getBoundingClientRect();
     const left = Math.min(window.innerWidth - box.width - 8, Math.max(8, x - box.width / 2));
@@ -208,7 +242,7 @@ window.Charts = (function () {
   }
 
   return {
-    SLOTS: SLOTS, OTHER: OTHER, SERIES: SERIES, STATUS: STATUS,
+    SLOTS: SLOTS, OTHER: OTHER, SERIES: SERIES, STATUS: STATUS, xfAttrs: xfAttrs, xfClass: xfClass,
     donut: donut, gauge: gauge, hbars: hbars, columns: columns,
     bindTooltips: bindTooltips
   };
