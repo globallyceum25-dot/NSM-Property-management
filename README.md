@@ -83,6 +83,46 @@ street-map covers on each property card), Leaflet from a CDN, and the Plus
 Jakarta Sans typeface from Google Fonts. Offline, the register still works: the
 maps go blank and the text falls back to the system font.
 
+### Running on Supabase
+
+The register can keep its data in a Supabase project instead of `data/`: the
+tables in Supabase Postgres, the uploaded files in a private Supabase Storage
+bucket. The server still runs on your machine; only where it stores things
+changes.
+
+1. Install the Postgres driver once (into `.venv`, which `./run.sh` uses):
+
+   ```bash
+   python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+   ```
+
+2. Copy `.env.example` to `.env` and fill in the project's details: the
+   session pooler connection string (dashboard → **Connect**) and the
+   `service_role` key (**Project Settings → API keys**, legacy keys tab;
+   Storage does not accept the newer `sb_secret_` keys). `.env` is git-ignored.
+
+3. Copy the existing register across. Ids are kept, so every link survives,
+   and the SQLite file is only read:
+
+   ```bash
+   .venv/bin/python3 -m server.import_sqlite
+   ```
+
+   It refuses to overwrite a register that already has rows; `--replace`
+   empties it (and its stored files) first.
+
+4. Start it as usual with `./run.sh`. The banner says where the data lives:
+
+   ```
+   Database: Postgres at aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
+   Uploads:  Supabase Storage, bucket 'documents'
+   ```
+
+Delete `.env` (or the `DATABASE_URL` line) to go back to `data/`. The tables
+have row level security switched on with no policies, so Supabase's public API
+and anon key can read none of it; only the server, connecting as the database
+owner, can.
+
 ## What it does
 
 ![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
@@ -411,14 +451,18 @@ the form and the validation are all generated from the column metadata.
 ```
 property-system/
 ├── run.sh                  start the server
+├── requirements.txt        Postgres driver, only for Supabase
+├── .env.example            Supabase settings; copy to .env
 ├── server/
 │   ├── app.py              HTTP server, routing, static files
 │   ├── api.py              REST handlers and validation
-│   ├── db.py               schema + first-run sample data
+│   ├── db.py               schema (SQLite + Postgres), connections, sample data
+│   ├── storage.py          uploaded files: data/uploads or Supabase Storage
 │   ├── masters.py          master sheets: registry, generic CRUD
 │   ├── errors.py           shared ApiError
 │   ├── srilanka.py         districts, provinces, bounds, enumerations
 │   ├── multipart.py        file-upload parsing
+│   ├── import_sqlite.py    copy a SQLite register into Postgres / Supabase
 │   └── reset.py            clear or reload the register
 ├── web/
 │   ├── index.html
@@ -503,7 +547,8 @@ python3 -m server.reset --wipe
 ```
 
 or `--sample` to drop everything and reload the sample set. Both ask for
-confirmation.
+confirmation, and act on whichever database `.env` names: on Supabase, use
+`.venv/bin/python3` in place of `python3`.
 
 ## Not in Stage 1
 

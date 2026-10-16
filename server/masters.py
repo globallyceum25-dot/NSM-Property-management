@@ -386,13 +386,13 @@ def create_row(ctx):
     payload = _validate(sheet, ctx.json())
     names = list(payload.keys())
     conn = db.get_conn()
-    cur = conn.execute(
-        "INSERT INTO %s (%s) VALUES (%s)"
+    new_id = conn.execute(
+        "INSERT INTO %s (%s) VALUES (%s) RETURNING id"
         % (sheet["table"], ", ".join(names), ", ".join(":" + n for n in names)),
-        payload)
+        payload).fetchone()["id"]
     conn.commit()
     row = conn.execute("SELECT * FROM %s WHERE id = ?" % sheet["table"],
-                       (cur.lastrowid,)).fetchone()
+                       (new_id,)).fetchone()
     return 201, dict(row)
 
 
@@ -408,7 +408,7 @@ def update_row(ctx):
     names = list(payload.keys())
     payload["id"] = row_id
     conn.execute(
-        "UPDATE %s SET %s, updated_at = datetime('now') WHERE id = :id"
+        "UPDATE %s SET %s, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
         % (sheet["table"], ", ".join("%s = :%s" % (n, n) for n in names)), payload)
     conn.commit()
     row = conn.execute("SELECT * FROM %s WHERE id = ?" % sheet["table"],

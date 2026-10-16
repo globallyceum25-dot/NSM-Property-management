@@ -1,6 +1,8 @@
 """Zero-dependency HTTP server: JSON API + static front end.
 
 Run with:  python3 -m server.app  [--port 8000] [--host 127.0.0.1]
+
+Postgres (DATABASE_URL) and Supabase Storage are optional; see db and storage.
 """
 
 import argparse
@@ -15,7 +17,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import api, db, multipart
+from . import api, db, multipart, storage
 
 WEB_DIR = os.path.join(db.BASE_DIR, "web")
 MAX_BODY_BYTES = api.MAX_UPLOAD_BYTES + (2 * 1024 * 1024)
@@ -180,6 +182,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": "Internal server error."})
             except Exception:
                 pass
+        finally:
+            db.release()
 
     do_GET = _dispatch
     do_HEAD = _dispatch
@@ -224,10 +228,11 @@ def main():
         return 1
 
     db.init_db()
+    storage.init()
     httpd.daemon_threads = True
     print("Property register running at http://%s:%d/" % (args.host, args.port))
-    print("Database: %s" % db.DB_PATH)
-    print("Uploads:  %s" % db.UPLOAD_DIR)
+    print("Database: %s" % db.describe())
+    print("Uploads:  %s" % storage.describe())
     print("Press Ctrl+C to stop.")
     sys.stdout.flush()   # show the banner even when output goes to a log file
     try:

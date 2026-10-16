@@ -1,5 +1,6 @@
 """REST handlers for the property register."""
 
+import calendar
 import csv
 import datetime
 import io
@@ -7,7 +8,7 @@ import os
 import re
 import uuid
 
-from . import db, errors, masters, srilanka
+from . import db, errors, masters, srilanka, storage
 from .srilanka import valid_codes
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -91,6 +92,19 @@ def _check_enum(value, pairs, field, default=None):
     return value
 
 
+def _date_sql(months=0, days=0):
+    """Today (UTC) moved by whole months or days, as a quoted SQL date literal.
+
+    Worked out here rather than with SQLite's date('now', ...) so the same
+    condition runs on Postgres. A day the target month lacks becomes its last.
+    """
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    index = today.month - 1 + months
+    year, month = today.year + index // 12, index % 12 + 1
+    day = min(today.day, calendar.monthrange(year, month)[1])
+    return "'%s'" % (datetime.date(year, month, day) + datetime.timedelta(days=days)).isoformat()
+
+
 def _next_property_code(conn, sbu_id):
     sbu = conn.execute("SELECT code FROM sbu WHERE id = ?", (sbu_id,)).fetchone()
     prefix = (sbu["code"] if sbu else "PRP").upper()
@@ -172,12 +186,13 @@ def create_sbu(ctx):
     conn = db.get_conn()
     if conn.execute("SELECT 1 FROM sbu WHERE code = ?", (payload["code"],)).fetchone():
         raise ApiError("A property type with code '%s' already exists." % payload["code"], 409, "code")
-    cur = conn.execute(
+    new_id = conn.execute(
         """INSERT INTO sbu (code, name, sector, cost_centre, description, color, is_active)
-           VALUES (:code, :name, :sector, :cost_centre, :description, :color, :is_active)""",
-        payload)
+           VALUES (:code, :name, :sector, :cost_centre, :description, :color, :is_active)
+           RETURNING id""",
+        payload).fetchone()["id"]
     conn.commit()
-    row = conn.execute("SELECT * FROM sbu WHERE id = ?", (cur.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM sbu WHERE id = ?", (new_id,)).fetchone()
     return 201, _row_to_dict(row)
 
 
@@ -196,7 +211,7 @@ def update_sbu(ctx):
         """UPDATE sbu SET code=:code, name=:name, sector=:sector,
                           cost_centre=:cost_centre, description=:description,
                           color=:color, is_active=:is_active,
-                          updated_at=datetime('now')
+                          updated_at=CURRENT_TIMESTAMP
            WHERE id=:id""", payload)
     conn.commit()
     row = conn.execute("SELECT * FROM sbu WHERE id = ?", (sbu_id,)).fetchone()
@@ -240,12 +255,12 @@ def create_legal_entity(ctx):
                     (payload["short_code"],)).fetchone():
         raise ApiError("A company with short code '%s' already exists."
                        % payload["short_code"], 409, "short_code")
-    cur = conn.execute(
+    new_id = conn.execute(
         """INSERT INTO legal_entity (short_code, name, reg_no, description, is_active)
-           VALUES (:short_code, :name, :reg_no, :description, :is_active)""", payload)
+           VALUES (:short_code, :name, :reg_no, :description, :is_active)
+           RETURNING id""", payload).fetchone()["id"]
     conn.commit()
-    row = conn.execute("SELECT * FROM legal_entity WHERE id = ?",
-                       (cur.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM legal_entity WHERE id = ?", (new_id,)).fetchone()
     return 201, _row_to_dict(row)
 
 
@@ -264,7 +279,7 @@ def update_legal_entity(ctx):
     conn.execute(
         """UPDATE legal_entity SET short_code=:short_code, name=:name, reg_no=:reg_no,
                                    description=:description, is_active=:is_active,
-                                   updated_at=datetime('now')
+                                   updated_at=CURRENT_TIMESTAMP
            WHERE id=:id""", payload)
     conn.commit()
     row = conn.execute("SELECT * FROM legal_entity WHERE id = ?", (entity_id,)).fetchone()
@@ -346,16 +361,26 @@ _PROPERTY_SELECT = """
 """
 
 
-# The 3 / 6 / 9 / 12-month reminder ladder, as conditions on a document's expiry
-# date; the same edges the renewal pipeline chart counts with.
-_RENEWAL_BUCKETS = {
-    "expired": "dr.expiry_date < date('now')",
-    "m3": "dr.expiry_date >= date('now') AND dr.expiry_date <= date('now', '+3 months')",
-    "m6": "dr.expiry_date > date('now', '+3 months') AND dr.expiry_date <= date('now', '+6 months')",
-    "m9": "dr.expiry_date > date('now', '+6 months') AND dr.expiry_date <= date('now', '+9 months')",
-    "m12": "dr.expiry_date > date('now', '+9 months') AND dr.expiry_date <= date('now', '+12 months')",
-    "later": "dr.expiry_date > date('now', '+12 months')",
-}
+RENEWAL_KEYS = ("expired", "m3", "m6", "m9", "m12", "later")
+
+
+def _renewal_edges():
+    """Today and 3 / 6 / 9 / 12 months on, as SQL date literals."""
+    return [_date_sql(months=m) for m in (0, 3, 6, 9, 12)]
+
+
+def _renewal_buckets():
+    """The 3 / 6 / 9 / 12-month reminder ladder, as conditions on a document's
+    expiry date; the same edges the renewal pipeline chart counts with."""
+    now, m3, m6, m9, m12 = _renewal_edges()
+    return {
+        "expired": "dr.expiry_date < %s" % now,
+        "m3": "dr.expiry_date >= %s AND dr.expiry_date <= %s" % (now, m3),
+        "m6": "dr.expiry_date > %s AND dr.expiry_date <= %s" % (m3, m6),
+        "m9": "dr.expiry_date > %s AND dr.expiry_date <= %s" % (m6, m9),
+        "m12": "dr.expiry_date > %s AND dr.expiry_date <= %s" % (m9, m12),
+        "later": "dr.expiry_date > %s" % m12,
+    }
 
 
 def _property_filters(q):
@@ -407,14 +432,16 @@ def _property_filters(q):
         where.append("EXISTS (SELECT 1 FROM document dt WHERE dt.property_id = p.id AND dt.doc_type = ?)")
         params.append(q["has_doc_type"])
     # Properties with a document in one bucket of the renewal ladder.
-    if q.get("has_renewal") in _RENEWAL_BUCKETS:
+    if q.get("has_renewal") in RENEWAL_KEYS:
         where.append("EXISTS (SELECT 1 FROM document dr WHERE dr.property_id = p.id AND dr.expiry_date IS NOT NULL AND %s)"
-                     % _RENEWAL_BUCKETS[q["has_renewal"]])
+                     % _renewal_buckets()[q["has_renewal"]])
+    # Case-insensitive on both databases: Postgres's LIKE, unlike SQLite's, is not.
     if q.get("q"):
-        term = "%" + q["q"].strip() + "%"
-        where.append("""(p.name LIKE ? OR p.property_code LIKE ? OR p.city LIKE ?
-                         OR p.address_line1 LIKE ? OR p.district LIKE ?
-                         OR p.assessment_no LIKE ? OR p.current_use LIKE ?)""")
+        term = "%" + q["q"].strip().lower() + "%"
+        where.append("""(lower(p.name) LIKE ? OR lower(p.property_code) LIKE ?
+                         OR lower(p.city) LIKE ? OR lower(p.address_line1) LIKE ?
+                         OR lower(p.district) LIKE ? OR lower(p.assessment_no) LIKE ?
+                         OR lower(p.current_use) LIKE ?)""")
         params.extend([term] * 7)
 
     return where, params
@@ -439,8 +466,8 @@ def get_property(ctx):
         raise ApiError("Property not found.", 404)
     data = _row_to_dict(row)
     data["documents"] = [_row_to_dict(d) for d in conn.execute(
-        "SELECT * FROM document WHERE property_id = ? ORDER BY doc_type, issue_date DESC",
-        (pid,))]
+        """SELECT * FROM document WHERE property_id = ?
+           ORDER BY doc_type, issue_date DESC NULLS LAST""", (pid,))]
     return 200, data
 
 
@@ -559,11 +586,11 @@ def create_property(ctx):
 
     columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
                "latitude", "longitude"] + PROPERTY_FIELDS
-    cur = conn.execute(
-        "INSERT INTO property (%s) VALUES (%s)"
-        % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
+    new_id = conn.execute(
+        "INSERT INTO property (%s) VALUES (%s) RETURNING id"
+        % (", ".join(columns), ", ".join(":" + c for c in columns)), payload).fetchone()["id"]
     conn.commit()
-    row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (cur.lastrowid,)).fetchone()
+    row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (new_id,)).fetchone()
     return 201, _row_to_dict(row)
 
 
@@ -586,7 +613,7 @@ def update_property(ctx):
     columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
                "latitude", "longitude"] + PROPERTY_FIELDS
     conn.execute(
-        "UPDATE property SET %s, updated_at = datetime('now') WHERE id = :id"
+        "UPDATE property SET %s, updated_at = CURRENT_TIMESTAMP WHERE id = :id"
         % ", ".join("%s = :%s" % (c, c) for c in columns), payload)
     conn.commit()
     row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (pid,)).fetchone()
@@ -602,28 +629,18 @@ def delete_property(ctx):
     conn.execute("DELETE FROM property WHERE id = ?", (pid,))
     conn.commit()
     for d in docs:
-        _remove_stored_file(d["stored_name"])
+        storage.remove(d["stored_name"])
     return 200, {"deleted": pid}
 
 
 # --- documents --------------------------------------------------------------
 
-def _remove_stored_file(stored_name):
-    if not stored_name:
-        return
-    path = os.path.join(db.UPLOAD_DIR, os.path.basename(stored_name))
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-
 def list_documents(ctx):
     conn = db.get_conn()
     pid = int(ctx.match.group("id"))
     rows = conn.execute(
-        "SELECT * FROM document WHERE property_id = ? ORDER BY doc_type, issue_date DESC",
-        (pid,)).fetchall()
+        """SELECT * FROM document WHERE property_id = ?
+           ORDER BY doc_type, issue_date DESC NULLS LAST""", (pid,)).fetchall()
     return 200, [_row_to_dict(r) for r in rows]
 
 
@@ -681,39 +698,40 @@ def create_document(ctx):
     #    fails, take the file back out.
     if ext is not None:
         payload["stored_name"] = "%s%s" % (uuid.uuid4().hex, ext)
-        with open(os.path.join(db.UPLOAD_DIR, payload["stored_name"]), "wb") as fh:
-            fh.write(upload.data)
+        storage.save(payload["stored_name"], upload.data, upload.content_type)
 
     columns = ["property_id", "file_name", "stored_name", "mime_type",
                "size_bytes"] + DOCUMENT_FIELDS
     try:
-        cur = conn.execute(
-            "INSERT INTO document (%s) VALUES (%s)"
-            % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
+        new_id = conn.execute(
+            "INSERT INTO document (%s) VALUES (%s) RETURNING id"
+            % (", ".join(columns), ", ".join(":" + c for c in columns)), payload).fetchone()["id"]
         conn.commit()
     except Exception:
         conn.rollback()
-        _remove_stored_file(payload["stored_name"])
+        storage.remove(payload["stored_name"])
         raise
-    row = conn.execute("SELECT * FROM document WHERE id = ?", (cur.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM document WHERE id = ?", (new_id,)).fetchone()
     return 201, _row_to_dict(row)
 
 
 # --- the documents register -------------------------------------------------
 
-_DOC_STATUS = {
-    "file":     "d.stored_name IS NOT NULL",
-    "nofile":   "d.stored_name IS NULL",
-    "expiring": "d.expiry_date >= date('now') AND d.expiry_date <= date('now', '+180 day')",
-    "expired":  "d.expiry_date < date('now')",
-}
+def _doc_status():
+    today, in_180_days = _date_sql(), _date_sql(days=180)
+    return {
+        "file":     "d.stored_name IS NOT NULL",
+        "nofile":   "d.stored_name IS NULL",
+        "expiring": "d.expiry_date >= %s AND d.expiry_date <= %s" % (today, in_180_days),
+        "expired":  "d.expiry_date < %s" % today,
+    }
 
 _DOC_SORT = {
     "newest":   "d.id DESC",
     "expiry":   "d.expiry_date IS NULL, d.expiry_date ASC, d.id DESC",
-    "title":    "d.title COLLATE NOCASE ASC",
-    "property": "p.property_code ASC, d.doc_type ASC",
-    "sbu":      "s.name COLLATE NOCASE ASC, p.property_code ASC",
+    "title":    "lower(d.title) ASC, d.id",
+    "property": "p.property_code ASC, d.doc_type ASC, d.id",
+    "sbu":      "lower(s.name) ASC, p.property_code ASC, d.id",
 }
 
 
@@ -730,11 +748,13 @@ def list_all_documents(ctx):
     where, params = _property_filters(q)
 
     if text:
-        term = "%" + text + "%"
-        where.append("""(d.title LIKE ? OR d.reference_no LIKE ? OR d.counterparty LIKE ?
-                         OR d.notes LIKE ? OR d.file_name LIKE ?
-                         OR p.name LIKE ? OR p.property_code LIKE ? OR p.city LIKE ?
-                         OR p.district LIKE ? OR s.name LIKE ? OR s.code LIKE ?)""")
+        term = "%" + text.lower() + "%"
+        where.append("""(lower(d.title) LIKE ? OR lower(d.reference_no) LIKE ?
+                         OR lower(d.counterparty) LIKE ? OR lower(d.notes) LIKE ?
+                         OR lower(d.file_name) LIKE ? OR lower(p.name) LIKE ?
+                         OR lower(p.property_code) LIKE ? OR lower(p.city) LIKE ?
+                         OR lower(p.district) LIKE ? OR lower(s.name) LIKE ?
+                         OR lower(s.code) LIKE ?)""")
         params.extend([term] * 11)
     if q.get("doc_type"):
         where.append("d.doc_type = ?")
@@ -747,23 +767,24 @@ def list_all_documents(ctx):
 
     # Tab counts ignore the status filter, so each tab shows what it would hold.
     clause = (" WHERE " + " AND ".join(where)) if where else ""
-    counts = {"all": conn.execute("SELECT COUNT(*) AS n " + base + clause, params).fetchone()["n"]}
-    for key, condition in _DOC_STATUS.items():
-        counts[key] = conn.execute(
-            "SELECT COUNT(*) AS n " + base + " WHERE " + " AND ".join(where + [condition]),
-            params).fetchone()["n"]
+    doc_status = _doc_status()
+    count_sql = {"all": "SELECT COUNT(*) AS n " + base + clause}
+    for key, condition in doc_status.items():
+        count_sql[key] = "SELECT COUNT(*) AS n " + base + " WHERE " + " AND ".join(where + [condition])
 
     # `doc_status`, not `status`: plain `status` is the property-status filter.
     status = q.get("doc_status")
-    if status in _DOC_STATUS:
-        where.append(_DOC_STATUS[status])
+    if status in doc_status:
+        where.append(doc_status[status])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     order = _DOC_SORT.get(q.get("sort"), _DOC_SORT["newest"])
-    rows = conn.execute(
-        """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
-                  s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
-                  loc.name AS location_name
-           """ + base + clause + " ORDER BY " + order, params).fetchall()
+    list_sql = """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
+                         s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+                         loc.name AS location_name
+                  """ + base + clause + " ORDER BY " + order
+    *count_rows, rows = db.fetch_many(
+        conn, [(sql, params) for sql in count_sql.values()] + [(list_sql, params)])
+    counts = {key: result[0]["n"] for key, result in zip(count_sql, count_rows)}
     return 200, {"documents": [_row_to_dict(r) for r in rows], "counts": counts,
                  "properties": len({r["property_id"] for r in rows})}
 
@@ -794,7 +815,7 @@ def delete_document(ctx):
         raise ApiError("Document not found.", 404)
     conn.execute("DELETE FROM document WHERE id = ?", (doc_id,))
     conn.commit()
-    _remove_stored_file(row["stored_name"])
+    storage.remove(row["stored_name"])
     return 200, {"deleted": doc_id}
 
 
@@ -805,11 +826,9 @@ def download_document(ctx):
     row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if row is None or not row["stored_name"]:
         raise ApiError("No file attached to this document.", 404)
-    path = os.path.join(db.UPLOAD_DIR, os.path.basename(row["stored_name"]))
-    if not os.path.exists(path):
-        raise ApiError("The stored file is missing from disk.", 410)
-    with open(path, "rb") as fh:
-        data = fh.read()
+    data = storage.load(row["stored_name"])
+    if data is None:
+        raise ApiError("The stored file is missing.", 410)
     return 200, {
         "__raw__": True,
         "body": data,
@@ -834,10 +853,15 @@ def get_stats(ctx):
     # The set every figure below is computed over.
     subset = "SELECT p.* FROM property p" + clause
 
-    def run(sql, extra=()):
-        return conn.execute(sql, list(params) + list(extra)).fetchall()
+    # Each figure is its own query: the filtered subset appears once per
+    # statement, so the bound parameters line up exactly. All of them go to the
+    # database as one batch (on Postgres, one round trip).
+    def figure(sql):
+        return sql % subset, params
 
-    by_sbu = [_row_to_dict(r) for r in run(
+    now, m3, m6, m9, m12 = _renewal_edges()
+    queries = {
+        "bySbu": figure(
         """SELECT s.id, s.code, s.name, s.color,
                   COUNT(f.id) AS property_count,
                   COALESCE(SUM(CASE WHEN f.extent_unit='ACRE' THEN f.extent_value*160
@@ -849,110 +873,106 @@ def get_stats(ctx):
                   COALESCE(SUM(f.extent_sqft), 0) AS land_sqft,
                   COALESCE(SUM(f.building_area_sqft), 0) AS floor_sqft
            FROM sbu s LEFT JOIN (%s) f ON f.sbu_id = s.id
-           GROUP BY s.id ORDER BY property_count DESC, s.name""" % subset)]
-    if where:
-        # Under a filter, business units with nothing matching are just noise.
-        by_sbu = [row for row in by_sbu if row["property_count"]]
-
-    by_status = [_row_to_dict(r) for r in run(
-        "SELECT status, COUNT(*) AS n FROM (%s) GROUP BY status ORDER BY n DESC"
-        % subset)]
-    by_tenure = [_row_to_dict(r) for r in run(
-        "SELECT ownership_type, COUNT(*) AS n FROM (%s) GROUP BY ownership_type ORDER BY n DESC"
-        % subset)]
-    by_type = [_row_to_dict(r) for r in run(
-        "SELECT property_type, COUNT(*) AS n FROM (%s) GROUP BY property_type ORDER BY n DESC"
-        % subset)]
-    # Every province, including those with nothing in them: gaps are information.
-    province_counts = {r["province"]: r["n"] for r in run(
-        "SELECT province, COUNT(*) AS n FROM (%s) WHERE province IS NOT NULL GROUP BY province"
-        % subset)}
-    by_province = [{"province": name, "n": province_counts.get(name, 0)}
-                   for name in srilanka.PROVINCE_NAMES]
-    by_doc_type = [_row_to_dict(r) for r in run(
+           GROUP BY s.id ORDER BY property_count DESC, s.name"""),
+        "byStatus": figure(
+        "SELECT status, COUNT(*) AS n FROM (%s) f GROUP BY status ORDER BY n DESC, status"),
+        "byTenure": figure(
+        "SELECT ownership_type, COUNT(*) AS n FROM (%s) f GROUP BY ownership_type ORDER BY n DESC, ownership_type"),
+        "byType": figure(
+        "SELECT property_type, COUNT(*) AS n FROM (%s) f GROUP BY property_type ORDER BY n DESC, property_type"),
+        "byProvince": figure(
+        "SELECT province, COUNT(*) AS n FROM (%s) f WHERE province IS NOT NULL GROUP BY province"),
+        "byDocType": figure(
         """SELECT d.doc_type, COUNT(*) AS n FROM document d
-           WHERE d.property_id IN (SELECT id FROM (%s))
-           GROUP BY d.doc_type ORDER BY n DESC""" % subset)]
-    # Renewal pipeline on the blueprint's 3 / 6 / 9 / 12-month reminder ladder.
-    renewal_counts = {r["bucket"]: r["n"] for r in run(
+           WHERE d.property_id IN (SELECT id FROM (%s) f)
+           GROUP BY d.doc_type ORDER BY n DESC, d.doc_type"""),
+        # Renewal pipeline on the blueprint's 3 / 6 / 9 / 12-month reminder ladder.
+        "renewals": (
         """SELECT CASE
-                    WHEN d.expiry_date <  date('now')              THEN 'expired'
-                    WHEN d.expiry_date <= date('now', '+3 months')  THEN 'm3'
-                    WHEN d.expiry_date <= date('now', '+6 months')  THEN 'm6'
-                    WHEN d.expiry_date <= date('now', '+9 months')  THEN 'm9'
-                    WHEN d.expiry_date <= date('now', '+12 months') THEN 'm12'
+                    WHEN d.expiry_date <  %s THEN 'expired'
+                    WHEN d.expiry_date <= %s THEN 'm3'
+                    WHEN d.expiry_date <= %s THEN 'm6'
+                    WHEN d.expiry_date <= %s THEN 'm9'
+                    WHEN d.expiry_date <= %s THEN 'm12'
                     ELSE 'later' END AS bucket,
                   COUNT(*) AS n
            FROM document d
            WHERE d.expiry_date IS NOT NULL
-             AND d.property_id IN (SELECT id FROM (%s))
-           GROUP BY bucket""" % subset)}
-    renewals = [{"bucket": key, "n": renewal_counts.get(key, 0)}
-                for key in ("expired", "m3", "m6", "m9", "m12", "later")]
-    by_district = [_row_to_dict(r) for r in run(
-        """SELECT district, province, COUNT(*) AS n FROM (%s)
-           WHERE district IS NOT NULL GROUP BY district ORDER BY n DESC""" % subset)]
-    by_entity = [_row_to_dict(r) for r in run(
+             AND d.property_id IN (SELECT id FROM (%s) f)
+           GROUP BY bucket""" % (now, m3, m6, m9, m12, subset), params),
+        "byDistrict": figure(
+        """SELECT district, province, COUNT(*) AS n FROM (%s) f
+           WHERE district IS NOT NULL GROUP BY district, province ORDER BY n DESC, district"""),
+        "byEntity": figure(
         """SELECT COALESCE(CAST(e.id AS TEXT), 'none') AS id,
                   COALESCE(e.short_code, 'Not recorded') AS short_code,
                   COALESCE(e.name, 'No group company (leased / rented in)') AS name,
                   COUNT(f.id) AS n
            FROM (%s) f LEFT JOIN legal_entity e ON e.id = f.legal_entity_id
-           GROUP BY f.legal_entity_id ORDER BY n DESC""" % subset)]
-
-    # Owning company x business unit: who owns what each unit occupies.
-    by_entity_sbu = [_row_to_dict(r) for r in run(
+           GROUP BY f.legal_entity_id, e.id, e.short_code, e.name
+           ORDER BY n DESC, short_code"""),
+        # Owning company x business unit: who owns what each unit occupies.
+        "byEntitySbu": figure(
         """SELECT COALESCE(CAST(f.legal_entity_id AS TEXT), 'none') AS entity_id,
                   f.sbu_id, COUNT(*) AS n
-           FROM (%s) f GROUP BY f.legal_entity_id, f.sbu_id""" % subset)]
-
-    # Each figure is its own query: the filtered subset appears once per
-    # statement, so the bound parameters line up exactly.
-    def scalar(sql):
-        return run(sql)[0]["n"]
-
-    totals = {
-        "properties": scalar("SELECT COUNT(*) AS n FROM (%s)" % subset),
-        "sbus": scalar("SELECT COUNT(DISTINCT sbu_id) AS n FROM (%s)" % subset),
-        "documents": scalar(
-            """SELECT COUNT(*) AS n FROM document d
-               WHERE d.property_id IN (SELECT id FROM (%s))""" % subset),
-        "files": scalar(
-            """SELECT COUNT(*) AS n FROM document d
-               WHERE d.stored_name IS NOT NULL
-                 AND d.property_id IN (SELECT id FROM (%s))""" % subset),
-        # Land and floor area, summed in square feet, with how many properties
-        # actually have each recorded (a total over half the register says so).
-        "land_sqft": scalar("SELECT COALESCE(SUM(extent_sqft), 0) AS n FROM (%s)" % subset),
-        "floor_sqft": scalar("SELECT COALESCE(SUM(building_area_sqft), 0) AS n FROM (%s)" % subset),
-        "with_land": scalar("SELECT COUNT(*) AS n FROM (%s) WHERE extent_sqft > 0" % subset),
-        "with_floor": scalar("SELECT COUNT(*) AS n FROM (%s) WHERE building_area_sqft > 0" % subset),
-        "without_deed": scalar(
-            """SELECT COUNT(*) AS n FROM (%s) f WHERE NOT EXISTS
-                 (SELECT 1 FROM document d WHERE d.property_id = f.id
-                  AND d.doc_type IN ('DEED','TITLE_CERTIFICATE'))""" % subset),
-    }
-
-    expiring = [_row_to_dict(r) for r in run(
+           FROM (%s) f GROUP BY f.legal_entity_id, f.sbu_id
+           ORDER BY entity_id, f.sbu_id"""),
+        "expiringSoon": (
         """SELECT d.id, d.title, d.doc_type, d.expiry_date, d.counterparty,
                   f.id AS property_id, f.property_code, f.name AS property_name,
                   s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color
            FROM document d JOIN (%s) f ON f.id = d.property_id
            LEFT JOIN sbu s ON s.id = f.sbu_id
            WHERE d.expiry_date IS NOT NULL
-             AND d.expiry_date >= date('now')
-             AND d.expiry_date <= date('now', '+180 day')
-           ORDER BY d.expiry_date""" % subset)]
+             AND d.expiry_date >= %s
+             AND d.expiry_date <= %s
+           ORDER BY d.expiry_date""" % (subset, _date_sql(), _date_sql(days=180)), params),
+    }
+    totals_sql = {
+        "properties": figure("SELECT COUNT(*) AS n FROM (%s) f"),
+        "sbus": figure("SELECT COUNT(DISTINCT sbu_id) AS n FROM (%s) f"),
+        "documents": figure(
+            """SELECT COUNT(*) AS n FROM document d
+               WHERE d.property_id IN (SELECT id FROM (%s) f)"""),
+        "files": figure(
+            """SELECT COUNT(*) AS n FROM document d
+               WHERE d.stored_name IS NOT NULL
+                 AND d.property_id IN (SELECT id FROM (%s) f)"""),
+        # Land and floor area, summed in square feet, with how many properties
+        # actually have each recorded (a total over half the register says so).
+        "land_sqft": figure("SELECT COALESCE(SUM(extent_sqft), 0) AS n FROM (%s) f"),
+        "floor_sqft": figure("SELECT COALESCE(SUM(building_area_sqft), 0) AS n FROM (%s) f"),
+        "with_land": figure("SELECT COUNT(*) AS n FROM (%s) f WHERE extent_sqft > 0"),
+        "with_floor": figure("SELECT COUNT(*) AS n FROM (%s) f WHERE building_area_sqft > 0"),
+        "without_deed": figure(
+            """SELECT COUNT(*) AS n FROM (%s) f WHERE NOT EXISTS
+                 (SELECT 1 FROM document d WHERE d.property_id = f.id
+                  AND d.doc_type IN ('DEED','TITLE_CERTIFICATE'))"""),
+        # So the front end can say "showing 2 of 13".
+        "allProperties": ("SELECT COUNT(*) AS n FROM property", ()),
+    }
+    names = list(queries) + list(totals_sql)
+    results = db.fetch_many(conn, list(queries.values()) + list(totals_sql.values()))
+    rows = {name: [_row_to_dict(r) for r in result] for name, result in zip(names, results)}
 
-    # So the front end can say "showing 2 of 13".
-    totals["allProperties"] = conn.execute(
-        "SELECT COUNT(*) AS n FROM property").fetchone()["n"]
+    by_sbu = rows["bySbu"]
+    if where:
+        # Under a filter, business units with nothing matching are just noise.
+        by_sbu = [row for row in by_sbu if row["property_count"]]
+    # Every province, including those with nothing in them: gaps are information.
+    province_counts = {r["province"]: r["n"] for r in rows["byProvince"]}
+    by_province = [{"province": name, "n": province_counts.get(name, 0)}
+                   for name in srilanka.PROVINCE_NAMES]
+    renewal_counts = {r["bucket"]: r["n"] for r in rows["renewals"]}
+    renewals = [{"bucket": key, "n": renewal_counts.get(key, 0)} for key in RENEWAL_KEYS]
+    totals = {key: rows[key][0]["n"] for key in totals_sql}
 
-    return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": by_status,
-                 "byDistrict": by_district, "byEntity": by_entity,
-                 "byTenure": by_tenure, "byType": by_type, "byProvince": by_province,
-                 "byDocType": by_doc_type, "renewals": renewals, "byEntitySbu": by_entity_sbu,
-                 "expiringSoon": expiring, "filtered": bool(where)}
+    return 200, {"totals": totals, "bySbu": by_sbu, "byStatus": rows["byStatus"],
+                 "byDistrict": rows["byDistrict"], "byEntity": rows["byEntity"],
+                 "byTenure": rows["byTenure"], "byType": rows["byType"], "byProvince": by_province,
+                 "byDocType": rows["byDocType"], "renewals": renewals,
+                 "byEntitySbu": rows["byEntitySbu"],
+                 "expiringSoon": rows["expiringSoon"], "filtered": bool(where)}
 
 
 def export_properties_csv(ctx):
