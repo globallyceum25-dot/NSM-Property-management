@@ -19,6 +19,7 @@
     sbuPage: { id: null, tab: 'properties' },   // one business unit's page
     currentDoc: null,            // document open in the document panel
     ownPivot: 'company',         // ownership chart rows: 'company' or 'sbu'
+    bulk: { file: null, result: null, show: 'all' },   // bulk upload in the property modal
     alerts: [],
     selectedSbus: null,          // null = all
     filters: emptyFilters(),
@@ -2370,7 +2371,7 @@
         row('Sector', esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
             .filter(Boolean).join(' · '))) +
         row('Structure', esc(labelFor('propertyTypes', p.property_type))) +
-        row('Ownership', esc(labelFor('ownershipTypes', p.ownership_type))) +
+        row('Tenure', esc(labelFor('ownershipTypes', p.ownership_type))) +
         row('Status', '<span class="badge ' + esc(p.status) + '">' +
             esc(labelFor('statuses', p.status)) + '</span>') +
         row('Current use', esc(p.current_use)) +
@@ -2480,6 +2481,9 @@
 
     $('#property-modal-title').textContent = source ? 'Edit property' : 'New property';
     form.id.value = source ? source.id : '';
+    $('#property-mode').hidden = !!source;     // bulk upload is for adding, not editing
+    resetBulk();
+    setPropertyMode('single');
 
     if (source) {
       Object.keys(source).forEach(function (key) {
@@ -2881,6 +2885,209 @@
     }
   }
 
+  /* ---------- bulk upload: template, file, review, import ---------- */
+
+  function setPropertyMode(mode) {
+    const bulk = mode === 'bulk';
+    $('#property-form').hidden = bulk;
+    $('#property-foot').hidden = bulk;
+    $('#bulk-pane').hidden = !bulk;
+    $('#bulk-foot').hidden = !bulk;
+    $$('#property-mode [data-pmode]').forEach(function (b) {
+      const on = b.dataset.pmode === mode;
+      b.classList.toggle('is-on', on);
+      b.setAttribute('aria-selected', String(on));
+    });
+    $('#property-modal-title').textContent = bulk ? 'Bulk upload'
+      : ($('#property-form').elements.id.value ? 'Edit property' : 'New property');
+    if (bulk) renderBulk();
+  }
+
+  function resetBulk() {
+    state.bulk = { file: null, result: null, show: 'all', done: null };
+    $('#bulk-file').value = '';
+    $('#bulk-error').hidden = true;
+    renderBulk();
+  }
+
+  function bulkStatus(r) {
+    if (!r.ok) return 'fix';
+    return r.warnings.length ? 'warn' : 'ok';
+  }
+
+  function bulkRowsHtml(res) {
+    const show = state.bulk.show;
+    const rows = res.rows.filter((r) => show === 'all' || bulkStatus(r) === show);
+    if (!rows.length) return '<p class="bulk-none">No rows in this view.</p>';
+    return '<div class="bulk-table-wrap"><table class="bulk-table"><thead><tr>' +
+        '<th class="num">Row</th><th>Property</th><th>Type</th><th>District</th><th>Result</th>' +
+      '</tr></thead><tbody>' + rows.map(function (r) {
+        const st = bulkStatus(r);
+        const detail = st === 'fix'
+          ? '<ul class="bk-msgs">' + r.errors.map((e) => '<li><b>' + esc(e.column || 'Row') + ':</b> ' +
+              esc(e.message) + '</li>').join('') + '</ul>'
+          : (st === 'warn'
+            ? '<ul class="bk-msgs">' + r.warnings.map((w) => '<li>' + esc(w) + '</li>').join('') + '</ul>' : '');
+        const pill = { ok: icon('check') + 'Ready', warn: icon('shield') + 'Ready · check',
+                       fix: icon('x') + 'Needs fixing' }[st];
+        return '<tr class="bk-' + st + '"><td class="num">' + r.row + '</td>' +
+          '<td><b>' + esc(r.name || '—') + '</b>' + (r.code ? '<span class="bk-sub">' + esc(r.code) + '</span>' : '') + '</td>' +
+          '<td>' + esc(r.type || '—') + '</td><td>' + esc(r.district || '—') + '</td>' +
+          '<td><span class="bk-pill">' + pill + '</span>' + detail + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
+  function renderBulk() {
+    const b = state.bulk;
+    const zone = $('#bulk-dropzone');
+    zone.classList.toggle('has-file', !!b.file);
+    zone.querySelector('.dz-empty').hidden = !!b.file;
+    zone.querySelector('.dz-file').hidden = !b.file;
+    if (b.file) {
+      $('#bulk-file-name').textContent = b.file.name;
+      $('#bulk-file-size').textContent = Fmt.fileSize(b.file.size);
+    }
+    const host = $('#bulk-result');
+    const button = $('#btn-bulk-import');
+    const note = $('#bulk-foot-note');
+    $('#bulk-step-review').hidden = !b.file;
+    button.hidden = false;
+    note.textContent = '';
+
+    if (b.done) {
+      host.innerHTML = '<div class="bulk-success"><span class="bs-tick">' + icon('check') + '</span>' +
+        '<div><h4>' + plural(b.done.length, 'property', 'properties') + ' added to the register</h4>' +
+        '<p>' + esc(b.done.slice(0, 12).join(', ')) +
+          (b.done.length > 12 ? ' and ' + (b.done.length - 12) + ' more' : '') + '</p>' +
+        '<div class="bulk-actions">' +
+          '<button type="button" class="btn btn-dark btn-sm" data-bulk="view">View in Portfolio</button>' +
+          '<button type="button" class="btn btn-ghost btn-sm" data-bulk="again">Upload another file</button>' +
+        '</div></div></div>';
+      button.hidden = true;
+      return;
+    }
+    if (b.checking) {
+      host.innerHTML = '<p class="bulk-checking"><span class="bulk-spin" aria-hidden="true"></span>Checking every row…</p>';
+      button.disabled = true;
+      button.textContent = 'Import properties';
+      return;
+    }
+    const res = b.result;
+    if (!res) {
+      host.innerHTML = '';
+      button.disabled = true;
+      button.textContent = 'Import properties';
+      return;
+    }
+
+    const counts = { all: res.total, ok: 0, warn: 0, fix: 0 };
+    res.rows.forEach((r) => { counts[bulkStatus(r)] += 1; });
+    const tab = (key, label) => '<button type="button" data-bulk-show="' + key + '" class="' +
+      (b.show === key ? 'is-on' : '') + '" aria-pressed="' + (b.show === key) + '">' + label +
+      ' <b>' + counts[key] + '</b></button>';
+    host.innerHTML =
+      '<div class="bulk-summary">' +
+        '<span class="bsm is-ok">' + icon('check') + '<b>' + res.valid + '</b> ready</span>' +
+        (counts.warn ? '<span class="bsm is-warn">' + icon('shield') + '<b>' + counts.warn + '</b> to check</span>' : '') +
+        (res.invalid ? '<span class="bsm is-fix">' + icon('x') + '<b>' + res.invalid + '</b> need fixing</span>' : '') +
+        '<span class="bsm-of">of ' + plural(res.total, 'row', 'rows') + ' in “' + esc(res.sheet) + '”</span>' +
+      '</div>' +
+      (res.unknownColumns.length
+        ? '<p class="bulk-note">' + icon('shield') + 'Ignored columns the register doesn’t use: ' +
+            esc(res.unknownColumns.join(', ')) + '.</p>' : '') +
+      '<div class="seg-mini bulk-show" role="group" aria-label="Show rows">' +
+        tab('all', 'All') + tab('fix', 'Needs fixing') + tab('warn', 'To check') + tab('ok', 'Ready') + '</div>' +
+      bulkRowsHtml(res);
+
+    button.disabled = res.valid === 0;
+    button.textContent = res.valid ? 'Import ' + plural(res.valid, 'property', 'properties') : 'Nothing to import';
+    note.textContent = res.invalid
+      ? plural(res.invalid, 'row needs', 'rows need') + ' fixing and will be skipped. Fix them in the file and upload it again to include them.'
+      : (res.valid ? 'Every row is ready.' : '');
+  }
+
+  async function checkBulkFile(file) {
+    const errorBox = $('#bulk-error');
+    errorBox.hidden = true;
+    if (!file) return;
+    const ext = extensionOf(file.name);
+    if (ext !== '.xlsx' && ext !== '.csv') {
+      errorBox.textContent = ext === '.xls'
+        ? 'This is an old .xls workbook. In Excel choose File › Save As › Excel Workbook (.xlsx), then upload that.'
+        : 'Choose the filled template as an Excel (.xlsx) or CSV file.';
+      errorBox.hidden = false;
+      return;
+    }
+    state.bulk = { file: file, result: null, show: 'all', checking: true };
+    renderBulk();
+    try {
+      state.bulk.result = await API.importProperties(file, 'check');
+      state.bulk.show = state.bulk.result.invalid ? 'fix' : 'all';
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    } finally {
+      state.bulk.checking = false;
+      renderBulk();
+    }
+  }
+
+  async function runBulkImport() {
+    const b = state.bulk;
+    if (!b.file || !b.result || !b.result.valid) return;
+    const button = $('#btn-bulk-import');
+    const errorBox = $('#bulk-error');
+    errorBox.hidden = true;
+    setBusy(button, 'Importing…');
+    try {
+      const res = await API.importProperties(b.file, 'import');
+      state.bulk.done = res.created;
+      await refreshSbus();
+      await refreshProperties();
+      loadAlerts();
+      toast(plural(res.created.length, 'property', 'properties') + ' imported.');
+    } catch (err) {
+      errorBox.textContent = err.message;
+      errorBox.hidden = false;
+    } finally {
+      setBusy(button, null);
+      renderBulk();
+    }
+  }
+
+  function wireBulk() {
+    $$('#property-mode [data-pmode]').forEach((b) =>
+      b.addEventListener('click', () => setPropertyMode(b.dataset.pmode)));
+    const input = $('#bulk-file');
+    const zone = $('#bulk-dropzone');
+    input.addEventListener('change', () => checkBulkFile(input.files[0]));
+    ['dragenter', 'dragover'].forEach((type) => zone.addEventListener(type, function (event) {
+      event.preventDefault();
+      zone.classList.add('is-drag');
+    }));
+    ['dragleave', 'dragend'].forEach((type) => zone.addEventListener(type, function (event) {
+      if (!zone.contains(event.relatedTarget)) zone.classList.remove('is-drag');
+    }));
+    zone.addEventListener('drop', function (event) {
+      event.preventDefault();
+      zone.classList.remove('is-drag');
+      const dropped = event.dataTransfer && event.dataTransfer.files;
+      if (dropped && dropped.length) checkBulkFile(dropped[0]);
+    });
+    $('#btn-bulk-import').addEventListener('click', runBulkImport);
+    $('#bulk-result').addEventListener('click', function (event) {
+      const show = event.target.closest('[data-bulk-show]');
+      if (show) { state.bulk.show = show.dataset.bulkShow; renderBulk(); return; }
+      const action = event.target.closest('[data-bulk]');
+      if (!action) return;
+      if (action.dataset.bulk === 'again') { resetBulk(); input.focus(); return; }
+      $('#property-modal').hidden = true;
+      resetBulk();
+      if (state.view !== 'portfolio') switchView('portfolio');
+      setMode('table');
+    });
+  }
+
   /* ---------- the file drop zone ---------- */
 
   const IMAGE_TYPES = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
@@ -3185,6 +3392,7 @@
       openDrawer(id);
     });
     wireDropzone();
+    wireBulk();
 
     // Typing into a flagged field clears its error.
     document.addEventListener('input', function (event) {
