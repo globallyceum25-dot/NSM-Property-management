@@ -10,8 +10,8 @@ import json
 import os
 import threading
 import unittest
+import unittest.mock
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest import mock
 from urllib.parse import unquote
 
 from server import db, storage
@@ -85,7 +85,7 @@ class SupabaseStorageTests(unittest.TestCase):
         cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), FakeStorage)
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
         url = "http://127.0.0.1:%d" % cls.httpd.server_address[1]
-        cls.patches = [mock.patch.object(storage, name, value) for name, value in (
+        cls.patches = [unittest.mock.patch.object(storage, name, value) for name, value in (
             ("SUPABASE_URL", url), ("SERVICE_KEY", KEY), ("IN_SUPABASE", True),
             ("BUCKET", "documents"))]
         for patch in cls.patches:
