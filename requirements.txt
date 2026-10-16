@@ -1,0 +1,4 @@
+# Only needed when DATABASE_URL points the register at Postgres (e.g. Supabase).
+# Without it the register runs on SQLite with the standard library alone.
+psycopg[binary]>=3.1,<4
+psycopg-pool>=3.2,<4
