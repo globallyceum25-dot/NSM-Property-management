@@ -58,6 +58,13 @@ window.API = (function () {
     deleteDocument: (id) => request('DELETE', '/api/documents/' + id),
     listDocuments: (filters) => request('GET', '/api/documents' + qs(filters || {})),
     getDocument: (id) => request('GET', '/api/documents/' + id),
+    // Bulk upload: mode 'check' only reports; 'import' saves the rows that pass.
+    importProperties: function (file, mode) {
+      const data = new FormData();
+      data.append('mode', mode);
+      data.append('file', file, file.name);
+      return request('POST', '/api/import/properties', data, true);
+    },
 
     listMasters: () => request('GET', '/api/masters'),
     getMaster: (key) => request('GET', '/api/masters/' + key),

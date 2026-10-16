@@ -387,9 +387,64 @@
 <div class="modal" id="property-modal" hidden>
   <div class="modal-card modal-wide">
     <header class="modal-head">
-      <h2 id="property-modal-title">New property</h2>
+      <div class="mh-title">
+        <h2 id="property-modal-title">New property</h2>
+        <div class="seg-mini" id="property-mode" role="tablist" aria-label="How to add properties">
+          <button type="button" role="tab" data-pmode="single" class="is-on" aria-selected="true">One property</button>
+          <button type="button" role="tab" data-pmode="bulk" aria-selected="false"><svg class="ic"><use href="#i-upload"/></svg>Bulk upload</button>
+        </div>
+      </div>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
     </header>
+
+    <!-- Bulk upload: template, file, review -->
+    <section class="modal-body bulk-pane" id="bulk-pane" role="tabpanel" aria-label="Bulk upload" hidden>
+      <ol class="bulk-steps">
+        <li class="bulk-step">
+          <span class="bs-num" aria-hidden="true">1</span>
+          <div class="bs-body">
+            <h3>Download the template</h3>
+            <p>An Excel workbook with a column for every property detail. Its drop-downs are filled
+              from this register &mdash; property types, owning companies, location codes, districts and
+              units &mdash; and it includes instructions and two example rows. Columns marked * are required.</p>
+            <a class="btn btn-ghost btn-sm" href="/api/import/template.xlsx" download id="btn-bulk-template">
+              <svg class="ic"><use href="#i-download"/></svg>Download template (.xlsx)</a>
+          </div>
+        </li>
+        <li class="bulk-step">
+          <span class="bs-num" aria-hidden="true">2</span>
+          <div class="bs-body">
+            <h3>Upload the filled file</h3>
+            <p>Every row is checked against the same rules as this form before anything is saved.</p>
+            <div class="dropzone" id="bulk-dropzone">
+              <input id="bulk-file" type="file" class="dz-input" accept=".xlsx,.csv"
+                     aria-describedby="bulk-file-hint">
+              <label for="bulk-file" class="dz-empty">
+                <span class="dz-icon"><svg class="ic"><use href="#i-upload"/></svg></span>
+                <span><b>Choose the file</b> or drag it here</span>
+              </label>
+              <div class="dz-file" hidden>
+                <span class="dz-icon"><svg class="ic"><use href="#i-file"/></svg></span>
+                <span class="dz-text"><b class="dz-name" id="bulk-file-name"></b><span class="dz-size" id="bulk-file-size"></span></span>
+                <span class="dz-actions">
+                  <label for="bulk-file" class="btn btn-ghost btn-sm">Replace</label>
+                </span>
+              </div>
+            </div>
+            <span class="hint" id="bulk-file-hint">Excel (.xlsx) or CSV with the template's headings &middot; up to 10 MB and 2,000 properties.</span>
+          </div>
+        </li>
+        <li class="bulk-step" id="bulk-step-review" hidden>
+          <span class="bs-num" aria-hidden="true">3</span>
+          <div class="bs-body">
+            <h3>Review and import</h3>
+            <div id="bulk-result" aria-live="polite"></div>
+          </div>
+        </li>
+      </ol>
+      <p class="form-error" id="bulk-error" role="alert" hidden></p>
+    </section>
+
     <form id="property-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
 
@@ -542,9 +597,14 @@
 
       <p class="form-error" id="property-form-error" hidden></p>
     </form>
-    <footer class="modal-foot">
+    <footer class="modal-foot" id="property-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
       <button class="btn btn-dark" id="btn-save-property">Save property</button>
+    </footer>
+    <footer class="modal-foot" id="bulk-foot" hidden>
+      <span class="bulk-foot-note" id="bulk-foot-note"></span>
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-dark" id="btn-bulk-import" disabled>Import properties</button>
     </footer>
   </div>
 </div>

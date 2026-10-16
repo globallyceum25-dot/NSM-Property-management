@@ -214,6 +214,40 @@ properties were converted when the database was upgraded; their building areas
 were recorded in sq ft before, so they keep that unit. The property panel shows
 both forms, for example "6.6 acres · 287,496 sq ft". Negative areas are refused.
 
+**Bulk upload** — add many properties at once from an Excel file. Open **New
+property** and switch to **Bulk upload**:
+
+1. **Download the template** (.xlsx). It is generated from the register at that
+   moment and has four sheets:
+   - **Properties** — one column per property detail and a frozen heading row.
+     Required columns (marked *) have dark headings. Drop-downs offer the current
+     property types, owning companies, tenures, structures, statuses, location
+     codes, districts and units. Latitude and longitude are checked against Sri
+     Lanka as you type, and every cell shows a short hint when selected.
+   - **Instructions** — what to enter in each column.
+   - **Example** — two filled-in rows.
+   - **Lists** — every allowed value.
+2. **Upload the filled file** — the .xlsx, or a CSV with the same headings. Up
+   to 2,000 properties and 10 MB.
+3. **Review and import** — every row is checked with the same rules as the
+   property form before anything is saved. Each row is marked *Ready*, *Ready ·
+   check* (a warning, such as a likely duplicate name) or *Needs fixing* (with
+   the column and the reason). **Import** saves the rows that are ready, in one
+   go, and skips the rest. You can fix those in the file and upload it again.
+
+Things the importer accepts or does for you:
+
+- Property code can be left blank; it is numbered from the property type
+  (`BUS-0001`).
+- A location code with no coordinates places the property at that location.
+- Dates may be typed `2019-03-31` or `31/03/2019`, or be real Excel dates.
+- Units can be written as `acres`, `P`, `sq ft`, `m2` and similar.
+- Columns can be in any order. Columns the register doesn't use are listed and
+  ignored.
+
+A copy of the template is in `docs/templates/`, but download a fresh one from
+the app so its lists are current.
+
 **Search and filters** — the tenure tabs (All · Freehold · Leasehold · Rented in ·
 Leased out) and the search box sit above everything; the filter button opens
 property types, location, owning company, district, tenure, status and structure.
@@ -419,6 +453,7 @@ property-system/
 │   ├── errors.py           shared ApiError
 │   ├── srilanka.py         districts, provinces, bounds, enumerations
 │   ├── multipart.py        file-upload parsing
+│   ├── bulk.py             bulk upload: Excel template writer and importer
 │   └── reset.py            clear or reload the register
 ├── web/
 │   ├── index.html
@@ -484,6 +519,8 @@ Sri Lanka; selecting a district fills the province automatically.
 | PUT/DELETE | `/api/masters/{key}/{id}` | update / delete a row |
 | GET | `/api/stats` | summary and chart figures (totals, tenure, types, provinces, document types, renewal buckets, breakdowns); accepts the same filters as `/api/properties` |
 | GET | `/api/export/properties.csv` | CSV export |
+| GET | `/api/import/template.xlsx` | bulk upload template, with drop-downs from the live register |
+| POST | `/api/import/properties` | multipart `file` (.xlsx or .csv) and `mode`: `check` reports every row; `import` saves the rows that pass, in one transaction |
 
 ## Sample data
 

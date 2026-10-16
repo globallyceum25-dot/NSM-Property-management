@@ -1015,5 +1015,9 @@ ROUTES = [
 # The Master sheets module registers its own routes; nothing above changes.
 ROUTES = ROUTES + masters.ROUTES
 
+# Bulk upload: the Excel template and its importer.
+from . import bulk  # noqa: E402  (bulk reads helpers above at request time)
+ROUTES = ROUTES + bulk.ROUTES
+
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]
