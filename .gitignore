@@ -2,6 +2,13 @@
 # Back this folder up separately — it is the register itself, not source code.
 data/
 
+# Database and storage credentials (see .env.example), and the Postgres driver.
+.env
+.env.*
+!.env.example
+.venv/
+supabase/.temp/
+
 __pycache__/
 *.py[cod]
 .DS_Store

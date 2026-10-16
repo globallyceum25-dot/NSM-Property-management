@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install Ruff
+        run: pip install "$(grep -E '^ruff==' requirements-dev.txt)"
+      - name: Python (Ruff)
+        run: ruff check --output-format github .
+      - name: JavaScript syntax
+        run: for f in web/js/*.js; do node --check "$f"; done
+      - name: Shell scripts (ShellCheck)
+        run: shellcheck run.sh
+
+  test:
+    name: Tests · Python ${{ matrix.python }} · ${{ matrix.database }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.9", "3.13"]
+        database: [sqlite, postgres]
+    services:
+      # Same major version as the Supabase project. Started for every job (it
+      # costs seconds); only the postgres jobs point the tests at it.
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: register_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: ${{ matrix.database == 'postgres' && 'postgresql://postgres:postgres@localhost:5432/register_test' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      # SQLite jobs install nothing: they prove the register still runs on the
+      # standard library alone.
+      - name: Install the Postgres driver
+        if: matrix.database == 'postgres'
+        run: pip install -r requirements.txt
+      - name: Run the tests
+        run: python -m unittest discover -s tests -t . -v
+
+  oldest-python:
+    name: Tests · Python 3.7 · sqlite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # The README promises Python 3.7+; hosted runners no longer carry 3.7,
+      # so run the suite in the official image, with the checkout read-only.
+      - name: Run the tests on Python 3.7
+        run: >-
+          docker run --rm -v "$PWD:/src:ro" -w /src -e PYTHONDONTWRITEBYTECODE=1
+          python:3.7-slim python -m unittest discover -s tests -t . -v
+
+  browser:
+    name: Browser smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      REQUIRE_BROWSER_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install Playwright and Chromium
+        run: |
+          pip install -r requirements-dev.txt
+          python -m playwright install --with-deps chromium
+      - name: Run the browser test
+        run: python -m unittest tests.test_browser -v
+
+  # One check to require in branch protection, whatever the matrix becomes.
+  ci-passed:
+    name: CI passed
+    if: always()
+    needs: [lint, test, oldest-python, browser]
+    runs-on: ubuntu-latest
+    steps:
+      - name: A job failed, was cancelled or was skipped
+        if: >-
+          contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled') ||
+          contains(needs.*.result, 'skipped')
+        run: exit 1

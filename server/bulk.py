@@ -258,7 +258,9 @@ def _cols(widths, styles=None):
 
 def _example_rows(lists):
     """Two sample rows, using values that exist in this register."""
-    first = lambda key, default="": (lists[key][0] if lists[key] else default)
+    def first(key, default=""):
+        return lists[key][0] if lists[key] else default
+
     loc = lists["_locations"][0] if lists["_locations"] else None
     return [
         {"name": "Kandy City Showroom", "property_code": "", "sbu": first("types"),
@@ -290,9 +292,9 @@ def build_template(conn):
     data_rows = MAX_ROWS + 1
 
     # 1. Properties: headings, column formats, drop-downs and input prompts.
-    head = [_heading_cell(i, heading, req) for i, (key, heading, req, width, kind, help_) in enumerate(COLUMNS)]
+    head = [_heading_cell(i, c[1], c[2]) for i, c in enumerate(COLUMNS)]
     validations = []
-    for i, (key, heading, req, width, kind, help_) in enumerate(COLUMNS):
+    for i, (_key, heading, req, _width, kind, help_) in enumerate(COLUMNS):
         rng = "%s2:%s%d" % (_col(i), _col(i), data_rows)
         prompt = ' showInputMessage="1" promptTitle=%s prompt=%s' % (
             quoteattr((heading + (" (required)" if req else ""))[:32]),
@@ -349,7 +351,7 @@ def build_template(conn):
     r = len(lines) + 2
     rows.append(_row(r, [_cell("A%d" % r, "Column", S_TABLE_HEAD), _cell("B%d" % r, "Required", S_TABLE_HEAD),
                          _cell("C%d" % r, "What to enter", S_TABLE_HEAD)], 22))
-    for key, heading, req, width, kind, help_ in COLUMNS:
+    for _key, heading, req, _width, kind, help_ in COLUMNS:
         r += 1
         if kind.startswith("list:"):
             help_ += " Allowed values: the %s column on the Lists sheet." % dict(
@@ -418,7 +420,7 @@ def build_template(conn):
                  '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>'
                  '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>'
                  '</Relationships>')
-    now = datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     core = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" '
             'xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
@@ -597,6 +599,27 @@ UNIT_ALIASES = {"p": "PERCH", "perch": "PERCH", "perches": "PERCH", "ac": "ACRE"
                 "sq ft": "SQ_FT", "sqft": "SQ_FT", "ft2": "SQ_FT", "square foot": "SQ_FT", "square feet": "SQ_FT"}
 
 
+class _RowCheck:
+    """One row's findings: `err` records a problem against a column; `pick`
+    looks a typed value up in a list, recording one when it isn't there."""
+
+    def __init__(self, text):
+        self.text = text
+        self.errors = []
+
+    def err(self, key, message):
+        self.errors.append({"column": HEADING.get(key, key), "message": message})
+
+    def pick(self, key, table, label):
+        value = self.text.get(key, "")
+        if not value:
+            return None
+        found = table.get(_norm(value))
+        if found is None:
+            self.err(key, "“%s” is not %s in this register." % (value, label))
+        return found
+
+
 class _Body:
     """Stands in for a request, so a row goes through the property form's own checks."""
 
@@ -653,19 +676,9 @@ def check_rows(conn, sheet_rows):
     for row_no, cells in body:
         raw = {key: (cells[i] if i < len(cells) else "") for i, key in mapping.items()}
         text = {k: _as_text(v) for k, v in raw.items()}
-        errors, warnings, data = [], [], {}
-
-        def err(key, message):
-            errors.append({"column": HEADING.get(key, key), "message": message})
-
-        def pick(key, table, label):
-            value = text.get(key, "")
-            if not value:
-                return None
-            found_value = table.get(_norm(value))
-            if found_value is None:
-                err(key, "“%s” is not %s in this register." % (value, label))
-            return found_value
+        check = _RowCheck(text)
+        err, pick, errors = check.err, check.pick, check.errors
+        warnings, data = [], {}
 
         data["name"] = text.get("name", "")
         data["property_code"] = text.get("property_code", "")

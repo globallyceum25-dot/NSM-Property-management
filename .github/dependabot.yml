@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # requirements.txt (the Postgres driver) and requirements-dev.txt (Ruff, Playwright).
+  - package-ecosystem: pip
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      python:
+        patterns: ["*"]
+
+  # The actions used by the workflows in .github/workflows.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
