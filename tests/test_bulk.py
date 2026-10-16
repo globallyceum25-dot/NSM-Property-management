@@ -106,3 +106,61 @@ class BulkUploadTests(RegisterTestCase):
         self.assertIn("No properties found", empty.json()["error"])
         nothing = self.request("POST", "/api/import/properties", data={"mode": "check"}, files={})
         self.assertEqual(nothing.status, 400)
+
+    def test_damaged_workbooks_are_a_400_not_a_crash(self):
+        rows = [["Property name", "Property type", "Tenure", "Latitude", "Longitude"],
+                ["Galle Store", "Warehouse", "Freehold", "6.03", "80.21"]]
+        cases = {
+            "no workbook part": _xlsx(rows, drop="xl/workbook.xml"),
+            "no sheet list": _xlsx(rows, workbook="<workbook xmlns=\"%s\"/>" % _MAIN),
+            "broken XML": _xlsx(rows, sheet_xml="<worksheet><sheetData><row>"),
+            "bad cell reference": _xlsx(rows, ref=lambda col, row: "%d%s" % (row, col)),
+            "shared string out of range": _xlsx(rows, extra_cell='<c r="F2" t="s"><v>99</v></c>'),
+        }
+        for label, data in cases.items():
+            response = self.upload("damaged.xlsx", data, content_type=XLSX)
+            self.assertEqual(response.status, 400, label)
+            self.assertIn("readable Excel workbook", response.json()["error"], label)
+
+    def test_workbooks_without_row_numbers_or_with_empty_values_still_read(self):
+        # Row and cell numbers are optional in the file format; some tools leave them out.
+        rows = [["Property name", "Property type", "Tenure", "Latitude", "Longitude"],
+                ["Galle Store", "Warehouse", "Freehold", "6.03", "80.21"]]
+        for label, data in {"no row numbers": _xlsx(rows, row_numbers=False),
+                            "empty value": _xlsx(rows, extra_cell='<c r="F2"><v/></c>')}.items():
+            result = self.ok("POST", "/api/import/properties", data={"mode": "check"},
+                             files={"file": ("plain.xlsx", data, XLSX)})
+            self.assertEqual((result["total"], result["valid"]), (1, 1), (label, result["rows"]))
+
+
+_MAIN = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
+_DOC_RELS = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+
+
+def _xlsx(rows, drop=None, workbook=None, sheet_xml=None, row_numbers=True,
+          ref=lambda col, row: "%s%d" % (col, row), extra_cell=""):
+    """A minimal workbook holding `rows` as inline strings, damaged as asked."""
+    body = []
+    for n, row in enumerate(rows, start=1):
+        cells = "".join('<c r="%s" t="inlineStr"><is><t>%s</t></is></c>' % (ref(chr(65 + i), n), v)
+                        for i, v in enumerate(row))
+        if n == len(rows):
+            cells += extra_cell
+        body.append(('<row r="%d">' % n if row_numbers else "<row>") + cells + "</row>")
+    parts = {
+        "xl/workbook.xml": workbook or (
+            '<workbook xmlns="%s" xmlns:r="%s"><sheets><sheet name="Properties" sheetId="1" '
+            'r:id="rId1"/></sheets></workbook>' % (_MAIN, _DOC_RELS)),
+        "xl/_rels/workbook.xml.rels": (
+            '<Relationships xmlns="%s"><Relationship Id="rId1" Target="worksheets/sheet1.xml"/>'
+            '</Relationships>' % _RELS),
+        "xl/worksheets/sheet1.xml": sheet_xml or (
+            '<worksheet xmlns="%s"><sheetData>%s</sheetData></worksheet>' % (_MAIN, "".join(body))),
+    }
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w") as z:
+        for name, xml in parts.items():
+            if name != drop:
+                z.writestr(name, xml)
+    return out.getvalue()

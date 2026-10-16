@@ -152,14 +152,55 @@ what SQLite returns, and tests `server.import_sqlite`. The browser smoke test
 runs when Playwright is installed (`.venv/bin/pip install -r
 requirements-dev.txt`, then `.venv/bin/python3 -m playwright install chromium`).
 
-GitHub Actions runs on every pull request and every push to `main`:
+The same checks CI runs, locally (after `.venv/bin/pip install -r
+requirements-dev.txt`):
 
-| Workflow | Checks |
+```bash
+.venv/bin/ruff check . && .venv/bin/mypy && .venv/bin/python3 -m coverage run -m unittest discover -s tests -t . && .venv/bin/python3 -m coverage combine && .venv/bin/python3 -m coverage report
+```
+
+GitHub Actions runs **CI** on every pull request and every push to `main`:
+
+| Stage | Jobs |
 | --- | --- |
-| **CI** | Ruff, JavaScript syntax and ShellCheck; the tests on Python 3.9 and 3.13 against SQLite (with nothing installed) and Postgres 17; the tests on Python 3.7, the oldest supported; the browser smoke test in Chromium. **CI passed** sums them up, as the one check to require. |
-| **CodeQL** | Security and quality scanning of the Python, the JavaScript and the workflows themselves; also weekly. |
+| Static checks | **Lint**: Ruff, JavaScript syntax, ShellCheck, actionlint on the workflows. **Type check**: mypy over the server and the tests. |
+| Tests | Python 3.9 and 3.13, each against SQLite and Postgres 17; Python 3.7 (the oldest supported) with nothing installed; the **browser smoke test** in Chromium. |
+| Coverage | Combines every test run into one report (job summary, plus an HTML artifact) and fails below the minimum in `.coveragerc`. |
+| Build | Builds the Docker image, smoke-tests it on SQLite and on Postgres, and scans it with Trivy for fixable high and critical vulnerabilities. |
+| Security | **Dependency audit** (pip-audit) of both requirement files; **secret scan** (gitleaks) of the whole git history. |
+| Gate | **CI passed** fails if anything above did: the one check to require in branch protection. |
 
-Dependabot proposes updates to the Python packages and the actions weekly.
+Alongside it, **CodeQL** scans the Python, the JavaScript and the workflows
+(on every change and weekly), and Dependabot proposes updates to the Python
+packages, the Docker base image and the actions weekly.
+
+### Docker
+
+The `Dockerfile` packages the register (with the Postgres driver; no `.env`,
+data or tests inside). Settings come in at run time:
+
+```bash
+docker build -t nsm-property-register .
+```
+
+```bash
+docker run --rm -p 127.0.0.1:8000:8000 --env-file .env nsm-property-register
+```
+
+Without `--env-file` it runs on SQLite in `/app/data`; add
+`-v register-data:/app/data` to keep that data. Publish the port on
+`127.0.0.1` as above: the register has no login yet.
+
+### Releasing
+
+Push a version tag. The **Release** workflow runs all of CI again, then
+publishes the image to `ghcr.io/globallyceum25-dot/nsm-property-management`
+(Intel and ARM, with an SBOM and signed build provenance) and creates a
+GitHub Release with generated notes:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
 
 ## What it does
 
@@ -532,10 +573,11 @@ the form and the validation are all generated from the column metadata.
 property-system/
 ├── run.sh                  start the server
 ├── requirements.txt        Postgres driver, only for Supabase
-├── requirements-dev.txt    Ruff and Playwright, for development and CI
-├── ruff.toml               lint settings
+├── requirements-dev.txt    lint, type check, coverage, audit, browser tools
+├── ruff.toml, mypy.ini, .coveragerc
+├── Dockerfile              the register as a container image
 ├── .env.example            Supabase settings; copy to .env
-├── .github/                CI and CodeQL workflows, Dependabot
+├── .github/                CI, CodeQL and Release workflows, Dependabot
 ├── tests/                  unittest suite: API, units, storage, Postgres, browser
 ├── server/
 │   ├── app.py              HTTP server, routing, static files

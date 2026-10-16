@@ -13,17 +13,18 @@ from .support import RegisterTestCase
 
 try:
     from playwright.sync_api import sync_playwright
+    HAVE_PLAYWRIGHT = True
 except ImportError:
-    sync_playwright = None
+    HAVE_PLAYWRIGHT = False
 
 REQUIRED = os.environ.get("REQUIRE_BROWSER_TESTS") == "1"
 
 
-@unittest.skipIf(sync_playwright is None and not REQUIRED, "Playwright is not installed")
+@unittest.skipIf(not HAVE_PLAYWRIGHT and not REQUIRED, "Playwright is not installed")
 class BrowserSmokeTest(RegisterTestCase):
 
     def test_every_view_renders_without_errors(self):
-        if sync_playwright is None:
+        if not HAVE_PLAYWRIGHT:
             self.fail("REQUIRE_BROWSER_TESTS=1 but Playwright is not installed")
         errors = []
         with sync_playwright() as p:

@@ -1,0 +1,14 @@
+# Test coverage of the server. CI combines the runs on SQLite and Postgres
+# (and the subprocesses some tests start) into one report.
+[run]
+source = server
+branch = True
+parallel = True
+patch = subprocess
+relative_files = True
+
+[report]
+show_missing = True
+skip_covered = True
+# Raise as tests are added; CI fails below it.
+fail_under = 80

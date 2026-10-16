@@ -21,8 +21,8 @@ KEY = "service-role-key-for-tests"
 
 
 class FakeStorage(BaseHTTPRequestHandler):
-    buckets = set()
-    objects = {}     # (bucket, name) -> (bytes, content type)
+    buckets: set = set()
+    objects: dict = {}     # (bucket, name) -> (bytes, content type)
     fail_uploads = False
 
     def log_message(self, fmt, *args):
@@ -79,6 +79,8 @@ class FakeStorage(BaseHTTPRequestHandler):
 
 
 class SupabaseStorageTests(unittest.TestCase):
+    httpd: ThreadingHTTPServer
+    patches: list
 
     @classmethod
     def setUpClass(cls):

@@ -24,8 +24,8 @@ DATA_DIR = os.environ.get("REGISTER_DATA_DIR") or os.path.join(BASE_DIR, "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "properties.db")
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or None
-IS_POSTGRES = DATABASE_URL is not None
+DATABASE_URL = os.environ.get("DATABASE_URL") or ""
+IS_POSTGRES = bool(DATABASE_URL)
 
 _local = threading.local()
 
