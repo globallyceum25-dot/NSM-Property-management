@@ -12,3 +12,8 @@ supabase/.temp/
 __pycache__/
 *.py[cod]
 .DS_Store
+
+# Test coverage data and reports.
+.coverage
+.coverage.*
+htmlcov/

@@ -17,6 +17,7 @@ import io
 import re
 import zipfile
 import xml.etree.ElementTree as ET
+from typing import Union
 from xml.sax.saxutils import escape, quoteattr
 
 from . import db, srilanka
@@ -452,27 +453,49 @@ NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main",
       "pr": "http://schemas.openxmlformats.org/package/2006/relationships"}
 
 
+UNREADABLE = "This file isn't a readable Excel workbook (.xlsx). Save it as .xlsx and try again."
+
+
+class _Unreadable(Exception):
+    """The workbook's structure is not what an .xlsx file holds."""
+
+
 def _ref_col(ref):
-    letters = re.match(r"[A-Z]+", ref).group(0)
+    letters = re.match(r"[A-Z]+", ref)
+    if letters is None:
+        raise _Unreadable("cell reference %r" % ref)
     n = 0
-    for ch in letters:
+    for ch in letters.group(0):
         n = n * 26 + (ord(ch) - 64)
     return n - 1
 
 
 def _read_xlsx(data):
-    """Rows of the Properties sheet (else the first sheet): [(row_no, [values])]."""
+    """Rows of the Properties sheet (else the first sheet): [(row_no, [values])].
+
+    The file is an upload: anything damaged or missing inside it is the
+    friendly "not a readable workbook" error, never a crash.
+    """
     try:
         z = zipfile.ZipFile(io.BytesIO(data))
-    except zipfile.BadZipFile:
-        raise ApiError("This file isn't a readable Excel workbook (.xlsx). Save it as .xlsx and try again.",
-                       field="file")
+        return _read_workbook(z)
+    except (zipfile.BadZipFile, _Unreadable, KeyError, IndexError, ValueError, ET.ParseError):
+        raise ApiError(UNREADABLE, field="file")
+
+
+def _read_workbook(z):
     names = set(z.namelist())
     wb = ET.fromstring(z.read("xl/workbook.xml"))
     rels = ET.fromstring(z.read("xl/_rels/workbook.xml.rels"))
     targets = {r.get("Id"): r.get("Target") for r in rels.findall("pr:Relationship", NS)}
-    sheets = [(s.get("name"), targets.get(s.get("{%s}id" % NS["r"])))
-              for s in wb.find("m:sheets", NS).findall("m:sheet", NS)]
+    sheet_list = wb.find("m:sheets", NS)
+    sheets = []
+    for s in sheet_list.findall("m:sheet", NS) if sheet_list is not None else []:
+        target = targets.get(s.get("{%s}id" % NS["r"]))
+        if target:
+            sheets.append((s.get("name") or "", target))
+    if not sheets:
+        raise _Unreadable("no worksheets")
     chosen = next((s for s in sheets if s[0].strip().lower() == SHEET.lower()), sheets[0])
     path = chosen[1].lstrip("/")
     path = path if path.startswith("xl/") else "xl/" + path
@@ -483,32 +506,37 @@ def _read_xlsx(data):
             shared.append("".join(t.text or "" for t in si.iter("{%s}t" % NS["m"])))
 
     rows = []
+    # Row numbers (r="5") are optional in the file format; without one, a row
+    # follows the one before it.
+    position = 0
     for row in ET.fromstring(z.read(path)).iter("{%s}row" % NS["m"]):
-        values = {}
+        position = int(row.get("r") or position + 1)
+        values: dict = {}
         for c in row.findall("m:c", NS):
             t, ref = c.get("t"), c.get("r")
             v = c.find("m:v", NS)
-            if t == "s" and v is not None:
-                val = shared[int(v.text)]
-            elif t == "inlineStr":
+            raw = v.text if v is not None else None
+            val: Union[str, float]
+            if t == "inlineStr":
                 val = "".join(x.text or "" for x in c.iter("{%s}t" % NS["m"]))
-            elif t == "b" and v is not None:
-                val = "TRUE" if v.text == "1" else "FALSE"
-            elif v is not None:
-                val = v.text
+            elif raw is None:
+                val = ""
+            elif t == "s":
+                val = shared[int(raw)]
+            elif t == "b":
+                val = "TRUE" if raw == "1" else "FALSE"
+            else:
+                val = raw
                 if t != "str" and t != "e":
                     try:
-                        num = float(val)
-                        val = num   # numbers stay numbers (dates arrive as Excel serials)
+                        val = float(raw)   # numbers stay numbers (dates arrive as Excel serials)
                     except ValueError:
                         pass
-            else:
-                val = ""
             if ref:
                 values[_ref_col(ref)] = val
         if values:
             width = max(values) + 1
-            rows.append((int(row.get("r")), [values.get(i, "") for i in range(width)]))
+            rows.append((position, [values.get(i, "") for i in range(width)]))
     return chosen[0], rows
 
 
@@ -585,7 +613,7 @@ def _excel_date(value):
 
 def _choice_lookup(pairs):
     """Accept the code, the full label, or the label's first part ("Freehold")."""
-    out = {}
+    out: dict = {}
     for code, label in pairs:
         for form in (code, label, re.split(r"\s*[(/]", label)[0]):
             out.setdefault(_norm(form), code)
@@ -664,7 +692,8 @@ def check_rows(conn, sheet_rows):
     existing_names = {(_norm(r["name"]), _norm(r["district"])) for r in
                       conn.execute("SELECT name, district FROM property")}
 
-    results, codes_in_file = [], {}
+    results: list = []
+    codes_in_file: dict = {}
     body = [r for r in sheet_rows[1:] if any(_as_text(v) for v in r[1])]
     if not body:
         raise ApiError("No properties found below the heading row. Fill in one row per property "
