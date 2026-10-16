@@ -1,6 +1,8 @@
 """The JSON API end to end, over HTTP, on whichever database the run uses."""
 
 import datetime
+import sqlite3
+from typing import Type
 
 from server import db, storage
 
@@ -354,11 +356,11 @@ class DatabaseTests(RegisterTestCase):
         db.release()
 
     def test_a_failed_query_does_not_break_the_next_request(self):
+        database_error: Type[Exception] = sqlite3.Error
         if db.IS_POSTGRES:
-            from psycopg import Error as DatabaseError
-        else:
-            from sqlite3 import Error as DatabaseError
-        with self.assertRaises(DatabaseError):
+            import psycopg
+            database_error = psycopg.Error
+        with self.assertRaises(database_error):
             db.get_conn().execute("SELECT * FROM no_such_table")
         db.release()
         self.assertEqual(db.get_conn().execute("SELECT COUNT(*) AS n FROM property")

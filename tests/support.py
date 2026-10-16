@@ -68,6 +68,8 @@ def _multipart(boundary, fields, files):
 class RegisterTestCase(unittest.TestCase):
     """Each test starts from the 13 sample properties."""
 
+    base = ""     # the server's address, set once in setUpClass
+
     @classmethod
     def setUpClass(cls):
         cls.base = start_server()

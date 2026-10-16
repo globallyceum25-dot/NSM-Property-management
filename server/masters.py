@@ -292,7 +292,7 @@ def _clean(value):
 
 def _validate(sheet, data, row_id=None):
     conn = db.get_conn()
-    payload = {}
+    payload: dict = {}
     for column in sheet["columns"]:
         name = column["name"]
         kind = column["type"]

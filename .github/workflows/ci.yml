@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:      # the release workflow runs all of this before publishing
 
 permissions:
   contents: read
@@ -13,7 +14,12 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+env:
+  POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/register_test
+
 jobs:
+  # --- static checks ----------------------------------------------------------
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -30,7 +36,26 @@ jobs:
       - name: JavaScript syntax
         run: for f in web/js/*.js; do node --check "$f"; done
       - name: Shell scripts (ShellCheck)
-        run: shellcheck run.sh
+        run: shellcheck run.sh .github/scripts/*.sh
+      - name: Workflows (actionlint)
+        run: docker run --rm -v "$PWD:/repo:ro" -w /repo rhysd/actionlint:1.7.12 -color
+
+  typecheck:
+    name: Type check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      # Both requirement files, so mypy sees psycopg's and Playwright's types.
+      - name: Install mypy and the typed packages
+        run: pip install -r requirements.txt -r requirements-dev.txt
+      - name: mypy
+        run: mypy
+
+  # --- tests ------------------------------------------------------------------
 
   test:
     name: Tests · Python ${{ matrix.python }} · ${{ matrix.database }}
@@ -60,13 +85,23 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      # SQLite jobs install nothing: they prove the register still runs on the
-      # standard library alone.
+      # Only the coverage tool, which the register never imports; the Python
+      # 3.7 job below runs with nothing installed at all.
+      - name: Install coverage
+        run: pip install "$(grep -E '^coverage==' requirements-dev.txt)"
       - name: Install the Postgres driver
         if: matrix.database == 'postgres'
         run: pip install -r requirements.txt
       - name: Run the tests
-        run: python -m unittest discover -s tests -t . -v
+        run: python -m coverage run -m unittest discover -s tests -t . -v
+      - name: Keep the coverage data
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-${{ matrix.python }}-${{ matrix.database }}
+          path: .coverage.*
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 7
 
   oldest-python:
     name: Tests · Python 3.7 · sqlite
@@ -74,12 +109,43 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      # The README promises Python 3.7+; hosted runners no longer carry 3.7,
-      # so run the suite in the official image, with the checkout read-only.
+      # The README promises Python 3.7+ with no packages; hosted runners no
+      # longer carry 3.7, so run the suite in the official image, read-only.
       - name: Run the tests on Python 3.7
         run: >-
           docker run --rm -v "$PWD:/src:ro" -w /src -e PYTHONDONTWRITEBYTECODE=1
           python:3.7-slim python -m unittest discover -s tests -t . -v
+
+  coverage:
+    name: Coverage
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install coverage
+        run: pip install "$(grep -E '^coverage==' requirements-dev.txt)"
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: coverage-*
+          merge-multiple: true
+      - name: Combine the SQLite and Postgres runs
+        run: python -m coverage combine
+      - name: Report
+        run: |
+          python -m coverage report --format=markdown --fail-under=0 >> "$GITHUB_STEP_SUMMARY"
+          python -m coverage html --fail-under=0
+      - name: Keep the HTML report
+        uses: actions/upload-artifact@v7
+        with:
+          name: coverage-report
+          path: htmlcov/
+          retention-days: 14
+      - name: Check the minimum (.coveragerc)
+        run: python -m coverage report
 
   browser:
     name: Browser smoke test
@@ -99,11 +165,90 @@ jobs:
       - name: Run the browser test
         run: python -m unittest tests.test_browser -v
 
-  # One check to require in branch protection, whatever the matrix becomes.
+  # --- build --------------------------------------------------------------------
+
+  build:
+    name: Build · Docker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: register_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build the image
+        run: docker build -t nsm-property-register:ci .
+      - name: Smoke test on SQLite
+        run: |
+          docker run -d --name register-sqlite -p 127.0.0.1:8001:8000 nsm-property-register:ci
+          ./.github/scripts/wait-for-register.sh http://127.0.0.1:8001 13
+      - name: Smoke test on Postgres
+        run: |
+          docker run -d --name register-postgres --network host \
+            -e DATABASE_URL="$POSTGRES_URL" nsm-property-register:ci
+          ./.github/scripts/wait-for-register.sh http://127.0.0.1:8000 13
+          docker logs register-postgres | grep -q "Database: Postgres"
+      - name: Container logs
+        if: failure()
+        run: docker logs register-sqlite; docker logs register-postgres
+      # Known vulnerabilities with a fix available, in Debian or Python packages.
+      - name: Scan the image (Trivy)
+        run: >-
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
+          aquasec/trivy:0.76.0 image --exit-code 1 --ignore-unfixed
+          --severity CRITICAL,HIGH --scanners vuln
+          --db-repository mirror.gcr.io/aquasec/trivy-db:2,ghcr.io/aquasecurity/trivy-db:2
+          nsm-property-register:ci
+
+  # --- security -------------------------------------------------------------------
+
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Python 3.13, the version the Docker image runs.
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - name: Install pip-audit
+        run: pip install "$(grep -E '^pip-audit==' requirements-dev.txt)"
+      - name: Known vulnerabilities in the Python packages
+        run: pip-audit --progress-spinner off -r requirements.txt -r requirements-dev.txt
+
+  secrets:
+    name: Secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0     # every commit, not only the latest
+      - name: Install gitleaks (checksum verified)
+        env:
+          VERSION: 8.30.1
+        run: |
+          base="https://github.com/gitleaks/gitleaks/releases/download/v$VERSION"
+          tarball="gitleaks_${VERSION}_linux_x64.tar.gz"
+          curl -fsSLO "$base/$tarball"
+          curl -fsSL "$base/gitleaks_${VERSION}_checksums.txt" | grep " $tarball\$" | sha256sum -c -
+          tar -xzf "$tarball" gitleaks
+      - name: Scan the whole history
+        run: ./gitleaks git --redact --no-banner --verbose .
+
+  # One check to require in branch protection, whatever the jobs above become.
   ci-passed:
     name: CI passed
     if: always()
-    needs: [lint, test, oldest-python, browser]
+    needs: [lint, typecheck, test, oldest-python, coverage, browser, build, audit, secrets]
     runs-on: ubuntu-latest
     steps:
       - name: A job failed, was cancelled or was skipped

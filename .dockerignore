@@ -1,0 +1,17 @@
+# Only server/, web/ and requirements.txt belong in the image. Above all, never
+# .env: settings come in at run time with --env-file.
+.env
+.env.*
+.venv/
+data/
+.git/
+.github/
+tests/
+docs/
+supabase/
+__pycache__/
+*.py[cod]
+.coverage
+.coverage.*
+htmlcov/
+.DS_Store

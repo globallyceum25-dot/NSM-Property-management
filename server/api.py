@@ -777,7 +777,7 @@ def list_all_documents(ctx):
     if status in doc_status:
         where.append(doc_status[status])
     clause = (" WHERE " + " AND ".join(where)) if where else ""
-    order = _DOC_SORT.get(q.get("sort"), _DOC_SORT["newest"])
+    order = _DOC_SORT.get(q.get("sort", "newest"), _DOC_SORT["newest"])
     list_sql = """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
                          s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
                          loc.name AS location_name
