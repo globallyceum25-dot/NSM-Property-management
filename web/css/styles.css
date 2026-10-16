@@ -2495,3 +2495,89 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   #bulk-foot { flex-wrap: wrap; }
   .bulk-foot-note { flex-basis: 100%; }
 }
+
+/* ==========================================================================
+   Motion. Short, eased, and only where it explains a change: arriving on a
+   page, figures updating, charts drawing in. All of it stops for people who
+   ask their device for reduced motion.
+   ========================================================================== */
+
+:root {
+  --ease-out: cubic-bezier(.2, .7, .2, 1);
+  --spot: rgba(0, 166, 154, .11);         /* pointer glow on light surfaces */
+  --spot-dark: rgba(255, 255, 255, .09);  /* on the deep teal cards */
+}
+:root[data-theme="dark"] { --spot: rgba(79, 214, 203, .09); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --spot: rgba(79, 214, 203, .09); } }
+
+/* Items arriving in turn: a short rise and fade, 45ms apart. */
+@keyframes fx-rise { from { opacity: 0; transform: translateY(12px) scale(.985); } }
+.fx-rise { animation: fx-rise .5s var(--ease-out) both; animation-delay: calc(var(--fx-i, 0) * 45ms); }
+
+/* Charts drawing themselves, the first time the dashboard opens. */
+@keyframes fx-grow-x { from { transform: scaleX(0); } }
+@keyframes fx-grow-y { from { transform: scaleY(0); } }
+@keyframes fx-sweep { from { opacity: 0; transform: rotate(-70deg) scale(.86); } }
+@keyframes fx-dash { from { stroke-dashoffset: 100; } to { stroke-dashoffset: 0; } }
+.fx-draw .hbar, .fx-draw .bar-fill, .fx-draw .own-bar, .fx-draw .area-bar {
+  transform-origin: left center; animation: fx-grow-x .8s var(--ease-out) both; animation-delay: .15s;
+}
+.fx-draw .col-bar { transform-origin: center bottom; animation: fx-grow-y .8s var(--ease-out) both; animation-delay: .15s; }
+.fx-draw .donut { animation: fx-sweep .9s var(--ease-out) both; animation-delay: .1s; }
+.fx-draw .gauge-fill { stroke-dasharray: 100; animation: fx-dash 1.1s var(--ease-out) both; animation-delay: .2s; }
+
+/* A soft spotlight follows the pointer across summary cards and tiles. */
+.kpi, .signal, .tile { position: relative; isolation: isolate; overflow: hidden; }
+.kpi::after, .signal::after, .tile::after {
+  content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  border-radius: inherit; opacity: 0; transition: opacity .3s ease;
+  background: radial-gradient(240px circle at var(--mx, 50%) var(--my, 50%), var(--spot), transparent 65%);
+}
+.kpi.hero::after, .signal::after {
+  background: radial-gradient(220px circle at var(--mx, 50%) var(--my, 50%), var(--spot-dark), transparent 65%);
+}
+.kpi:hover::after, .signal:hover::after, .tile:hover::after { opacity: 1; }
+
+/* Loading: the page's shape, shimmering, instead of a line of text. */
+.skeleton { display: flex; flex-direction: column; gap: 16px; }
+.sk-row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
+.sk-block {
+  height: 200px; border-radius: var(--r-xl);
+  background: linear-gradient(100deg, var(--surface-2) 30%, var(--surface-3) 50%, var(--surface-2) 70%);
+  background-size: 300% 100%;
+  animation: sk-shimmer 1.4s ease-in-out infinite;
+}
+.sk-hero { height: 170px; }
+@keyframes sk-shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+@media (max-width: 720px) { .sk-row { grid-template-columns: 1fr; } .sk-row .sk-block + .sk-block { display: none; } }
+
+/* Module switches cross-fade; the header stays put. */
+.topbar { view-transition-name: topbar; }
+::view-transition-old(root) { animation: fx-fade-out .18s ease-in both; }
+::view-transition-new(root) { animation: fx-fade-in .32s var(--ease-out) both; }
+@keyframes fx-fade-out { to { opacity: 0; } }
+@keyframes fx-fade-in { from { opacity: 0; transform: translateY(6px); } }
+
+/* Buttons give a little under the finger. */
+.btn, .circle-btn, .chart-link, .df-chip, .xf-pill, .seg-mini button, .doc-tabs button {
+  transition-property: background-color, border-color, color, box-shadow, transform, opacity;
+}
+.btn:active:not(:disabled), .circle-btn:active, .chart-link:active, .df-chip:active,
+.xf-pill:active, .seg-mini button:active, .doc-tabs button:active { transform: scale(.97); }
+
+/* The header lifts once content scrolls beneath it. */
+.topbar { transition: box-shadow .25s ease, background-color .25s ease; }
+.topbar.is-scrolled { box-shadow: 0 1px 0 var(--border), 0 8px 24px rgba(6, 55, 52, .07); }
+
+/* Toasts rise in rather than blink. */
+@keyframes toast-in { from { opacity: 0; transform: translate(-50%, 14px) scale(.96); } }
+.toast { animation: toast-in .32s var(--ease-out); }
+
+@media (prefers-reduced-motion: reduce) {
+  .fx-rise, .fx-draw .hbar, .fx-draw .bar-fill, .fx-draw .own-bar, .fx-draw .area-bar,
+  .fx-draw .col-bar, .fx-draw .donut, .fx-draw .gauge-fill, .sk-block, .toast { animation: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+  .btn:active:not(:disabled), .circle-btn:active, .chart-link:active, .df-chip:active,
+  .xf-pill:active, .seg-mini button:active, .doc-tabs button:active { transform: none; }
+  .kpi::after, .signal::after, .tile::after { display: none; }
+}

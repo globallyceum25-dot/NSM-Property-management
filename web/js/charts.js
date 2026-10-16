@@ -122,7 +122,7 @@ window.Charts = (function () {
         '<path class="gauge-track' + xfClass(opts, opts.trackKey) + '" d="' + arc(end) + '" fill="none" style="stroke:' + tone.track + '" stroke-width="' + stroke + '" stroke-linecap="round"' +
           (opts.trackTipLabel ? tipAttrs(opts.trackTipLabel, opts.trackTipValue) : '') + xfAttrs(opts, opts.trackKey) + '/>' +
         (pct > 0
-          ? '<path class="gauge-fill' + xfClass(opts, opts.fillKey) + '" d="' + arc(fillTo) + '" fill="none" style="stroke:' + tone.fill + '" ' +
+          ? '<path class="gauge-fill' + xfClass(opts, opts.fillKey) + '" pathLength="100" d="' + arc(fillTo) + '" fill="none" style="stroke:' + tone.fill + '" ' +
               'stroke-width="' + stroke + '" stroke-linecap="round"' +
               tipAttrs(opts.tipLabel, opts.tipValue) + xfAttrs(opts, opts.fillKey) + '/>'
           : '') +

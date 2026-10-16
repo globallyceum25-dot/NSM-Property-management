@@ -337,6 +337,9 @@
 
     applyHash();
     window.addEventListener('hashchange', applyHash);
+    // A link straight to another page arrives through switchView; the
+    // Portfolio, shown first, arrives here.
+    if (state.view === 'portfolio') arrive('portfolio');
   }
 
   /* ---------- links: #dashboard, #portfolio/grid, #property/12 ... ---------- */
@@ -507,6 +510,7 @@
       state.stats = results[1];
     }
     renderKpis();
+    Fx.countUp($('#kpi-strip'), '.kpi-value');
     renderCount();
     renderHeading();
     renderActiveChips();
@@ -1260,6 +1264,7 @@
     }
 
     $('#doc-rows').innerHTML = rows.map(docRowHtml).join('');
+    if (arriving.documents) { arriving.documents = false; Fx.rise($('#doc-rows'), 10); }
     const focused = $('#doc-rows tr.is-focus');
     if (focused) focused.scrollIntoView({ block: 'center', behavior: 'smooth' });
     const empty = $('#docs-empty');
@@ -1948,9 +1953,17 @@
 
   let dashRequest = 0;
 
+  // Grey shapes where the page will be, shimmering, instead of "Loading…".
+  function skeletonHtml() {
+    return '<div class="skeleton" aria-busy="true" aria-label="Loading">' +
+      '<div class="sk-block sk-hero"></div>' +
+      '<div class="sk-row"><div class="sk-block"></div><div class="sk-block"></div><div class="sk-block"></div></div>' +
+      '</div>';
+  }
+
   async function renderDashboard() {
     const host = $('#dashboard');
-    if (!host.innerHTML) host.innerHTML = '<p class="empty">Loading…</p>';
+    if (!host.innerHTML) host.innerHTML = skeletonHtml();
     // Same figures the Portfolio summary shows, already loaded for these filters.
     let stats = state.stats;
     if (!stats) {
@@ -2015,6 +2028,14 @@
       if (again && document.activeElement === document.body) again.focus({ preventScroll: true });
     }
     Charts.bindTooltips(host);
+    Fx.countUp(host, '.sig-value');
+    Fx.countUp(host, '.area-total b');
+    Fx.countUp(host, '.donut-total');
+    if (arriving.dashboard) {
+      arriving.dashboard = false;
+      Fx.draw(host);
+      $$('#dashboard .chart-grid').forEach((grid) => Fx.rise(grid, 4));
+    }
   }
 
   /* ---------- one business unit: its properties and documents ---------- */
@@ -2033,7 +2054,7 @@
     showSbuDetail(true);
     writeHash();
     if (changed) {
-      $('#sbu-detail').innerHTML = '<p class="empty">Loading…</p>';
+      $('#sbu-detail').innerHTML = skeletonHtml();
       $('#view-sbus').scrollTop = 0;
     }
     await renderSbuPage();
@@ -3173,21 +3194,36 @@
   /* ---------- views & layout ---------- */
 
   function switchView(view) {
+    const changed = state.view !== view;
     state.view = view;
     document.body.dataset.view = view;
     closePopovers();
-    $$('.nav-pill .tab').forEach((tab) => {
-      const on = tab.dataset.view === view;
-      tab.classList.toggle('is-active', on);
-      tab.setAttribute('aria-selected', on);
+    Fx.transition(function () {
+      $$('.nav-pill .tab').forEach((tab) => {
+        const on = tab.dataset.view === view;
+        tab.classList.toggle('is-active', on);
+        tab.setAttribute('aria-selected', on);
+      });
+      $$('.view').forEach((section) =>
+        section.classList.toggle('is-active', section.id === 'view-' + view));
     });
-    $$('.view').forEach((section) =>
-      section.classList.toggle('is-active', section.id === 'view-' + view));
     if (view === 'portfolio' && state.mode === 'map') MapView.invalidate();
+    // Arriving on a page (not re-rendering it) is when its items rise in and
+    // its charts draw.
+    if (changed) arrive(view);
     if (view === 'dashboard') renderDashboard();
     if (view === 'documents') renderDocuments();
     if (view === 'masters') Masters.show();
     writeHash();
+  }
+
+  const arriving = {};       // views whose next render should animate in
+
+  function arrive(view) {
+    if (view === 'portfolio') { Fx.rise($('#kpi-strip')); Fx.rise($('#property-cards')); }
+    if (view === 'sbus') Fx.rise($('#sbu-cards'));
+    if (view === 'entities') Fx.rise($('#entity-cards'));
+    if (view === 'dashboard' || view === 'documents') arriving[view] = true;
   }
 
   function setMode(mode) {

@@ -26,6 +26,33 @@ transparent backgrounds, cut from the original in `docs/brand/`.
 `serengeti-logo-dark.png` and `serengeti-mark-dark.png` are the same marks in a
 lighter teal for the dark theme.
 
+## Motion
+
+A few short effects, each explaining a change rather than decorating:
+
+- **Page switches** cross-fade between modules while the header stays still.
+  This uses the browser's View Transitions; browsers without them just switch.
+- **Figures count**: summary cards, dashboard signals, area totals and donut
+  centres run up from zero on arrival. After a filter they glide from the old
+  value to the new one.
+- **Items arrive in turn**: summary cards, property cards, property-type
+  tiles, chart cards and document rows rise in about 45 ms apart when you open
+  a page. Filtering and re-rendering don't replay it.
+- **Charts draw in** the first time the dashboard opens:
+  - bars and columns grow from their baseline
+  - the deed gauge fills
+  - donuts sweep round
+- **A soft spotlight** follows the mouse across summary cards, dashboard
+  signals and tiles.
+- **Loading** shows the page's shape, shimmering, instead of a line of text.
+- **Small touches**:
+  - buttons give a little when pressed
+  - the header gains a shadow once content scrolls under it
+  - messages rise in
+
+Everything is turned off when the device asks for reduced motion. The code is
+`web/js/fx.js` plus the *Motion* section of `styles.css`.
+
 ## Light and dark mode
 
 ![The dashboard in dark mode](docs/screenshots/7-dark-mode.png)
@@ -553,7 +580,7 @@ property-system/
 │   ├── index.html
 │   ├── css/styles.css
 │   ├── img/                logo, building mark, favicon
-│   └── js/{api,map,masters,charts,app}.js
+│   └── js/{api,map,masters,charts,fx,app}.js
 └── data/                   created at runtime
     ├── properties.db       SQLite database
     └── uploads/            uploaded document files
