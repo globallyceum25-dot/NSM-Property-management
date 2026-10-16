@@ -12,7 +12,7 @@ import unittest
 from .support import RegisterTestCase
 
 try:
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import expect, sync_playwright
     HAVE_PLAYWRIGHT = True
 except ImportError:
     HAVE_PLAYWRIGHT = False
@@ -34,12 +34,18 @@ class BrowserSmokeTest(RegisterTestCase):
             page.goto(self.base + "/")
             page.get_by_text("13 properties in the register").wait_for()
 
+            # Page switches cross-fade, so each check waits for what the page
+            # shows once it has arrived and loaded, not for a passing state.
             page.goto(self.base + "/#documents")
             page.get_by_text("9 documents across 7 properties").wait_for()
-            for view, heading in (("sbus", "Property types"), ("entities", "Owning companies"),
-                                  ("masters", "Master sheets")):
+            for view, heading in (("sbus", "Property types"), ("entities", "Owning companies")):
                 page.goto(self.base + "/#" + view)
-                page.locator("#view-%s h1" % view).get_by_text(heading).wait_for()
+                page.locator("#view-%s.is-active h1" % view).get_by_text(heading).wait_for()
+            # Master sheets opens on its first sheet, whose name replaces the
+            # page's "Master sheets" heading as soon as it loads.
+            page.goto(self.base + "/#masters")
+            page.locator("#view-masters.is-active #master-title").get_by_text("Locations").wait_for()
+            expect(page.locator("#master-rows tr")).to_have_count(13)
             page.goto(self.base + "/#dashboard")
             page.locator("#view-dashboard.is-active").wait_for()
 

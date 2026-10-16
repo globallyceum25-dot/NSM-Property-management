@@ -66,6 +66,11 @@ jobs:
       matrix:
         python: ["3.9", "3.13"]
         database: [sqlite, postgres]
+        # Coverage is measured on the newest Python only: the code takes no
+        # version-specific paths, and current coverage releases need 3.10+.
+        include:
+          - python: "3.13"
+            coverage: true
     services:
       # Same major version as the Supabase project. Started for every job (it
       # costs seconds); only the postgres jobs point the tests at it.
@@ -85,16 +90,22 @@ jobs:
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python }}
-      # Only the coverage tool, which the register never imports; the Python
-      # 3.7 job below runs with nothing installed at all.
+      # SQLite jobs install nothing but the coverage tool, which the register
+      # never imports (the Python 3.7 job below installs nothing at all).
       - name: Install coverage
+        if: matrix.coverage
         run: pip install "$(grep -E '^coverage==' requirements-dev.txt)"
       - name: Install the Postgres driver
         if: matrix.database == 'postgres'
         run: pip install -r requirements.txt
       - name: Run the tests
+        if: ${{ !matrix.coverage }}
+        run: python -m unittest discover -s tests -t . -v
+      - name: Run the tests, measuring coverage
+        if: matrix.coverage
         run: python -m coverage run -m unittest discover -s tests -t . -v
       - name: Keep the coverage data
+        if: matrix.coverage
         uses: actions/upload-artifact@v7
         with:
           name: coverage-${{ matrix.python }}-${{ matrix.database }}
