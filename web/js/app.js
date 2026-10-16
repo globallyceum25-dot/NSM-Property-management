@@ -2371,7 +2371,7 @@
         row('Sector', esc([p.sbu_sector, p.sbu_cost_centre ? 'CC ' + p.sbu_cost_centre : '']
             .filter(Boolean).join(' · '))) +
         row('Structure', esc(labelFor('propertyTypes', p.property_type))) +
-        row('Ownership', esc(labelFor('ownershipTypes', p.ownership_type))) +
+        row('Tenure', esc(labelFor('ownershipTypes', p.ownership_type))) +
         row('Status', '<span class="badge ' + esc(p.status) + '">' +
             esc(labelFor('statuses', p.status)) + '</span>') +
         row('Current use', esc(p.current_use)) +

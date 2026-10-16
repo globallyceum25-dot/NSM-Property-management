@@ -1563,7 +1563,11 @@ legend { padding: 0; margin-bottom: 14px; font-size: 14.5px; font-weight: 700; c
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 16px; }
 
-.req { color: var(--accent-text); }
+.req { color: var(--danger); font-weight: 700; }   /* required: a red star, explained once per form */
+.form-legend {
+  display: flex; align-items: center; gap: 6px;
+  margin: -4px 0 16px; font-size: 12.5px; color: var(--text-muted);
+}
 .hint { display: block; margin-top: 6px; font-size: 12px; font-weight: 400; line-height: 1.5; color: var(--text-muted); }
 
 .coord-block { display: grid; grid-template-columns: 1fr 1.2fr; gap: 16px; align-items: start; }

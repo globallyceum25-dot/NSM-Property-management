@@ -214,13 +214,21 @@ properties were converted when the database was upgraded; their building areas
 were recorded in sq ft before, so they keep that unit. The property panel shows
 both forms, for example "6.6 acres · 287,496 sq ft". Negative areas are refused.
 
+**Required fields** — every form marks required fields with a red * and says
+so once at the top ("* Required"). For a property these are Property name,
+Property type, Tenure, Latitude and Longitude, the same five the bulk template
+requires; everything else can be added later.
+
 **Bulk upload** — add many properties at once from an Excel file. Open **New
 property** and switch to **Bulk upload**:
 
 1. **Download the template** (.xlsx). It is generated from the register at that
    moment and has four sheets:
    - **Properties** — one column per property detail and a frozen heading row.
-     Required columns (marked *) have dark headings. Drop-downs offer the current
+     Required columns (Property name, Property type, Tenure, Latitude,
+     Longitude) have a deep-teal heading with a * and pale yellow cells all the
+     way down, so a missed one stands out; optional columns have light
+     headings. Each required column's hint starts with "Required". Drop-downs offer the current
      property types, owning companies, tenures, structures, statuses, location
      codes, districts and units. Latitude and longitude are checked against Sri
      Lanka as you type, and every cell shows a short hint when selected.

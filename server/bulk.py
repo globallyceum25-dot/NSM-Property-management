@@ -167,19 +167,20 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <font><b/><sz val="11"/><color rgb="FF063734"/><name val="Calibri"/><family val="2"/></font>
 <font><sz val="11"/><color rgb="FF344645"/><name val="Calibri"/><family val="2"/></font>
 </fonts>
-<fills count="5">
+<fills count="6">
 <fill><patternFill patternType="none"/></fill>
 <fill><patternFill patternType="gray125"/></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FF006E66"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FF063734"/><bgColor indexed="64"/></patternFill></fill>
 <fill><patternFill patternType="solid"><fgColor rgb="FFE3F7F6"/><bgColor indexed="64"/></patternFill></fill>
+<fill><patternFill patternType="solid"><fgColor rgb="FFFFF4CE"/><bgColor indexed="64"/></patternFill></fill>
 </fills>
 <borders count="2">
 <border><left/><right/><top/><bottom/><diagonal/></border>
 <border><left/><right/><top/><bottom style="thin"><color rgb="FFD2DCDC"/></bottom><diagonal/></border>
 </borders>
 <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-<cellXfs count="11">
+<cellXfs count="14">
 <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
 <xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
 <xf numFmtId="0" fontId="1" fillId="3" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
@@ -191,13 +192,31 @@ STYLES = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf>
 <xf numFmtId="165" fontId="0" fillId="0" borderId="0" xfId="0" applyNumberFormat="1"/>
 <xf numFmtId="0" fontId="4" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf>
+<xf numFmtId="0" fontId="4" fillId="4" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>
+<xf numFmtId="0" fontId="0" fillId="5" borderId="0" xfId="0" applyFill="1"/>
+<xf numFmtId="165" fontId="0" fillId="5" borderId="0" xfId="0" applyNumberFormat="1" applyFill="1"/>
 </cellXfs>
 <cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>
 </styleSheet>"""
 
 S_HEAD, S_HEAD_REQ, S_TEXT, S_DATE, S_TITLE, S_WRAP, S_TABLE_HEAD, S_NOTE, S_COORD, S_BOLD = 1, 2, 3, 4, 5, 6, 7, 8, 9, 10
+S_HEAD_OPT, S_REQ, S_REQ_COORD = 11, 12, 13
 
 KIND_STYLE = {"code": S_TEXT, "date": S_DATE, "lat": S_COORD, "lng": S_COORD}
+
+
+def _column_style(kind, required):
+    """Required columns are tinted pale amber all the way down, so a blank
+    required cell stands out while filling the sheet in."""
+    if required:
+        return S_REQ_COORD if kind in ("lat", "lng") else S_REQ
+    return KIND_STYLE.get(kind, 0)
+
+
+def _heading_cell(i, heading, required):
+    # Two clear tiers: required = deep teal with a star, optional = pale teal.
+    return _cell("%s1" % _col(i), heading + (" *" if required else ""),
+                 S_HEAD_REQ if required else S_HEAD_OPT)
 
 
 def _cell(ref, value, style=0):
@@ -271,13 +290,13 @@ def build_template(conn):
     data_rows = MAX_ROWS + 1
 
     # 1. Properties: headings, column formats, drop-downs and input prompts.
-    head = [_cell("%s1" % _col(i), heading + (" *" if req else ""), S_HEAD_REQ if req else S_HEAD)
-            for i, (key, heading, req, width, kind, help_) in enumerate(COLUMNS)]
+    head = [_heading_cell(i, heading, req) for i, (key, heading, req, width, kind, help_) in enumerate(COLUMNS)]
     validations = []
     for i, (key, heading, req, width, kind, help_) in enumerate(COLUMNS):
         rng = "%s2:%s%d" % (_col(i), _col(i), data_rows)
         prompt = ' showInputMessage="1" promptTitle=%s prompt=%s' % (
-            quoteattr(heading[:32]), quoteattr(help_[:250]))
+            quoteattr((heading + (" (required)" if req else ""))[:32]),
+            quoteattr((("Required. " if req else "") + help_)[:250]))
         if kind.startswith("list:"):
             name = dict((k, n) for k, _h, n in LIST_SHEET_COLUMNS)[kind[5:]]
             if lists[kind[5:]]:
@@ -306,7 +325,7 @@ def build_template(conn):
         validations.append('<dataValidation allowBlank="1"%s sqref="%s"/>' % (prompt, rng))
     props = _sheet(
         [_row(1, head, 32)],
-        cols=_cols([c[3] for c in COLUMNS], [KIND_STYLE.get(c[4], 0) for c in COLUMNS]),
+        cols=_cols([c[3] for c in COLUMNS], [_column_style(c[4], c[2]) for c in COLUMNS]),
         extra='<autoFilter ref="A1:%s1"/>' % last +
               '<dataValidations count="%d">%s</dataValidations>' % (len(validations), "".join(validations)),
         freeze=True, tab_selected=True)
@@ -316,7 +335,8 @@ def build_template(conn):
         ("Bulk property upload", S_TITLE),
         ("Fill in one row per property on the Properties sheet, then upload this file "
          "from New property > Bulk upload. Nothing is saved until you have reviewed every row.", S_WRAP),
-        ("1. Keep the headings in row 1 as they are. Columns marked * are required; the dark headings mark them.", S_WRAP),
+        ("1. Keep the headings in row 1 as they are. Required columns have a dark heading with a * and "
+         "pale yellow cells: fill those in for every property. Light headings are optional.", S_WRAP),
         ("2. Pick list values from the drop-downs (property type, tenure, district, units...). "
          "They come from this register, as of the day you downloaded the file.", S_WRAP),
         ("3. Latitude and longitude are decimal degrees inside Sri Lanka. If you give a location code "
@@ -334,8 +354,8 @@ def build_template(conn):
         if kind.startswith("list:"):
             help_ += " Allowed values: the %s column on the Lists sheet." % dict(
                 (k, h) for k, h, _n in LIST_SHEET_COLUMNS)[kind[5:]]
-        rows.append(_row(r, [_cell("A%d" % r, heading, S_BOLD),
-                             _cell("B%d" % r, "Yes" if req else "", S_WRAP),
+        rows.append(_row(r, [_cell("A%d" % r, heading + (" *" if req else ""), S_BOLD),
+                             _cell("B%d" % r, "Required" if req else "Optional", S_REQ if req else S_WRAP),
                              _cell("C%d" % r, help_, S_WRAP)]))
     instructions = _sheet(rows, cols=_cols([26, 10, 90]),
                           before_rows="", extra='<mergeCells count="%d">%s</mergeCells>' % (
@@ -346,9 +366,10 @@ def build_template(conn):
     ex_rows = [_row(1, head, 32)]
     for n, sample in enumerate(_example_rows(lists), start=2):
         ex_rows.append(_row(n, [_cell("%s%d" % (_col(i), n), sample.get(key, ""),
-                                      KIND_STYLE.get(kind, 0) if kind != "date" else 0)
-                                for i, (key, _h, _r, _w, kind, _hp) in enumerate(COLUMNS)]))
-    example = _sheet(ex_rows, cols=_cols([c[3] for c in COLUMNS]), freeze=True)
+                                      _column_style(kind, req) if kind != "date" else 0)
+                                for i, (key, _h, req, _w, kind, _hp) in enumerate(COLUMNS)]))
+    example = _sheet(ex_rows, cols=_cols([c[3] for c in COLUMNS], [_column_style(c[4], c[2]) for c in COLUMNS]),
+                     freeze=True)
 
     # 4. Lists: the allowed values, named so the drop-downs can point at them.
     list_rows, names = [], []

@@ -158,7 +158,7 @@ window.Masters = (function () {
     const id = 'mf-' + column.name;
     const required = column.required ? ' required' : '';
     const label = '<label for="' + id + '">' + Fmt.esc(column.label) +
-      (column.required ? ' <span class="req">*</span>' : '');
+      (column.required ? ' <span class="req" aria-hidden="true">*</span>' : '');
     const hint = column.hint ? '<span class="hint">' + Fmt.esc(column.hint) + '</span>' : '';
     const safe = (value === null || value === undefined) ? '' : String(value);
 

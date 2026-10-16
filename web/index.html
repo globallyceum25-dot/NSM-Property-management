@@ -406,7 +406,8 @@
             <h3>Download the template</h3>
             <p>An Excel workbook with a column for every property detail. Its drop-downs are filled
               from this register &mdash; property types, owning companies, location codes, districts and
-              units &mdash; and it includes instructions and two example rows. Columns marked * are required.</p>
+              units &mdash; and it includes instructions and two example rows. Required columns have a dark heading with a <span class="req" aria-hidden="true">*</span>
+              and pale yellow cells, so a missed one stands out.</p>
             <a class="btn btn-ghost btn-sm" href="/api/import/template.xlsx" download id="btn-bulk-template">
               <svg class="ic"><use href="#i-download"/></svg>Download template (.xlsx)</a>
           </div>
@@ -450,14 +451,15 @@
 
       <fieldset>
         <legend>Identification</legend>
+        <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required. Everything else can be added later.</p>
         <div class="grid-2">
-          <label>Property name <span class="req">*</span>
+          <label>Property name <span class="req" aria-hidden="true">*</span>
             <input name="name" required maxlength="160" placeholder="e.g. Kandy City Showroom">
           </label>
           <label>Property code
             <input name="property_code" maxlength="40" placeholder="auto-generated if blank">
           </label>
-          <label>Property type <span class="req">*</span>
+          <label>Property type <span class="req" aria-hidden="true">*</span>
             <select name="sbu_id" required></select>
           </label>
           <label>Owning company
@@ -468,8 +470,8 @@
           <label>Status
             <select name="status"></select>
           </label>
-          <label>Ownership
-            <select name="ownership_type"></select>
+          <label>Tenure <span class="req" aria-hidden="true">*</span>
+            <select name="ownership_type" required></select>
           </label>
           <label>Structure
             <select name="property_type"></select>
@@ -509,10 +511,10 @@
 
         <div class="coord-block">
           <div class="coord-inputs">
-            <label>Latitude <span class="req">*</span>
+            <label>Latitude <span class="req" aria-hidden="true">*</span>
               <input name="latitude" required inputmode="decimal" placeholder="6.92710">
             </label>
-            <label>Longitude <span class="req">*</span>
+            <label>Longitude <span class="req" aria-hidden="true">*</span>
               <input name="longitude" required inputmode="decimal" placeholder="79.86120">
             </label>
             <button type="button" class="btn btn-ghost btn-sm" id="btn-paste-coords">Paste &ldquo;lat, lng&rdquo;</button>
@@ -618,15 +620,16 @@
     </header>
     <form id="sbu-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
+      <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required</p>
       <div class="grid-2">
-        <label>Code <span class="req">*</span>
+        <label>Code <span class="req" aria-hidden="true">*</span>
           <input name="code" required maxlength="16" placeholder="e.g. EDU">
         </label>
         <label>Map colour
           <input name="color" type="color" value="#1f77b4">
         </label>
       </div>
-      <label>Name <span class="req">*</span>
+      <label>Name <span class="req" aria-hidden="true">*</span>
         <input name="name" required maxlength="120" placeholder="e.g. Educational">
       </label>
       <label>Description
@@ -653,15 +656,16 @@
     </header>
     <form id="entity-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
+      <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required</p>
       <div class="grid-2">
-        <label>Short code <span class="req">*</span>
+        <label>Short code <span class="req" aria-hidden="true">*</span>
           <input name="short_code" required maxlength="16" placeholder="e.g. LIS">
         </label>
         <label>Registration no.
           <input name="reg_no" maxlength="40" placeholder="e.g. PV 12345">
         </label>
       </div>
-      <label>Registered name <span class="req">*</span>
+      <label>Registered name <span class="req" aria-hidden="true">*</span>
         <input name="name" required maxlength="160">
       </label>
       <label>Notes
@@ -688,11 +692,12 @@
     </header>
     <form id="doc-form" class="modal-body" novalidate>
       <input type="hidden" name="property_id">
-      <label id="doc-property-row" hidden>Property <span class="req">*</span>
+      <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required</p>
+      <label id="doc-property-row" hidden>Property <span class="req" aria-hidden="true">*</span>
         <select name="property_pick" required disabled></select>
       </label>
       <div class="grid-2">
-        <label>Document type <span class="req">*</span>
+        <label>Document type <span class="req" aria-hidden="true">*</span>
           <select name="doc_type"></select>
         </label>
         <label>Reference no.
@@ -759,6 +764,7 @@
     </header>
     <form id="master-form" class="modal-body" novalidate>
       <input type="hidden" name="id">
+      <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required</p>
       <div id="master-fields"></div>
       <p class="form-error" id="master-form-error" hidden></p>
     </form>
