@@ -6,6 +6,7 @@ instead. The SQL elsewhere is written once, in sqlite3's style (`?` and
 `:name` placeholders), and works on both; only the table definitions differ.
 """
 
+import atexit
 import datetime
 import decimal
 import os
@@ -17,7 +18,9 @@ from urllib.parse import urlparse
 from . import srilanka
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# REGISTER_DATA_DIR moves the SQLite file and uploads elsewhere (the tests use
+# a temporary folder, so they never touch the real register in data/).
+DATA_DIR = os.environ.get("REGISTER_DATA_DIR") or os.path.join(BASE_DIR, "data")
 UPLOAD_DIR = os.path.join(DATA_DIR, "uploads")
 DB_PATH = os.path.join(DATA_DIR, "properties.db")
 
@@ -388,10 +391,13 @@ def _pg_pool():
                     "    python3 -m venv .venv && .venv/bin/pip install -r requirements.txt")
             # prepare_threshold=None: no server-side prepared statements, which
             # a connection pooler in front of the database may not keep.
-            _pool = ConnectionPool(DATABASE_URL, min_size=1, max_size=8, max_idle=120,
+            _pool = ConnectionPool(DATABASE_URL, open=True, min_size=1, max_size=8, max_idle=120,
                                    kwargs={"row_factory": _dict_row,
                                            "prepare_threshold": None})
             _pool.wait(timeout=30)
+            # Close it while the interpreter is still whole: left to garbage
+            # collection at exit, the pool stalls shutdown and prints errors.
+            atexit.register(_pool.close)
     return _pool
 
 

@@ -1,5 +1,8 @@
 # Property Register — Stage 1
 
+[![CI](https://github.com/globallyceum25-dot/NSM-Property-management/actions/workflows/ci.yml/badge.svg)](https://github.com/globallyceum25-dot/NSM-Property-management/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/globallyceum25-dot/NSM-Property-management/actions/workflows/codeql.yml/badge.svg)](https://github.com/globallyceum25-dot/NSM-Property-management/actions/workflows/codeql.yml)
+
 A property database organised by **property type** (Educational, Warehouse,
 Corporate Office, …), with deeds,
 lease agreements and other documents attached to each property, and every
@@ -122,6 +125,41 @@ Delete `.env` (or the `DATABASE_URL` line) to go back to `data/`. The tables
 have row level security switched on with no policies, so Supabase's public API
 and anon key can read none of it; only the server, connecting as the database
 owner, can.
+
+### Tests and CI
+
+The tests need nothing installed and never touch the real register: they run
+on SQLite in a temporary folder and ignore `.env`.
+
+```bash
+python3 -m unittest discover -s tests -t .
+```
+
+To run the same tests on Postgres, point `TEST_DATABASE_URL` at a **throwaway**
+database (it is emptied and reseeded over and over; a Supabase URL is
+refused). With Docker:
+
+```bash
+docker run -d --name register-test-pg -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=register_test -p 127.0.0.1:55432:5432 postgres:17
+```
+
+```bash
+TEST_DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:55432/register_test .venv/bin/python3 -m unittest discover -s tests -t .
+```
+
+On Postgres the suite also checks that every read endpoint returns exactly
+what SQLite returns, and tests `server.import_sqlite`. The browser smoke test
+runs when Playwright is installed (`.venv/bin/pip install -r
+requirements-dev.txt`, then `.venv/bin/python3 -m playwright install chromium`).
+
+GitHub Actions runs on every pull request and every push to `main`:
+
+| Workflow | Checks |
+| --- | --- |
+| **CI** | Ruff, JavaScript syntax and ShellCheck; the tests on Python 3.9 and 3.13 against SQLite (with nothing installed) and Postgres 17; the tests on Python 3.7, the oldest supported; the browser smoke test in Chromium. **CI passed** sums them up, as the one check to require. |
+| **CodeQL** | Security and quality scanning of the Python, the JavaScript and the workflows themselves; also weekly. |
+
+Dependabot proposes updates to the Python packages and the actions weekly.
 
 ## What it does
 
@@ -452,7 +490,11 @@ the form and the validation are all generated from the column metadata.
 property-system/
 ├── run.sh                  start the server
 ├── requirements.txt        Postgres driver, only for Supabase
+├── requirements-dev.txt    Ruff and Playwright, for development and CI
+├── ruff.toml               lint settings
 ├── .env.example            Supabase settings; copy to .env
+├── .github/                CI and CodeQL workflows, Dependabot
+├── tests/                  unittest suite: API, units, storage, Postgres, browser
 ├── server/
 │   ├── app.py              HTTP server, routing, static files
 │   ├── api.py              REST handlers and validation

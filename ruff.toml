@@ -1,0 +1,10 @@
+# Lint for real mistakes (undefined names, unused imports, likely bugs), not
+# style: the codebase's own conventions, such as %-formatting, stay as they are.
+target-version = "py37"
+extend-exclude = [".venv"]
+
+[lint]
+select = ["F", "E4", "E7", "E9", "B"]
+# Handlers turn a parse error into a friendly ApiError on purpose; chaining the
+# original exception would add nothing the client sees.
+ignore = ["B904"]

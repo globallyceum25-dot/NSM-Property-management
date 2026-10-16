@@ -92,13 +92,13 @@ def _check_enum(value, pairs, field, default=None):
     return value
 
 
-def _date_sql(months=0, days=0):
+def _date_sql(months=0, days=0, today=None):
     """Today (UTC) moved by whole months or days, as a quoted SQL date literal.
 
     Worked out here rather than with SQLite's date('now', ...) so the same
     condition runs on Postgres. A day the target month lacks becomes its last.
     """
-    today = datetime.datetime.now(datetime.timezone.utc).date()
+    today = today or datetime.datetime.now(datetime.timezone.utc).date()
     index = today.month - 1 + months
     year, month = today.year + index // 12, index % 12 + 1
     day = min(today.day, calendar.monthrange(year, month)[1])
