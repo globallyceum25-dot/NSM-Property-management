@@ -16,7 +16,7 @@
     properties: [],
     stats: null,                 // /api/stats for the current filters
     docs: { status: '', type: '', sort: 'newest', fromModule: false, focus: null },
-    sbuPage: { id: null, tab: 'properties' },   // one business unit's page
+    groupPage: { kind: null, id: null, tab: 'properties' },   // one property type's or company's page
     currentDoc: null,            // document open in the document panel
     ownPivot: 'company',         // ownership chart rows: 'company' or 'sbu'
     bulk: { file: null, result: null, show: 'all' },   // bulk upload in the property modal
@@ -350,8 +350,8 @@
   function writeHash() {
     let hash = state.view + (state.view === 'portfolio' && state.mode !== 'map' ? '/' + state.mode : '') +
       (state.view === 'documents' && state.docs.status ? '/' + state.docs.status : '');
-    if (state.view === 'sbus' && state.sbuPage.id) {
-      hash = 'sbus/' + state.sbuPage.id + (state.sbuPage.tab === 'documents' ? '/documents' : '');
+    if (onGroupPage()) {
+      hash = state.view + '/' + state.groupPage.id + (state.groupPage.tab === 'documents' ? '/documents' : '');
     }
     if (state.currentDoc) hash = 'documents/doc/' + state.currentDoc.id;
     if (state.currentProperty) hash = 'property/' + state.currentProperty.id;
@@ -374,13 +374,13 @@
     }
     if (VIEWS.indexOf(parts[0]) === -1) return;
     if (!$('#doc-drawer').hidden) closeDocPanel();
-    if (parts[0] === 'sbus') {
+    if (GROUPS[parts[0]]) {
       if (!$('#drawer').hidden) closeDrawer();
       if (/^\d+$/.test(parts[1] || '')) {
-        openSbuPage(Number(parts[1]), parts[2] === 'documents' ? 'documents' : 'properties');
+        openGroupPage(parts[0], Number(parts[1]), parts[2] === 'documents' ? 'documents' : 'properties');
       } else {
-        closeSbuPage();
-        if (state.view !== 'sbus') switchView('sbus');
+        closeGroupPage(parts[0]);
+        if (state.view !== parts[0]) switchView(parts[0]);
       }
       return;
     }
@@ -525,7 +525,7 @@
     // The dashboard describes the same set, so keep it in step with the filters.
     if (state.view === 'dashboard') await renderDashboard();
     if (state.view === 'documents') await renderDocuments();
-    if (state.view === 'sbus' && state.sbuPage.id) await renderSbuPage();
+    if (onGroupPage()) await renderGroupPage();
   }
 
   function sortedProperties() {
@@ -920,7 +920,7 @@
 
   function tileHtml(opts) {
     const open = opts.openId
-      ? ' data-sbu-open="' + opts.openId + '" role="link" tabindex="0" ' +
+      ? ' data-group-open="' + opts.openId + '" role="link" tabindex="0" ' +
         'aria-label="Open ' + esc(opts.name) + ': properties and documents"'
       : '';
     return '<div class="tile' + (opts.openId ? ' is-link' : '') + '"' + open + '>' +
@@ -960,6 +960,7 @@
       editAttr: 'data-edit-sbu="' + sbu.id + '"',
       deleteAttr: 'data-delete-sbu="' + sbu.id + '"'
     })).join('');
+    if (onGroupPage()) renderGroupPage();
   }
 
   function renderEntityCards() {
@@ -977,9 +978,11 @@
       description: entity.description || 'No notes.',
       count: entity.property_count,
       badge: entity.name === entity.short_code ? '<span class="warn-chip">Name unconfirmed</span>' : '',
+      openId: entity.id,
       editAttr: 'data-edit-entity="' + entity.id + '"',
       deleteAttr: 'data-delete-entity="' + entity.id + '"'
     })).join('');
+    if (onGroupPage()) renderGroupPage();
   }
 
   function openEntityModal(entityId) {
@@ -2047,53 +2050,81 @@
     }
   }
 
-  /* ---------- one business unit: its properties and documents ---------- */
+  /* ---------- one property type or owning company: its properties and documents ---------- */
 
-  let sbuRequest = 0;
+  // Both kinds of group a property belongs to get the same page.
+  const GROUPS = {
+    sbus: {
+      cards: '#sbu-cards', detail: '#sbu-detail', index: '#sbu-index', view: '#view-sbus',
+      filter: 'sbu_id', plural: 'Property types', singular: 'Property type',
+      list: () => state.sbus, code: (g) => g.code, colour: (g) => g.color,
+      meta: () => [], edit: 'data-edit-sbu', editLabel: 'Edit type',
+      none: 'No properties of this type yet.', typeColumn: false
+    },
+    entities: {
+      cards: '#entity-cards', detail: '#entity-detail', index: '#entity-index', view: '#view-entities',
+      filter: 'legal_entity_id', plural: 'Owning companies', singular: 'Owning company',
+      list: () => state.entities, code: (g) => g.short_code, colour: () => '#04524d',
+      meta: (g) => [g.reg_no ? 'Reg. ' + g.reg_no : '', g.name === g.short_code ? 'Name unconfirmed' : ''],
+      edit: 'data-edit-entity', editLabel: 'Edit company',
+      none: 'No properties are recorded under this company yet.', typeColumn: true
+    }
+  };
 
-  function showSbuDetail(on) {
-    $('#sbu-detail').hidden = !on;
-    $('#sbu-index').hidden = on;
+  let groupRequest = 0;
+
+  function onGroupPage() {
+    return !!GROUPS[state.view] && state.groupPage.kind === state.view && !!state.groupPage.id;
   }
 
-  async function openSbuPage(id, tab) {
-    const changed = state.sbuPage.id !== id;
-    state.sbuPage = { id: id, tab: tab || 'properties' };
-    if (state.view !== 'sbus') switchView('sbus');
-    showSbuDetail(true);
+  function showGroupDetail(kind, on) {
+    $(GROUPS[kind].detail).hidden = !on;
+    $(GROUPS[kind].index).hidden = on;
+  }
+
+  async function openGroupPage(kind, id, tab) {
+    const changed = state.groupPage.kind !== kind || state.groupPage.id !== id;
+    Object.keys(GROUPS).forEach((k) => { if (k !== kind) showGroupDetail(k, false); });
+    state.groupPage = { kind: kind, id: id, tab: tab || 'properties' };
+    if (state.view !== kind) switchView(kind);
+    showGroupDetail(kind, true);
     writeHash();
     if (changed) {
-      $('#sbu-detail').innerHTML = skeletonHtml();
-      $('#view-sbus').scrollTop = 0;
+      $(GROUPS[kind].detail).innerHTML = skeletonHtml();
+      $(GROUPS[kind].view).scrollTop = 0;
     }
-    await renderSbuPage();
+    await renderGroupPage();
   }
 
-  function closeSbuPage() {
-    if (!state.sbuPage.id) return;
-    state.sbuPage.id = null;
-    showSbuDetail(false);
+  function closeGroupPage(kind) {
+    showGroupDetail(kind, false);
+    if (state.groupPage.kind !== kind || !state.groupPage.id) return;
+    state.groupPage.id = null;
     writeHash();
   }
 
-  function sbuStatHtml(value, label, tone) {
+  function groupStatHtml(value, label, tone) {
     return '<div class="sh-stat' + (tone ? ' is-' + tone : '') + '"><b>' + value + '</b>' +
       '<span>' + esc(label) + '</span></div>';
   }
 
-  function sbuPropertyRow(p) {
+  function groupPropertyRow(p, typeColumn) {
     const place = [p.city, p.district].filter(Boolean).join(', ');
     return '<tr data-open="' + p.id + '" tabindex="0">' +
       '<td><div class="sp-cell"><span class="sp-thumb">' + coverHtml(p, 0.72) + '</span>' +
         '<span class="sp-text"><b>' + esc(p.name) + verifiedHtml(p) + '</b>' +
           '<span>' + esc(p.property_code) + '</span></span></div></td>' +
+      (typeColumn
+        ? '<td class="type-cell"><span class="sbu-pill"><span class="swatch" style="background:' +
+            esc(p.sbu_color) + '"></span>' + esc(p.sbu_name) + '</span></td>'
+        : '') +
       '<td class="wrap-cell">' + esc(place) +
         (p.location_name ? '<span class="prop-sub">' + esc(p.location_name) + '</span>' : '') + '</td>' +
       '<td>' + esc(shortLabel('propertyTypes', p.property_type)) + '</td>' +
       '<td>' + esc(TENURE_SHORT[p.ownership_type] || labelFor('ownershipTypes', p.ownership_type)) + '</td>' +
       '<td><span class="badge ' + esc(p.status) + '">' + esc(shortLabel('statuses', p.status)) + '</span></td>' +
       '<td class="num">' + (p.document_count
-        ? '<button class="count-chip" data-sbu-tab="documents" title="See this type’s documents">' +
+        ? '<button class="count-chip" data-group-tab="documents" title="See these documents">' +
             icon('file') + p.document_count + '</button>'
         : '<span class="muted-inline">0</span>') + '</td>' +
       '<td class="row-actions">' +
@@ -2104,7 +2135,7 @@
       '</td></tr>';
   }
 
-  function sbuDocumentRow(d) {
+  function groupDocumentRow(d) {
     const file = d.stored_name
       ? '<span class="file-line">' + icon('file') + '<span>' + esc(d.file_name) + '</span>' +
           '<small>' + esc(Fmt.fileSize(d.size_bytes)) + '</small></span>'
@@ -2125,119 +2156,132 @@
     '</tr>';
   }
 
-  async function renderSbuPage() {
-    const id = state.sbuPage.id;
-    const host = $('#sbu-detail');
-    const sbu = state.sbus.filter((x) => x.id === id)[0];
-    if (!sbu) {
-      host.innerHTML = '<button class="crumb-back" data-sbu-back>' + icon('chevron') +
-        'All property types</button><p class="empty">This property type no longer exists.</p>';
+  async function renderGroupPage() {
+    const kind = state.groupPage.kind;
+    const id = state.groupPage.id;
+    const g = GROUPS[kind];
+    const host = $(g.detail);
+    const item = g.list().filter((x) => x.id === id)[0];
+    if (!item) {
+      host.innerHTML = '<button class="crumb-back" data-group-back>' + icon('chevron') + 'All ' +
+        g.plural.toLowerCase() + '</button><p class="empty">This ' + g.singular.toLowerCase() +
+        ' no longer exists.</p>';
       return;
     }
-    const seq = ++sbuRequest;
+    const seq = ++groupRequest;
+    const filter = {};
+    filter[g.filter] = id;
     let props, docs, stats;
     try {
       const results = await Promise.all([
-        API.listProperties({ sbu_id: id }),
-        API.listDocuments({ sbu_id: id, sort: 'expiry' }),
-        API.stats({ sbu_id: id })
+        API.listProperties(filter),
+        API.listDocuments(Object.assign({ sort: 'expiry' }, filter)),
+        API.stats(filter)
       ]);
       props = results[0]; docs = results[1]; stats = results[2];
     } catch (err) {
-      host.innerHTML = '<p class="empty">Could not load this property type: ' + esc(err.message) + '</p>';
+      host.innerHTML = '<p class="empty">Could not load this ' + g.singular.toLowerCase() + ': ' +
+        esc(err.message) + '</p>';
       return;
     }
-    if (seq !== sbuRequest || state.sbuPage.id !== id) return;
+    if (seq !== groupRequest || state.groupPage.id !== id || state.groupPage.kind !== kind) return;
 
     const t = stats.totals;
-    const perches = (stats.bySbu.filter((x) => x.id === id)[0] || {}).extent_perches || 0;
-    const acres = perches / 160;
     const expiring = stats.expiringSoon.length;
-    const tab = state.sbuPage.tab;
-    const meta = ['Property type', sbu.code, sbu.sector, sbu.cost_centre ? 'Cost centre ' + sbu.cost_centre : '']
-      .filter(Boolean).join(' · ');
+    const tab = state.groupPage.tab;
+    const colour = g.colour(item);
+    const meta = [g.singular, g.code(item)].concat(g.meta(item)).filter(Boolean).join(' · ');
 
     const head =
       '<nav class="crumbs" aria-label="Breadcrumb">' +
-        '<button class="crumb-back" data-sbu-back>' + icon('chevron') + 'Property types</button>' +
-        '<span aria-hidden="true">/</span><span aria-current="page">' + esc(sbu.name) + '</span>' +
+        '<button class="crumb-back" data-group-back>' + icon('chevron') + esc(g.plural) + '</button>' +
+        '<span aria-hidden="true">/</span><span aria-current="page">' + esc(item.name) + '</span>' +
       '</nav>' +
-      '<section class="sbu-hero" style="--c:' + esc(sbu.color) + '">' +
+      '<section class="sbu-hero" style="--c:' + esc(colour) + '">' +
         '<div class="sh-id">' +
-          avatarHtml(sbu.code, sbu.color, 'xl') +
+          avatarHtml(g.code(item), colour, 'xl') +
           '<div class="sh-text"><p class="sh-meta">' + esc(meta) + '</p>' +
-            '<h1>' + esc(sbu.name) + '</h1>' +
-            (sbu.description ? '<p class="sh-desc">' + esc(sbu.description) + '</p>' : '') + '</div>' +
+            '<h1>' + esc(item.name) + '</h1>' +
+            (item.description ? '<p class="sh-desc">' + esc(item.description) + '</p>' : '') + '</div>' +
         '</div>' +
         '<div class="sh-actions">' +
-          '<button class="btn btn-ghost btn-sm" data-edit-sbu="' + id + '">' + icon('pencil') + 'Edit unit</button>' +
-          '<button class="btn btn-dark btn-sm" data-sbu-map>' + icon('map') + 'Show on map</button>' +
+          '<button class="btn btn-ghost btn-sm" ' + g.edit + '="' + id + '">' + icon('pencil') + esc(g.editLabel) + '</button>' +
+          '<button class="btn btn-dark btn-sm" data-group-map>' + icon('map') + 'Show on map</button>' +
         '</div>' +
         '<div class="sh-stats">' +
-          sbuStatHtml(t.properties, t.properties === 1 ? 'Property' : 'Properties') +
-          sbuStatHtml(t.documents, t.documents === 1 ? 'Document' : 'Documents') +
-          sbuStatHtml(t.files, 'Files stored') +
-          sbuStatHtml(acres ? Fmt.num(acres, acres < 10 ? 1 : 0) + '<small> ac</small>' : '—', 'Land') +
-          sbuStatHtml(t.without_deed, 'Without deed / title', t.without_deed ? 'bad' : '') +
-          sbuStatHtml(expiring, 'Due within 180 days', expiring ? 'warn' : '') +
+          groupStatHtml(t.properties, t.properties === 1 ? 'Property' : 'Properties') +
+          groupStatHtml(t.documents, t.documents === 1 ? 'Document' : 'Documents') +
+          groupStatHtml(t.files, 'Files stored') +
+          groupStatHtml(t.land_sqft ? esc(sqftShort(t.land_sqft)) : '—', 'Land') +
+          groupStatHtml(t.without_deed, 'Without deed / title', t.without_deed ? 'bad' : '') +
+          groupStatHtml(expiring, 'Due within 180 days', expiring ? 'warn' : '') +
         '</div>' +
       '</section>';
 
     const tabs =
       '<div class="docs-bar">' +
         '<div class="doc-tabs" role="tablist" aria-label="Show">' +
-          '<button role="tab" data-sbu-tab="properties" class="' + (tab === 'properties' ? 'is-active' : '') + '" ' +
+          '<button role="tab" data-group-tab="properties" class="' + (tab === 'properties' ? 'is-active' : '') + '" ' +
             'aria-selected="' + (tab === 'properties') + '">' + icon('building') + 'Properties <b>' + props.length + '</b></button>' +
-          '<button role="tab" data-sbu-tab="documents" class="' + (tab === 'documents' ? 'is-active' : '') + '" ' +
+          '<button role="tab" data-group-tab="documents" class="' + (tab === 'documents' ? 'is-active' : '') + '" ' +
             'aria-selected="' + (tab === 'documents') + '">' + icon('file') + 'Documents <b>' + docs.documents.length + '</b></button>' +
         '</div>' +
         (tab === 'properties'
-          ? '<button class="chart-link" data-sbu-portfolio>Open in Portfolio' + icon('open') + '</button>'
-          : '<button class="chart-link" data-sbu-docs>Open all in Documents' + icon('open') + '</button>') +
+          ? '<button class="chart-link" data-group-portfolio>Open in Portfolio' + icon('open') + '</button>'
+          : '<button class="chart-link" data-group-docs>Open all in Documents' + icon('open') + '</button>') +
       '</div>';
 
     let body;
     if (tab === 'properties') {
       body = props.length
         ? '<div class="table-wrap sbu-table"><table class="grid sbu-grid"><thead><tr>' +
-            '<th>Property</th><th>Location</th><th>Type</th><th>Tenure</th><th>Status</th>' +
+            '<th>Property</th>' + (g.typeColumn ? '<th>Property type</th>' : '') +
+            '<th>Location</th><th>Structure</th><th>Tenure</th><th>Status</th>' +
             '<th class="num">Docs</th><th class="row-actions"><span class="sr-only">Actions</span></th>' +
-          '</tr></thead><tbody>' + props.map(sbuPropertyRow).join('') + '</tbody></table></div>'
-        : '<p class="empty">No properties of this type yet.</p>';
+          '</tr></thead><tbody>' + props.map((p) => groupPropertyRow(p, g.typeColumn)).join('') +
+          '</tbody></table></div>'
+        : '<p class="empty">' + esc(g.none) + '</p>';
     } else {
       body = docs.documents.length
         ? '<div class="table-wrap sbu-table"><table class="grid sbu-grid docs-grid"><thead><tr>' +
             '<th>Document</th><th>Property</th><th>Issued</th><th>Expiry</th><th class="num">Amount</th>' +
             '<th class="row-actions"><span class="sr-only">Actions</span></th>' +
-          '</tr></thead><tbody>' + docs.documents.map(sbuDocumentRow).join('') + '</tbody></table></div>' +
+          '</tr></thead><tbody>' + docs.documents.map(groupDocumentRow).join('') + '</tbody></table></div>' +
           '<p class="sbu-note">Soonest expiry first. Click a document to open it in the Documents module.</p>'
         : '<p class="empty">No documents recorded against these properties yet.</p>';
     }
 
     host.innerHTML = head + tabs + body;
+    if (seq === groupRequest && tab === 'properties') Fx.rise(host.querySelector('tbody'), 10);
   }
 
-  function onSbuPageClick(event) {
-    const t = event.target.closest('[data-sbu-back],[data-sbu-tab],[data-sbu-map],' +
-      '[data-sbu-portfolio],[data-sbu-docs],[data-doc-go]');
+  function onGroupPageClick(event) {
+    const t = event.target.closest('[data-group-back],[data-group-tab],[data-group-map],' +
+      '[data-group-portfolio],[data-group-docs],[data-doc-go]');
     if (!t) return;
-    const id = state.sbuPage.id;
+    const kind = state.groupPage.kind;
+    const id = state.groupPage.id;
     const d = t.dataset;
-    if (d.sbuBack !== undefined) { closeSbuPage(); return; }
-    if (d.sbuTab !== undefined) {
+    if (d.groupBack !== undefined) { closeGroupPage(kind); return; }
+    if (d.groupTab !== undefined) {
       event.stopPropagation();
-      state.sbuPage.tab = d.sbuTab;
+      state.groupPage.tab = d.groupTab;
       writeHash();
-      renderSbuPage();
+      renderGroupPage();
       return;
     }
     if (d.docGo !== undefined) { goToDocument(Number(d.docGo)); return; }
-    // The remaining shortcuts show this unit in another module, as a filter.
-    state.selectedSbus = [id];
-    renderSbuFilters();
-    if (d.sbuMap !== undefined || d.sbuPortfolio !== undefined) {
+    // The remaining shortcuts show this group in another module, as a filter.
+    if (kind === 'sbus') {
+      state.selectedSbus = [id];
+      renderSbuFilters();
+    } else {
+      state.filters.legal_entity_id = String(id);
+      syncFilterControls();
+    }
+    if (d.groupMap !== undefined || d.groupPortfolio !== undefined) {
       switchView('portfolio');
-      setMode(d.sbuMap !== undefined ? 'map' : 'table');
+      setMode(d.groupMap !== undefined ? 'map' : 'table');
     } else {
       state.docs.status = '';
       state.docs.type = '';
@@ -3280,7 +3324,7 @@
     wireTheme();
     $$('.nav-pill .tab').forEach((tab) =>
       tab.addEventListener('click', function () {
-        if (tab.dataset.view === 'sbus') closeSbuPage();
+        if (GROUPS[tab.dataset.view]) closeGroupPage(tab.dataset.view);
         switchView(tab.dataset.view);
       }));
     $$('#mode-toggle button').forEach((b) =>
@@ -3407,24 +3451,27 @@
       if (row) openDocPanel(Number(row.dataset.docId));
     });
 
-    // Business units: a card opens the unit's page.
-    $('#sbu-cards').addEventListener('click', function (event) {
-      if (event.target.closest('button, a')) return;
-      const tile = event.target.closest('[data-sbu-open]');
-      if (tile) openSbuPage(Number(tile.dataset.sbuOpen), 'properties');
-    });
-    $('#sbu-cards').addEventListener('keydown', function (event) {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      const tile = event.target.closest('[data-sbu-open]');
-      if (!tile || event.target !== tile) return;
-      event.preventDefault();
-      openSbuPage(Number(tile.dataset.sbuOpen), 'properties');
-    });
-    $('#sbu-detail').addEventListener('click', onSbuPageClick);
-    $('#sbu-detail').addEventListener('keydown', function (event) {
-      if (event.key !== 'Enter') return;
-      const row = event.target.closest('tr[tabindex]');
-      if (row && event.target === row) row.click();
+    // Property types and owning companies: a card opens its own page.
+    Object.keys(GROUPS).forEach(function (kind) {
+      const g = GROUPS[kind];
+      $(g.cards).addEventListener('click', function (event) {
+        if (event.target.closest('button, a')) return;
+        const tile = event.target.closest('[data-group-open]');
+        if (tile) openGroupPage(kind, Number(tile.dataset.groupOpen), 'properties');
+      });
+      $(g.cards).addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const tile = event.target.closest('[data-group-open]');
+        if (!tile || event.target !== tile) return;
+        event.preventDefault();
+        openGroupPage(kind, Number(tile.dataset.groupOpen), 'properties');
+      });
+      $(g.detail).addEventListener('click', onGroupPageClick);
+      $(g.detail).addEventListener('keydown', function (event) {
+        if (event.key !== 'Enter') return;
+        const row = event.target.closest('tr[tabindex]');
+        if (row && event.target === row) row.click();
+      });
     });
 
     $('#btn-close-doc').addEventListener('click', closeDocPanel);

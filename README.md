@@ -274,6 +274,17 @@ Bare land, Land & building, Building only or Other. When property types
 arrived, the old Type values that described use (Office, Warehouse, Showroom,
 Factory, Residential, Estate) became *Land & building*.
 
+**Owning company pages** — click any card under Owning companies to open the
+company's page. It works like a property type page:
+
+- the company's figures
+- **Properties** and **Documents** tabs; the properties table adds each
+  property's type, since one company spans several
+- shortcuts to show the company on the map, in the Portfolio or in Documents,
+  as an "Owned by" filter
+
+Each page has its own link, e.g. `#entities/6`.
+
 **Property type pages** — click any card under Property types to open that
 unit's page:
 
