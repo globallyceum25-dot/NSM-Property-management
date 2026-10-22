@@ -828,11 +828,19 @@
 
   /* ---------- cards ---------- */
 
+  // An empty register says how to start; an empty filter says so.
+  function emptyRegisterText() {
+    return registerTotal() === 0 && !activeChips().length
+      ? 'No properties yet. Add the first with New property, or many at once with New property › Bulk upload.'
+      : 'No properties match the current filters.';
+  }
+
   function renderCards() {
     const list = sortedProperties();
     const host = $('#property-cards');
     host.innerHTML = list.map(cardHtml).join('');
     $('#cards-empty').hidden = list.length > 0;
+    $('#cards-empty').textContent = emptyRegisterText();
 
     $$('#property-cards .pcard').forEach(function (card) {
       const id = Number(card.dataset.card);
@@ -868,6 +876,7 @@
     body.innerHTML = '';
     const list = sortedProperties();
     $('#list-empty').hidden = list.length > 0;
+    $('#list-empty').textContent = emptyRegisterText();
 
     list.forEach(function (p) {
       const tr = document.createElement('tr');

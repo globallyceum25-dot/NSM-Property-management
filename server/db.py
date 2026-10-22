@@ -175,6 +175,12 @@ CREATE TABLE IF NOT EXISTS document (
     updated_at    TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Facts about this register itself, such as which starter lists it has
+-- already been given (so a list emptied on purpose is not refilled).
+CREATE TABLE IF NOT EXISTS register_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 """
 
 
@@ -305,6 +311,14 @@ ALTER TABLE location      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE location_code ENABLE ROW LEVEL SECURITY;
 ALTER TABLE property      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE document      ENABLE ROW LEVEL SECURITY;
+
+-- Facts about this register itself, such as which starter lists it has
+-- already been given (so a list emptied on purpose is not refilled).
+CREATE TABLE IF NOT EXISTS register_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
+ALTER TABLE register_meta ENABLE ROW LEVEL SECURITY;
 """
 
 # Tables in the order rows can be inserted (each after the tables it refers to).
@@ -536,6 +550,16 @@ def normalise_areas(conn):
     conn.commit()
 
 
+def was_seeded(conn, key):
+    return conn.execute("SELECT 1 FROM register_meta WHERE key = ?", (key,)).fetchone() is not None
+
+
+def mark_seeded(conn, key):
+    if not was_seeded(conn, key):
+        conn.execute("INSERT INTO register_meta (key, value) VALUES (?, ?)",
+                     (key, datetime.date.today().isoformat()))
+
+
 def migrate(conn):
     for table, column, decl in MIGRATIONS:
         if column not in table_columns(conn, table):
@@ -546,21 +570,27 @@ def migrate(conn):
     adopt_property_categories(conn)
     normalise_structures(conn)
 
-    # Populate the owning-company master the first time it appears, and attach it
-    # to the sample rows only -- matched by their exact seed property codes, so a
-    # register holding real data is never touched.
-    if conn.execute("SELECT COUNT(*) AS n FROM legal_entity").fetchone()["n"] == 0:
-        seed_legal_entities(conn)
-        if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
-            assign_sample_entities(conn)
+    # The starter owning companies and locations are given once per register.
+    # After that an empty list means someone emptied it on purpose, so it stays
+    # empty rather than being refilled at the next start.
+    if not was_seeded(conn, "legal_entities"):
+        # Attach them to the sample rows only -- matched by their exact seed
+        # property codes, so a register holding real data is never touched.
+        if conn.execute("SELECT COUNT(*) AS n FROM legal_entity").fetchone()["n"] == 0:
+            seed_legal_entities(conn)
+            if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
+                assign_sample_entities(conn)
+        mark_seeded(conn, "legal_entities")
         conn.commit()
 
-    # The location master arrives with the Master sheets module; fill it on the
-    # first run that has it, so the sheet is not empty on an existing database.
-    if conn.execute("SELECT COUNT(*) AS n FROM location").fetchone()["n"] == 0:
-        if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
-            seed_locations(conn)
-            conn.commit()
+    # The location master arrived with the Master sheets module; an existing
+    # register got it filled on the first run that had it.
+    if not was_seeded(conn, "locations"):
+        if conn.execute("SELECT COUNT(*) AS n FROM location").fetchone()["n"] == 0:
+            if conn.execute("SELECT COUNT(*) AS n FROM property").fetchone()["n"]:
+                seed_locations(conn)
+        mark_seeded(conn, "locations")
+        conn.commit()
 
     # Link the sample properties to the location master the first time that
     # column exists. Only the known seed property codes are matched.
@@ -778,6 +808,8 @@ def assign_sample_locations(conn):
 def seed(conn):
     seed_legal_entities(conn)
     seed_locations(conn)
+    mark_seeded(conn, "legal_entities")
+    mark_seeded(conn, "locations")
     for code, name, desc, colour in srilanka.PROPERTY_CATEGORIES:
         conn.execute(
             "INSERT INTO sbu (code, name, description, color) VALUES (?,?,?,?)",

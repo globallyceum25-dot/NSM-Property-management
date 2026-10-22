@@ -687,6 +687,12 @@ Sri Lanka; selecting a district fills the province automatically.
 
 ## Sample data
 
+The starter lists are given **once per register**: owning companies and
+locations are only filled the first time (recorded in the `register_meta`
+table). A list you empty on purpose stays empty after a restart, so clearing
+out test data is permanent.
+
+
 The first run seeds the 8 property types, 13 sample properties across Sri Lanka and 9
 document records so the map and lists are not empty. **Replace these with the
 real register.**
