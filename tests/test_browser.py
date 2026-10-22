@@ -41,9 +41,11 @@ class BrowserSmokeTest(RegisterTestCase):
             for view, heading in (("sbus", "Property types"), ("entities", "Owning companies")):
                 page.goto(self.base + "/#" + view)
                 page.locator("#view-%s.is-active h1" % view).get_by_text(heading).wait_for()
-            # Master sheets opens on its first sheet, whose name replaces the
-            # page's "Master sheets" heading as soon as it loads.
+            # The master sheets page's heading becomes the open sheet's name as
+            # soon as the list loads, so wait for the list, then for the first
+            # sheet (Locations) to open with its rows.
             page.goto(self.base + "/#masters")
+            page.locator("#view-masters.is-active #masters-nav .master-link").first.wait_for()
             page.locator("#view-masters.is-active #master-title").get_by_text("Locations").wait_for()
             expect(page.locator("#master-rows tr")).to_have_count(13)
             page.goto(self.base + "/#dashboard")
