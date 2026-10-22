@@ -1,5 +1,6 @@
 # Development and CI tools. The register itself needs none of these.
-# Pinned to releases that still install on Python 3.9 as well as 3.13.
+# CI runs them on Python 3.13; current releases need Python 3.10 or newer
+# (the register itself still runs on 3.7+).
 ruff==0.17.1
 mypy==1.19.1
 coverage==7.10.7
