@@ -19,7 +19,14 @@ window.Fx = (function () {
 
   function transition(update) {
     if (calm() || !document.startViewTransition) { update(); return; }
-    document.startViewTransition(update);
+    const t = document.startViewTransition(update);
+    // A switch made while another is still running skips the first one, and
+    // the browser rejects its promises with an AbortError. That is expected,
+    // not an error: the page has already moved on.
+    const ignore = () => {};
+    t.ready.catch(ignore);
+    t.finished.catch(ignore);
+    t.updateCallbackDone.catch(ignore);
   }
 
   /* ---------- figures that count ---------- */

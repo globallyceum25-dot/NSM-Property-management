@@ -36,10 +36,13 @@ class BrowserSmokeTest(RegisterTestCase):
 
             page.goto(self.base + "/#documents")
             page.get_by_text("9 documents across 7 properties").wait_for()
-            for view, heading in (("sbus", "Property types"), ("entities", "Owning companies"),
-                                  ("masters", "Master sheets")):
+            for view, heading in (("sbus", "Property types"), ("entities", "Owning companies")):
                 page.goto(self.base + "/#" + view)
                 page.locator("#view-%s h1" % view).get_by_text(heading).wait_for()
+            # The master sheets page's heading becomes the open sheet's name as
+            # soon as the list loads, so wait for the list, not the heading.
+            page.goto(self.base + "/#masters")
+            page.locator("#view-masters.is-active #masters-nav .master-link").first.wait_for()
             page.goto(self.base + "/#dashboard")
             page.locator("#view-dashboard.is-active").wait_for()
 
