@@ -1,7 +1,7 @@
 # Development and CI tools. The register itself needs none of these.
 # Pinned to releases that still install on Python 3.9 as well as 3.13.
 ruff==0.17.1
-mypy==1.19.1
-coverage==7.10.7
-pip-audit==2.9.0
-playwright==1.60.0
+mypy==2.4.0
+coverage==7.16.2
+pip-audit==2.10.1
+playwright==1.64.0
