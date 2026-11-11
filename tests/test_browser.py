@@ -9,6 +9,7 @@ when a missing browser is a failure rather than a silent skip.
 import os
 import unittest
 
+from . import support
 from .support import RegisterTestCase
 
 try:
@@ -31,7 +32,15 @@ class BrowserSmokeTest(RegisterTestCase):
             browser = p.chromium.launch()
             page = browser.new_page()
             page.on("pageerror", lambda exc: errors.append(str(exc)))
+            # Signed out, the register sends you to the sign-in page.
             page.goto(self.base + "/")
+            page.wait_for_url("**/login*")
+            page.fill("#email", support.TEST_EMAIL)
+            page.fill("#password", "not the password")
+            page.click("#btn-signin")
+            page.get_by_text("The email or password is incorrect.").wait_for()
+            page.fill("#password", support.TEST_PASSWORD)
+            page.click("#btn-signin")
             page.get_by_text("13 properties in the register").wait_for()
 
             page.goto(self.base + "/#documents")

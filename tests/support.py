@@ -12,9 +12,14 @@ import uuid
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlencode
 
-from server import app, db, reset, storage
+from server import app, auth, db, reset, storage
 
 _httpd = None
+_cookie = None
+
+# Every test signs in as this Super Admin; the sign-in tests use their own accounts.
+TEST_EMAIL = "tester@example.lk"
+TEST_PASSWORD = "correct horse battery staple"
 
 
 class _QuietHandler(app.Handler):
@@ -30,6 +35,10 @@ def start_server():
     if _httpd is None:
         db.init_db()
         storage.init()
+        conn = db.get_conn()
+        if not conn.execute("SELECT 1 FROM app_user WHERE email = ?", (TEST_EMAIL,)).fetchone():
+            auth.create_user(conn, TEST_EMAIL, "Test Admin", "SUPER_ADMIN", TEST_PASSWORD)
+        db.release()
         _httpd = ThreadingHTTPServer(("127.0.0.1", 0), _QuietHandler)
         _httpd.daemon_threads = True
         threading.Thread(target=_httpd.serve_forever, daemon=True).start()
@@ -77,10 +86,24 @@ class RegisterTestCase(unittest.TestCase):
     def setUp(self):
         load_sample_data()
 
-    def request(self, method, path, data=None, files=None, query=None, raw=None):
+    def session_cookie(self):
+        """Sign the test Super Admin in once per run; reuse the cookie after."""
+        global _cookie
+        if _cookie is None:
+            response = self.request("POST", "/api/auth/login", anonymous=True,
+                                    data={"email": TEST_EMAIL, "password": TEST_PASSWORD})
+            assert response.status == 200, response.body
+            _cookie = response.headers["Set-Cookie"].split(";")[0]
+        return _cookie
+
+    def request(self, method, path, data=None, files=None, query=None, raw=None,
+                anonymous=False, headers=None):
         """`data` goes as JSON, or as form fields when `files` is given
-        ({field: (filename, bytes, content type)}, possibly empty)."""
-        headers, body = {}, raw
+        ({field: (filename, bytes, content type)}, possibly empty). Signed in
+        as the test Super Admin unless `anonymous`."""
+        headers, body = dict(headers or {}), raw
+        if not anonymous and "Cookie" not in headers:
+            headers["Cookie"] = self.session_cookie()
         if files is not None:
             boundary = uuid.uuid4().hex
             body = _multipart(boundary, data or {}, files)

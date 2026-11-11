@@ -1039,5 +1039,9 @@ ROUTES = ROUTES + masters.ROUTES
 from . import bulk  # noqa: E402  (bulk reads helpers above at request time)
 ROUTES = ROUTES + bulk.ROUTES
 
+# Sign-in and sessions.
+from . import auth  # noqa: E402
+ROUTES = ROUTES + auth.ROUTES
+
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]

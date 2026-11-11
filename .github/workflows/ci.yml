@@ -16,6 +16,9 @@ concurrency:
 
 env:
   POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/register_test
+  # A sign-in for the throwaway containers in the Docker smoke test only.
+  REGISTER_ADMIN_EMAIL: ci@example.lk
+  REGISTER_ADMIN_PASSWORD: ci-only password for a throwaway container
 
 jobs:
   # --- static checks ----------------------------------------------------------
@@ -187,12 +190,14 @@ jobs:
         run: docker build -t nsm-property-register:ci .
       - name: Smoke test on SQLite
         run: |
-          docker run -d --name register-sqlite -p 127.0.0.1:8001:8000 nsm-property-register:ci
+          docker run -d --name register-sqlite -p 127.0.0.1:8001:8000 \
+            -e REGISTER_ADMIN_EMAIL -e REGISTER_ADMIN_PASSWORD nsm-property-register:ci
           ./.github/scripts/wait-for-register.sh http://127.0.0.1:8001 13
       - name: Smoke test on Postgres
         run: |
           docker run -d --name register-postgres --network host \
-            -e DATABASE_URL="$POSTGRES_URL" nsm-property-register:ci
+            -e DATABASE_URL="$POSTGRES_URL" -e REGISTER_ADMIN_EMAIL -e REGISTER_ADMIN_PASSWORD \
+            nsm-property-register:ci
           ./.github/scripts/wait-for-register.sh http://127.0.0.1:8000 13
           docker logs register-postgres | grep -q "Database: Postgres"
       - name: Container logs

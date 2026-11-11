@@ -311,7 +311,7 @@ p { margin: 0; }
 .btn-danger { background: var(--surface); color: var(--danger); border-color: var(--danger-border); }
 .btn-danger:hover { background: var(--danger-soft); }
 .btn-sm { padding: 7px 14px; font-size: 13px; }
-.btn-block { width: 100%; }
+.btn-block { width: 100%; justify-content: center; }
 
 .link-btn {
   background: none; border: none; padding: 0; cursor: pointer;
@@ -2580,4 +2580,37 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   .btn:active:not(:disabled), .circle-btn:active, .chart-link:active, .df-chip:active,
   .xf-pill:active, .seg-mini button:active, .doc-tabs button:active { transform: none; }
   .kpi::after, .signal::after, .tile::after { display: none; }
+}
+
+/* ==========================================================================
+   Signed-in account: the initials button and its menu
+   ========================================================================== */
+
+.account-btn {
+  width: 48px; height: 48px; padding: 3px; flex: 0 0 auto;
+  border: 1px solid var(--border-strong); border-radius: 50%;
+  background: var(--surface); cursor: pointer;
+  transition: border-color .15s, box-shadow .15s;
+}
+.account-btn:hover, .account-btn[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.account-btn:focus-visible { outline: 3px solid var(--brand-500); outline-offset: 2px; }
+.account-initials {
+  width: 100%; height: 100%; display: grid; place-items: center; border-radius: 50%;
+  background: var(--hero); color: #fff; font-size: 13px; font-weight: 700; letter-spacing: .02em;
+}
+.account-initials.lg { width: 46px; height: 46px; flex: 0 0 auto; font-size: 15px; }
+.account-pop { width: 290px; padding: 16px; }
+.account-head { display: flex; align-items: center; gap: 12px; }
+.account-who { min-width: 0; }
+.account-who b, .account-who span { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.account-who b { font-size: 15px; }
+.account-who span { margin-top: 2px; font-size: 12.5px; color: var(--text-muted); }
+.account-role {
+  display: flex; justify-content: space-between; align-items: center;
+  margin: 14px 0; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); font-size: 13px;
+}
+.account-role span { color: var(--text-muted); }
+.account-role b { color: var(--accent-text); }
+@media (max-width: 720px) {
+  .account-btn { width: 42px; height: 42px; }
 }

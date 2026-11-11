@@ -117,6 +117,22 @@
       <svg class="ic"><use href="#i-download"/></svg>
     </a>
     <button class="btn btn-dark" id="btn-new-property"><svg class="ic"><use href="#i-plus"/></svg>New property</button>
+    <div class="pop-anchor">
+      <button class="account-btn" id="btn-account" aria-label="Your account" aria-haspopup="true" aria-expanded="false">
+        <span class="account-initials" id="account-initials">··</span>
+      </button>
+      <div class="popover account-pop" id="account-pop" role="menu" aria-label="Your account" hidden>
+        <div class="account-head">
+          <span class="account-initials lg" id="account-initials-lg">··</span>
+          <div class="account-who">
+            <b id="account-name"></b>
+            <span id="account-email"></span>
+          </div>
+        </div>
+        <p class="account-role"><span>Role</span><b id="account-role"></b></p>
+        <button class="btn btn-ghost btn-block" id="btn-signout" role="menuitem"><svg class="ic"><use href="#i-open"/></svg>Sign out</button>
+      </div>
+    </div>
   </div>
 </header>
 

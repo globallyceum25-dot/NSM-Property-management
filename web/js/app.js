@@ -25,6 +25,7 @@
     filters: emptyFilters(),
     labels: {},
     currentProperty: null,
+    user: null,                  // who is signed in: {name, email, role, roleLabel}
     view: 'portfolio',
     mode: 'map',                 // portfolio layout: map | grid | table
     expanded: false,             // map mode with the card column hidden
@@ -298,7 +299,31 @@
 
   /* ---------- boot ---------- */
 
+  // Initials for the account button: "Shenal Perera" -> "SP".
+  function personInitials(name) {
+    const parts = String(name || '?').trim().split(/\s+/);
+    return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
+  }
+
+  function renderAccount(user) {
+    const initials = personInitials(user.name);
+    $('#account-initials').textContent = initials;
+    $('#account-initials-lg').textContent = initials;
+    $('#account-name').textContent = user.name;
+    $('#account-email').textContent = user.email;
+    $('#account-role').textContent = user.roleLabel;
+    $('#btn-account').title = user.name + ' · ' + user.roleLabel;
+  }
+
   async function boot() {
+    // Nobody signed in: to the sign-in page, coming back to this link after.
+    const status = await API.authStatus().catch(() => null);
+    if (!status || !status.signedIn) {
+      location.replace('/login' + (location.hash ? '?next=' + encodeURIComponent(location.hash) : ''));
+      return;
+    }
+    state.user = status.user;
+    renderAccount(state.user);
     try {
       state.reference = await API.reference();
     } catch (err) {
@@ -1079,7 +1104,7 @@
   /* ---------- popovers ---------- */
 
   const POPOVERS = [['#btn-filters', '#filter-pop'], ['#btn-alerts', '#alerts-pop'],
-                    ['#btn-theme', '#theme-pop']];
+                    ['#btn-theme', '#theme-pop'], ['#btn-account', '#account-pop']];
 
   /* ---------- appearance: light, dark or follow the system ---------- */
 
@@ -3351,6 +3376,15 @@
     // Filter popover
     $('#btn-filters').addEventListener('click', (e) => {
       e.stopPropagation(); togglePopover('#btn-filters', '#filter-pop');
+    });
+    $('#btn-account').addEventListener('click', (e) => {
+      e.stopPropagation(); togglePopover('#btn-account', '#account-pop');
+    });
+    $('#account-pop').addEventListener('click', (e) => e.stopPropagation());
+    $('#btn-signout').addEventListener('click', async function () {
+      setBusy(this, 'Signing out…');
+      try { await API.logout(); } catch (e) { /* the cookie is cleared either way */ }
+      location.replace('/login?signedout=1');
     });
     $('#btn-alerts').addEventListener('click', (e) => {
       e.stopPropagation(); togglePopover('#btn-alerts', '#alerts-pop');

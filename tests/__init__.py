@@ -29,4 +29,7 @@ os.environ.update({
     "SUPABASE_URL": "",
     "SUPABASE_SERVICE_ROLE_KEY": "",
     "REGISTER_DATA_DIR": DATA_DIR,
+    # Password hashing at full strength takes a noticeable fraction of a second;
+    # the tests check behaviour, not the work factor.
+    "REGISTER_PBKDF2_ITERATIONS": "2000",
 })

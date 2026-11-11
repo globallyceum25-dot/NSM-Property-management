@@ -7,8 +7,11 @@
 # on Supabase; without them, on SQLite in /app/data, which a volume keeps:
 #   docker run --rm -p 127.0.0.1:8000:8000 -v register-data:/app/data nsm-property-register
 #
-# The register has no login yet: publish the port on 127.0.0.1 as above, never
-# on a public interface.
+# Everyone signs in. On first start the log prints a one-time setup code for
+# creating the first Super Admin at /login; or set REGISTER_ADMIN_EMAIL,
+# REGISTER_ADMIN_PASSWORD (and REGISTER_ADMIN_NAME) to create it at start-up.
+# Behind HTTPS, set REGISTER_SECURE_COOKIES=1. Publish the port on 127.0.0.1
+# as above and put a TLS proxy in front, rather than serving plain HTTP publicly.
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \

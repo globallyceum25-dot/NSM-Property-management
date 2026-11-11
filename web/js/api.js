@@ -14,6 +14,12 @@ window.API = (function () {
     if (text) {
       try { payload = JSON.parse(text); } catch (e) { payload = { error: text }; }
     }
+    if (response.status === 401 && payload && payload.signIn) {
+      // The session ended (timed out, or signed out elsewhere): back to sign in,
+      // returning to this same page afterwards.
+      location.replace('/login?expired=1' + (location.hash ? '&next=' + encodeURIComponent(location.hash) : ''));
+      return new Promise(function () {});       // the page is leaving
+    }
     if (!response.ok) {
       const err = new Error((payload && payload.error) || ('Request failed (' + response.status + ')'));
       err.status = response.status;
@@ -36,6 +42,8 @@ window.API = (function () {
 
   return {
     reference: () => request('GET', '/api/reference'),
+    authStatus: () => request('GET', '/api/auth/status'),
+    logout: () => request('POST', '/api/auth/logout'),
     listSbus: () => request('GET', '/api/sbus'),
     createSbu: (data) => request('POST', '/api/sbus', data),
     updateSbu: (id, data) => request('PUT', '/api/sbus/' + id, data),
