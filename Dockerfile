@@ -12,7 +12,7 @@
 # REGISTER_ADMIN_PASSWORD (and REGISTER_ADMIN_NAME) to create it at start-up.
 # Behind HTTPS, set REGISTER_SECURE_COOKIES=1. Publish the port on 127.0.0.1
 # as above and put a TLS proxy in front, rather than serving plain HTTP publicly.
-FROM python:3.13-slim
+FROM python:3.15-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
