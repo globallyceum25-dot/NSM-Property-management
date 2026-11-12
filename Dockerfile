@@ -17,6 +17,12 @@ FROM python:3.15-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
 
+# Debian security fixes released since the base image was built; the image
+# scan in CI fails on fixable high and critical ones. No packages are added.
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 COPY requirements.txt .
 # pip is only needed to build the image. Removing it also removes the copies of
