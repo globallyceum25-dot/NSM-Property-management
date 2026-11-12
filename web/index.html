@@ -140,6 +140,7 @@
           </div>
         </div>
         <p class="account-role"><span>Role</span><b id="account-role"></b></p>
+        <button class="btn btn-ghost btn-block" id="btn-my-access" role="menuitem"><svg class="ic"><use href="#i-shield"/></svg>My access</button>
         <button class="btn btn-ghost btn-block" id="btn-change-password" role="menuitem"><svg class="ic"><use href="#i-key"/></svg>Change password</button>
         <button class="btn btn-ghost btn-block" id="btn-signout" role="menuitem"><svg class="ic"><use href="#i-open"/></svg>Sign out</button>
       </div>
@@ -971,6 +972,21 @@
     <footer class="modal-foot">
       <button class="btn btn-ghost" data-close-modal>Cancel</button>
       <button class="btn btn-dark" id="btn-save-role">Create role</button>
+    </footer>
+  </div>
+</div>
+
+<!-- What the signed-in person may do -->
+<div class="modal" id="my-access-modal" hidden>
+  <div class="modal-card my-access-card">
+    <header class="modal-head">
+      <h2>My access</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="modal-body" id="my-access-body"></div>
+    <footer class="modal-foot">
+      <span class="foot-note">Need something you don't have? Ask your administrator.</span>
+      <button class="btn btn-dark" data-close-modal>Done</button>
     </footer>
   </div>
 </div>

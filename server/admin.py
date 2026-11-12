@@ -317,6 +317,24 @@ def change_own_password(ctx):
     return 200, {"ok": True}
 
 
+def my_access(ctx):
+    """What the signed-in person may do: their role, their scope, and every
+    action with its level. Anyone signed in may see their own."""
+    conn = db.get_conn()
+    acc = ctx.access
+    role = conn.execute("SELECT * FROM app_role WHERE code = ?", (ctx.user["role"],)).fetchone()
+    modules = [dict(m, actions=[dict(a, level=acc.level(a["key"])) for a in m["actions"]])
+               for m in access.MODULES]
+    return 200, {
+        "role": {"code": ctx.user["role"], "name": role["name"] if role else ctx.user["role"],
+                 "description": (role["description"] if role else "") or ""},
+        "usesScope": any(level == "limited" for level in acc.levels.values()),
+        "scope": {"types": _names(conn, "sbu", "name", acc.types),
+                  "companies": _names(conn, "legal_entity", "short_code", acc.companies)},
+        "modules": modules,
+    }
+
+
 # --- roles ------------------------------------------------------------------------
 
 def _role_json(conn, code, role, counts, ctx):
@@ -484,6 +502,7 @@ def list_audit(ctx):
 
 ROUTES = [
     ("POST", r"^/api/account/password$", change_own_password),
+    ("GET", r"^/api/account/access$", my_access),
     ("GET", r"^/api/users$", list_users),
     ("POST", r"^/api/users$", create_user),
     ("GET", r"^/api/users/(?P<id>\d+)$", get_user),

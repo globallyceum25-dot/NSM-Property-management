@@ -366,6 +366,32 @@
     style.textContent = rules.join('\n');
   }
 
+  // An administrator may change someone's role or scope while they are signed
+  // in. When they come back to the tab (or every few minutes), check, and
+  // reload with the new access so no screen offers what they can no longer do.
+  function watchAccess() {
+    let checking = false;
+    async function check() {
+      if (checking || document.hidden) return;
+      checking = true;
+      try {
+        const status = await API.authStatus();
+        if (status.signedIn && (status.user.role !== state.user.role ||
+            JSON.stringify(status.access) !== JSON.stringify(state.access))) {
+          toast('An administrator has changed your access. Updating the screen…');
+          setTimeout(() => location.reload(), 1500);
+        }
+      } catch (err) {
+        /* offline for a moment: check again next time */
+      } finally {
+        checking = false;
+      }
+    }
+    document.addEventListener('visibilitychange', check);
+    window.addEventListener('focus', check);
+    setInterval(check, 5 * 60 * 1000);
+  }
+
   function firstView() {
     return Object.keys(VIEW_PERMS).filter(viewAllowed)[0] || 'portfolio';
   }
@@ -392,6 +418,7 @@
     if (state.user.mustChangePassword) { location.replace('/login?change=1'); return; }
     renderAccount(state.user);
     applyAccess();
+    watchAccess();
     try {
       state.reference = await API.reference();
     } catch (err) {

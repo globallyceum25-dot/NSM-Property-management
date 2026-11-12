@@ -83,6 +83,24 @@ class RulesTests(AccessTestCase):
         self.assertEqual(status["access"]["scope"], {"types": [], "companies": []})
 
 
+class MyAccessTests(AccessTestCase):
+
+    def test_everyone_can_see_the_access_they_were_given(self):
+        sbu_id, _, _ = self.sample()
+        _, cookie = self.person("PROPERTY_OFFICER", types=[sbu_id])
+        mine = self.as_(cookie, "GET", "/api/account/access")
+        self.assertEqual(mine.status, 200)
+        mine = mine.json()
+        self.assertEqual(mine["role"]["name"], "Property Officer")
+        self.assertTrue(mine["usesScope"])
+        self.assertEqual([t["id"] for t in mine["scope"]["types"]], [sbu_id])
+        levels = {a["key"]: a["level"] for m in mine["modules"] for a in m["actions"]}
+        self.assertEqual((levels["properties.view"], levels["properties.delete"]), ("limited", "no"))
+        self.assertEqual(len(levels), 34)
+        # ...but not anyone else's.
+        self.assertEqual(self.as_(cookie, "GET", "/api/users").status, 403)
+
+
 class ViewerTests(AccessTestCase):
 
     def test_a_viewer_reads_but_changes_nothing(self):

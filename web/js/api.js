@@ -50,6 +50,7 @@ window.API = (function () {
     authStatus: () => request('GET', '/api/auth/status'),
     logout: () => request('POST', '/api/auth/logout'),
     changePassword: (data) => request('POST', '/api/account/password', data),
+    myAccess: () => request('GET', '/api/account/access'),
 
     listUsers: () => request('GET', '/api/users'),
     createUser: (data) => request('POST', '/api/users', data),

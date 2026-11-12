@@ -2910,3 +2910,41 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
   .audit-item { padding: 10px 12px; gap: 10px; }
   .lvl button { min-width: 0; }
 }
+
+/* My access (account menu) */
+.my-access-card { max-width: 680px; }
+.foot-note { margin-right: auto; font-size: 12.5px; color: var(--text-muted); }
+.my-role { display: flex; gap: 16px; align-items: center; margin-bottom: 14px; }
+.my-kicker { font-size: 11.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: var(--text-muted); }
+.my-role h3 { margin-top: 1px; font-size: 21px; letter-spacing: -.02em; }
+.my-role p { margin-top: 3px; font-size: 13.5px; line-height: 1.5; color: var(--text-2); }
+.my-scope {
+  display: flex; gap: 12px; align-items: flex-start;
+  padding: 14px 16px; margin-bottom: 14px; border-radius: 14px;
+  background: var(--accent-soft); color: var(--accent-text);
+}
+.my-scope > .ic { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 1px; }
+.my-scope b { display: block; font-size: 14px; color: var(--text); }
+.my-scope span { display: block; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.my-scope.is-empty { background: var(--yellow-soft); color: var(--yellow-text); }
+.my-scope-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; margin-top: 8px; }
+.my-scope-row small { min-width: 104px; font-size: 11.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--text-muted); }
+.my-scope-row .mini-chip { background: var(--surface); }
+.my-count { margin: 0 0 12px; font-size: 13.5px; color: var(--text-2); }
+.my-module { margin-bottom: 10px; border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+.my-module header { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; background: var(--table-head); }
+.my-module h4 { font-size: 14px; }
+.my-module ul { list-style: none; margin: 0; padding: 0; }
+.my-module li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--border); }
+.my-module li b { display: block; font-size: 13.5px; font-weight: 600; }
+.my-module li span { display: block; font-size: 12.5px; line-height: 1.45; color: var(--text-muted); }
+.my-module li .limited-note { display: inline-flex; color: var(--amber-text); }
+.my-module li.is-no b, .my-module li.is-no > div > span { color: var(--text-faint); }
+.my-lvl {
+  display: inline-flex !important; align-items: center; gap: 5px; flex: 0 0 auto;
+  padding: 3px 10px; border-radius: var(--pill); font-size: 12px; font-weight: 700;
+}
+.my-lvl .ic { width: 12px; height: 12px; }
+.my-lvl.yes { background: var(--ok-soft); color: var(--ok) !important; }
+.my-lvl.limited { background: var(--yellow-soft); color: var(--yellow-text) !important; }
+.my-lvl.no { background: var(--surface-2); color: var(--text-faint) !important; }

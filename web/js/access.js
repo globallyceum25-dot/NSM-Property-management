@@ -114,6 +114,7 @@ window.Access = (function () {
     $('#btn-close-person').addEventListener('click', closePerson);
     $('#scrim').addEventListener('click', function () { if (!$('#person-drawer').hidden) closePerson(); });
     $('#btn-change-password').addEventListener('click', openPasswordModal);
+    $('#btn-my-access').addEventListener('click', openMyAccess);
     $('#btn-save-password').addEventListener('click', savePassword);
     $('#password-form').addEventListener('submit', (e) => { e.preventDefault(); savePassword(); });
 
@@ -923,6 +924,80 @@ window.Access = (function () {
     }).join('');
     $('#audit-empty').hidden = audit.entries.length > 0;
     $('#btn-audit-more').hidden = !audit.next;
+  }
+
+  /* ---------- your own access ---------- */
+
+  const LEVEL_TAG = {
+    yes: '<span class="my-lvl yes">' + '<svg class="ic"><use href="#i-check"/></svg>Yes</span>',
+    limited: '<span class="my-lvl limited"><svg class="ic"><use href="#i-shield"/></svg>Limited</span>',
+    no: '<span class="my-lvl no">No</span>'
+  };
+
+  // The catalog describes "the person"; here it is about the reader.
+  function forYou(text) {
+    return String(text || '').replace(/the person's/g, 'your').replace(/\btheir\b/g, 'your')
+      .replace(/\bthey\b/g, 'you');
+  }
+
+  function moduleTag(actions) {
+    const allowed = actions.filter((a) => a.level !== 'no');
+    if (!allowed.length) return '<b class="lvl-tag none">No access</b>';
+    if (allowed.length === actions.length && allowed.every((a) => a.level === 'yes')) return '<b class="lvl-tag full">Full</b>';
+    if (allowed.length === 1 && /\.view$/.test(allowed[0].key)) return '<b class="lvl-tag view">View only</b>';
+    return '<b class="lvl-tag partial">Partial</b>';
+  }
+
+  function myScopeHtml(mine) {
+    if (!mine.usesScope) {
+      return '<div class="my-scope is-all">' + icon('check') +
+        '<div><b>Every property</b><span>Nothing in your role is limited to a scope.</span></div></div>';
+    }
+    const types = mine.scope.types.map((t) => '<span class="mini-chip">' + esc(t.label) + '</span>').join('');
+    const companies = mine.scope.companies.map((c) => '<span class="mini-chip">' + esc(c.label) + '</span>').join('');
+    if (!types && !companies) {
+      return '<div class="my-scope is-empty">' + icon('shield') +
+        '<div><b>No scope assigned yet</b><span>Where your role says <em>Limited</em>, you can’t reach any property ' +
+        'until your administrator assigns you property types or owning companies.</span></div></div>';
+    }
+    return '<div class="my-scope">' + icon('shield') + '<div><b>Your scope</b>' +
+      '<span>Where your role says <em>Limited</em>, you work on properties of</span>' +
+      '<div class="my-scope-row"><small>Property types</small>' + (types || '<span class="muted-inline">any type</span>') + '</div>' +
+      '<div class="my-scope-row"><small>Owned by</small>' + (companies || '<span class="muted-inline">any company</span>') + '</div>' +
+      '</div></div>';
+  }
+
+  async function openMyAccess() {
+    document.querySelectorAll('.popover').forEach((p) => { p.hidden = true; });
+    const body = $('#my-access-body');
+    body.innerHTML = '<p class="empty">Loading your access…</p>';
+    $('#my-access-modal').hidden = false;
+    let mine;
+    try {
+      mine = await API.myAccess();
+    } catch (err) {
+      body.innerHTML = '<p class="form-error">' + esc(err.message) + '</p>';
+      return;
+    }
+    const all = [].concat.apply([], mine.modules.map((m) => m.actions)).filter((a) => a.status !== 'coming');
+    const yes = all.filter((a) => a.level === 'yes').length;
+    const limited = all.filter((a) => a.level === 'limited').length;
+    body.innerHTML =
+      '<div class="my-role">' + avatar(app.user, 'xl') +
+        '<div><span class="my-kicker">Your role</span><h3>' + esc(mine.role.name) + '</h3>' +
+        '<p>' + esc(mine.role.description) + '</p></div></div>' +
+      myScopeHtml(mine) +
+      '<p class="my-count">You can do <b>' + (yes + limited) + ' of ' + all.length + '</b> things in the register' +
+        (limited ? ': ' + yes + ' everywhere, ' + limited + ' within your scope.' : '.') + '</p>' +
+      mine.modules.map(function (m) {
+        const actions = m.actions.filter((a) => a.status !== 'coming');
+        if (!actions.length) return '';
+        return '<section class="my-module"><header><h4>' + esc(m.label) + '</h4>' + moduleTag(actions) + '</header>' +
+          '<ul>' + actions.map((a) => '<li class="' + (a.level === 'no' ? 'is-no' : '') + '">' +
+            '<div><b>' + esc(a.label) + '</b><span>' + esc(a.description) + '</span>' +
+            (a.level === 'limited' ? '<span class="limited-note">' + icon('shield') + esc(forYou(a.limited)) + '</span>' : '') +
+            '</div>' + LEVEL_TAG[a.level] + '</li>').join('') + '</ul></section>';
+      }).join('');
   }
 
   /* ---------- your own password ---------- */

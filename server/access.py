@@ -421,6 +421,7 @@ ROUTE_PERMISSIONS = {
     "auth.logout": SIGNED_IN,
     "auth.setup": SIGNED_IN,
     "admin.change_own_password": SIGNED_IN,
+    "admin.my_access": SIGNED_IN,
     "admin.list_users": "users.view",
     "admin.get_user": "users.view",
     "admin.create_user": "users.create",
