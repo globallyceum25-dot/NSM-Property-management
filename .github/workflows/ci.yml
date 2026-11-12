@@ -70,7 +70,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.13"]
+        python: ["3.9", "3.13", "3.15"]  # 3.15: the Docker image
         database: [sqlite, postgres]
     services:
       # Same major version as the Supabase project. Started for every job (it
@@ -223,10 +223,10 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      # Python 3.13, the version the Docker image runs.
+      # Python 3.15, the version the Docker image runs.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.15"
       - name: Install pip-audit
         run: pip install "$(grep -E '^pip-audit==' requirements-dev.txt)"
       - name: Known vulnerabilities in the Python packages

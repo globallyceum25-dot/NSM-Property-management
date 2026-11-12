@@ -191,7 +191,7 @@ GitHub Actions runs **CI** on every pull request and every push to `main`:
 | Stage | Jobs |
 | --- | --- |
 | Static checks | **Lint**: Ruff, JavaScript syntax, ShellCheck, actionlint on the workflows. **Type check**: mypy over the server and the tests. |
-| Tests | Python 3.9 and 3.13, each against SQLite and Postgres 17; Python 3.7 (the oldest supported) with nothing installed; the **browser smoke test** in Chromium. |
+| Tests | Python 3.9, 3.13 and 3.15 (the version the Docker image runs), each against SQLite and Postgres 17; Python 3.7 (the oldest supported) with nothing installed; the **browser smoke test** in Chromium. |
 | Coverage | Combines every test run into one report (job summary, plus an HTML artifact) and fails below the minimum in `.coveragerc`. |
 | Build | Builds the Docker image, smoke-tests it on SQLite and on Postgres, and scans it with Trivy for fixable high and critical vulnerabilities. |
 | Security | **Dependency audit** (pip-audit) of both requirement files; **secret scan** (gitleaks) of the whole git history. |
