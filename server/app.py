@@ -17,10 +17,15 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import api, auth, db, multipart, storage
+from . import access, api, auth, db, multipart, storage
 
 WEB_DIR = os.path.join(db.BASE_DIR, "web")
 MAX_BODY_BYTES = api.MAX_UPLOAD_BYTES + (2 * 1024 * 1024)
+
+
+# What a person signed in with a temporary password may still do.
+_BEFORE_NEW_PASSWORD = {"auth.get_status", "auth.logout", "auth.login", "admin.change_own_password",
+                        "api.get_reference"}
 
 
 class Context(object):
@@ -34,7 +39,10 @@ class Context(object):
         self._json = None
         self._form = None
         self.user = None            # the signed-in user, set before the handler runs
+        self.access = None          # what they may do (server/access.py)
         self.headers_out = []       # extra response headers, such as Set-Cookie
+        self.audit_target = None    # what a change is logged as, when a handler says
+        self.audit_detail = None
 
     def add_header(self, name, value):
         self.headers_out.append((name, value))
@@ -155,7 +163,17 @@ class Handler(BaseHTTPRequestHandler):
                 body = self._read_body() if method in ("POST", "PUT", "PATCH") else b""
                 ctx = Context(self, match, query, body)
                 ctx.user = user
+                if user is not None:
+                    ctx.access = access.load(db.get_conn(), user)
+                    # A temporary password must be replaced before anything else.
+                    if user["mustChangePassword"] and access.handler_key(handler) not in _BEFORE_NEW_PASSWORD:
+                        self._send_json(403, {"error": "Choose a new password first.", "changePassword": True})
+                        return
+                if (method, path) not in auth.PUBLIC:
+                    access.check_route(ctx, handler)
                 status, payload = handler(ctx)
+                if user is not None and method != "GET":
+                    access.audit_request(db.get_conn(), ctx, handler, status, payload)
                 if isinstance(payload, dict) and payload.get("__raw__"):
                     self._send_raw(status, payload, ctx.headers_out)
                 else:

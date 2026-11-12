@@ -156,6 +156,49 @@
       </form>
     </div>
 
+    <div class="login-body-inner" id="change-view" hidden>
+      <h1>Choose your password</h1>
+      <p class="login-lead" id="change-lead">You signed in with a temporary password from your administrator.
+        Choose your own now; only you will know it.</p>
+
+      <p class="login-alert" id="change-alert" role="alert" hidden></p>
+
+      <form id="change-form" novalidate>
+        <input type="text" name="username" id="c-username" autocomplete="username" hidden>
+        <div class="field" id="c-current-field" hidden>
+          <label for="c-current">Temporary password</label>
+          <div class="field-box">
+            <svg class="ic" aria-hidden="true"><use href="#i-key"/></svg>
+            <input id="c-current" name="current" type="password" autocomplete="current-password">
+          </div>
+        </div>
+        <div class="field-pair">
+          <div class="field">
+            <label for="c-password">New password</label>
+            <div class="field-box">
+              <svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg>
+              <input id="c-password" name="password" type="password" autocomplete="new-password" required minlength="10">
+              <button type="button" class="reveal" data-reveal="c-password" aria-label="Show password" aria-pressed="false">
+                <svg class="ic"><use href="#i-eye"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="c-confirm">Confirm password</label>
+            <div class="field-box">
+              <svg class="ic" aria-hidden="true"><use href="#i-lock"/></svg>
+              <input id="c-confirm" name="confirm" type="password" autocomplete="new-password" required>
+            </div>
+          </div>
+        </div>
+        <div class="strength" id="c-strength" aria-live="polite">
+          <span class="bar"><i></i></span><span class="label">At least 10 characters. A short sentence works well.</span>
+        </div>
+        <button class="btn btn-dark login-submit" id="btn-change" type="submit">Save password and continue</button>
+        <button class="btn btn-ghost login-submit" id="btn-change-signout" type="button">Sign out</button>
+      </form>
+    </div>
+
     <p class="login-copy">© <span id="year">2026</span> Serengeti Property Management</p>
   </section>
 

@@ -45,7 +45,7 @@ def main(argv=None):
     add = sub.add_parser("add", help="add an account")
     add.add_argument("--email", required=True)
     add.add_argument("--name", required=True)
-    add.add_argument("--role", required=True, choices=[code for code, _ in auth.ROLES])
+    add.add_argument("--role", required=True, help="a role code; see list-roles")
     for name in ("reset-password", "disable", "enable"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--email", required=True)
@@ -61,14 +61,14 @@ def main(argv=None):
                 print("No accounts yet.")
             for r in rows:
                 print("%-34s %-26s %-20s %-8s last sign-in: %s" % (
-                    r["email"], r["name"], auth.ROLE_LABELS.get(r["role"], r["role"]),
+                    r["email"], r["name"], auth.role_name(conn, r["role"]),
                     "active" if r["is_active"] else "OFF", r["last_login_at"] or "never"))
         elif args.command == "list-roles":
-            for code, label in auth.ROLES:
-                print("%-20s %s" % (code, label))
+            for r in conn.execute("SELECT code, name FROM app_role ORDER BY sort_order, name"):
+                print("%-20s %s" % (r["code"], r["name"]))
         elif args.command == "add":
-            auth.create_user(conn, args.email, args.name, args.role, _ask_password())
-            print("Added %s as %s." % (args.email.lower(), auth.ROLE_LABELS[args.role]))
+            auth.create_user(conn, args.email, args.name, args.role.upper(), _ask_password())
+            print("Added %s as %s." % (args.email.lower(), auth.role_name(conn, args.role.upper())))
         elif args.command == "reset-password":
             auth.set_password(conn, args.email, _ask_password())
             print("Password changed; %s is signed out everywhere." % args.email.lower())

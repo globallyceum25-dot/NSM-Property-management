@@ -20,7 +20,7 @@ import xml.etree.ElementTree as ET
 from typing import Union
 from xml.sax.saxutils import escape, quoteattr
 
-from . import db, srilanka
+from . import access, db, srilanka
 from .errors import ApiError
 
 MAX_ROWS = 2000
@@ -830,6 +830,15 @@ def upload_properties(ctx):
         raise ApiError("Choose the filled template to upload.", field="file")
     sheet, rows = read_upload(upload.filename, upload.data)
     results, unknown, _header_row = check_rows(conn, rows)
+    # Limited upload: rows outside the person's property types / companies are refused.
+    acc = access.of(ctx)
+    if acc is not None and acc.level("bulk.upload") == "limited":
+        for r in results:
+            payload = r["_payload"]
+            if r["ok"] and not acc.in_scope(payload["sbu_id"], payload["legal_entity_id"]):
+                r["ok"] = False
+                r["errors"].append({"column": HEADING.get("sbu", "Property type"),
+                                    "message": "Outside your assigned property types and owning companies."})
     valid = sum(1 for r in results if r["ok"])
     created = []
     if fields.get("mode") == "import":

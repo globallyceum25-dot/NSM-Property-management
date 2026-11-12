@@ -25,19 +25,8 @@ import time
 from http.cookies import SimpleCookie
 from typing import DefaultDict, Deque
 
-from . import db
+from . import access, db
 from .errors import ApiError
-
-ROLES = [
-    ("SUPER_ADMIN", "Super Admin"),
-    ("ADMIN", "Administrator"),
-    ("PROPERTY_MANAGER", "Property Manager"),
-    ("PROPERTY_OFFICER", "Property Officer"),
-    ("DOCUMENT_CONTROLLER", "Document Controller"),
-    ("AUDITOR", "Auditor"),
-    ("VIEWER", "Viewer"),
-]
-ROLE_LABELS = dict(ROLES)
 
 ITERATIONS = int(os.environ.get("REGISTER_PBKDF2_ITERATIONS") or 600000)
 MIN_PASSWORD_LENGTH = 10
@@ -46,8 +35,8 @@ SESSION_HOURS = 12            # without "keep me signed in": 12 hours since last
 REMEMBER_DAYS = 30            # with it: 30 days
 MAX_FAILED = 5                # wrong passwords in a row before a lock
 LOCK_MINUTES = 15
-IP_WINDOW_SECONDS = 15 * 60   # sign-in attempts per address, per window
-IP_MAX_ATTEMPTS = 30
+IP_WINDOW_SECONDS = 15 * 60   # failed attempts per address, per window: wrong passwords,
+IP_MAX_ATTEMPTS = int(os.environ.get("REGISTER_SIGNIN_ATTEMPTS") or 30)   # setup codes...
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
@@ -111,23 +100,29 @@ def password_problem(password, email=None):
 
 # --- users ---------------------------------------------------------------------
 
-def _public(row):
+def role_name(conn, code):
+    row = conn.execute("SELECT name FROM app_role WHERE code = ?", (code,)).fetchone()
+    return row["name"] if row else code
+
+
+def _public(conn, row):
     return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"],
-            "roleLabel": ROLE_LABELS.get(row["role"], row["role"])}
+            "roleLabel": role_name(conn, row["role"]),
+            "mustChangePassword": bool(row["must_change_password"])}
 
 
 def count_users(conn):
     return conn.execute("SELECT COUNT(*) AS n FROM app_user").fetchone()["n"]
 
 
-def create_user(conn, email, name, role, password):
+def create_user(conn, email, name, role, password, must_change=False):
     email = (email or "").strip().lower()
     name = (name or "").strip()
     if not name:
         raise ApiError("Enter the person's name.", field="name")
     if not EMAIL_RE.match(email):
         raise ApiError("Enter a valid email address.", field="email")
-    if role not in ROLE_LABELS:
+    if not conn.execute("SELECT 1 FROM app_role WHERE code = ?", (role,)).fetchone():
         raise ApiError("Choose a role.", field="role")
     problem = password_problem(password, email)
     if problem:
@@ -136,14 +131,17 @@ def create_user(conn, email, name, role, password):
         raise ApiError("There is already an account for %s." % email, 409, "email")
     stamp = _iso(_now())
     new_id = conn.execute(
-        """INSERT INTO app_user (email, name, role, password_hash, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?) RETURNING id""",
-        (email, name, role, hash_password(password), stamp, stamp)).fetchone()["id"]
+        """INSERT INTO app_user (email, name, role, password_hash, must_change_password,
+                                 created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id""",
+        (email, name, role, hash_password(password), 1 if must_change else 0, stamp, stamp)).fetchone()["id"]
     conn.commit()
     return new_id
 
 
-def set_password(conn, email, password):
+def set_password(conn, email, password, must_change=False, keep_session=None):
+    """A new password. It signs the person out everywhere, except (when they
+    changed it themselves) the session they changed it from."""
     email = (email or "").strip().lower()
     problem = password_problem(password, email)
     if problem:
@@ -152,10 +150,22 @@ def set_password(conn, email, password):
     if row is None:
         raise ApiError("No account for %s." % email, 404, "email")
     conn.execute("""UPDATE app_user SET password_hash = ?, failed_logins = 0, locked_until = NULL,
-                    updated_at = ? WHERE id = ?""", (hash_password(password), _iso(_now()), row["id"]))
-    # A new password signs the person out everywhere.
-    conn.execute("DELETE FROM app_session WHERE user_id = ?", (row["id"],))
+                    must_change_password = ?, updated_at = ? WHERE id = ?""",
+                 (hash_password(password), 1 if must_change else 0, _iso(_now()), row["id"]))
+    if keep_session:
+        conn.execute("DELETE FROM app_session WHERE user_id = ? AND token_hash <> ?",
+                     (row["id"], _token_hash(keep_session)))
+    else:
+        conn.execute("DELETE FROM app_session WHERE user_id = ?", (row["id"],))
     conn.commit()
+
+
+def temporary_password():
+    """A one-time password an administrator passes on, often by phone, so it
+    avoids letters that are easy to mix up (l, 1, i, o, 0). About 59 bits."""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+    chars = "".join(secrets.choice(alphabet) for _ in range(12))
+    return "%s-%s-%s" % (chars[:4], chars[4:8], chars[8:12])
 
 
 # --- sessions ------------------------------------------------------------------
@@ -198,7 +208,7 @@ def user_for_token(conn, token):
         conn.execute("UPDATE app_session SET last_seen_at = ?, expires_at = ? WHERE token_hash = ?",
                      (_iso(now), _iso(now + datetime.timedelta(hours=SESSION_HOURS)), row["token_hash"]))
         conn.commit()
-    return _public(row)
+    return _public(conn, row)
 
 
 def end_session(conn, token):
@@ -209,21 +219,28 @@ def end_session(conn, token):
 
 # --- throttling ----------------------------------------------------------------
 
-# Recent sign-in attempt times per address, for this server process.
+# Recent failed attempt times per address, for this server process. Only
+# failures count, so an office signing in from one shared address is not
+# throttled by its own everyday sign-ins.
 _attempts: DefaultDict[str, Deque[float]] = collections.defaultdict(collections.deque)
 _attempts_lock = threading.Lock()
 
 
 def _throttle(ip):
+    """Refuse an address that has failed too often lately."""
     now = time.monotonic()
     with _attempts_lock:
         recent = _attempts[ip or "?"]
         while recent and now - recent[0] > IP_WINDOW_SECONDS:
             recent.popleft()
         if len(recent) >= IP_MAX_ATTEMPTS:
-            raise ApiError("Too many sign-in attempts from this computer. Wait a few minutes "
+            raise ApiError("Too many failed attempts from this computer. Wait a few minutes "
                            "and try again.", 429)
-        recent.append(now)
+
+
+def failed_attempt(ip):
+    with _attempts_lock:
+        _attempts[ip or "?"].append(time.monotonic())
 
 
 # --- first-run setup -----------------------------------------------------------
@@ -299,8 +316,11 @@ def client_ip(handler):
 def get_status(ctx):
     conn = db.get_conn()
     user = user_for_token(conn, token_from(ctx.handler))
-    return 200, {"signedIn": user is not None, "user": user,
-                 "needsSetup": user is None and count_users(conn) == 0}
+    out = {"signedIn": user is not None, "user": user,
+           "needsSetup": user is None and count_users(conn) == 0}
+    if user is not None:
+        out["access"] = access.load(conn, user).public()
+    return 200, out
 
 
 def login(ctx):
@@ -312,35 +332,51 @@ def login(ctx):
         raise ApiError("Enter your email and password.", field="email" if not email else "password")
     _throttle(client_ip(ctx.handler))
 
+    ip = client_ip(ctx.handler)
     wrong = ApiError("The email or password is incorrect.", 401, "password")
     row = conn.execute("SELECT * FROM app_user WHERE email = ?", (email,)).fetchone()
     if row is None:
         _burn_time(password)
+        failed_attempt(ip)
+        access.record(conn, "auth.failed", email, "Unknown email address", ip=ip)
         raise wrong
+    person = {"id": row["id"], "name": row["name"], "email": row["email"]}
     now = _now()
     if row["locked_until"] and row["locked_until"] > _iso(now):
         _burn_time(password)
+        failed_attempt(ip)
+        access.record(conn, "auth.failed", email, "Account locked", person, ip)
         raise ApiError("Too many wrong passwords. This account is locked for a few minutes; "
                        "try again later or ask your administrator.", 423)
     if not verify_password(password, row["password_hash"]):
+        failed_attempt(ip)
         failed = (row["failed_logins"] or 0) + 1
         locked = _iso(now + datetime.timedelta(minutes=LOCK_MINUTES)) if failed >= MAX_FAILED else None
         conn.execute("UPDATE app_user SET failed_logins = ?, locked_until = ? WHERE id = ?",
                      (0 if locked else failed, locked, row["id"]))
-        conn.commit()
+        access.record(conn, "auth.locked" if locked else "auth.failed", email,
+                      "Locked for %d minutes after %d wrong passwords" % (LOCK_MINUTES, MAX_FAILED)
+                      if locked else "Wrong password", person, ip)
         raise wrong
     if not row["is_active"]:
+        access.record(conn, "auth.failed", email, "Account switched off", person, ip)
         raise ApiError("This account has been switched off. Ask your administrator.", 403)
 
     token, max_age = start_session(conn, row["id"], bool(data.get("remember")),
-                                   client_ip(ctx.handler), ctx.handler.headers.get("User-Agent"))
+                                   ip, ctx.handler.headers.get("User-Agent"))
+    access.record(conn, "auth.sign_in", email,
+                  "Kept signed in for %d days" % REMEMBER_DAYS if data.get("remember") else "", person, ip)
     ctx.add_header("Set-Cookie", session_cookie(ctx.handler, token, max_age))
-    return 200, {"signedIn": True, "user": _public(row)}
+    return 200, {"signedIn": True, "user": _public(conn, row)}
 
 
 def logout(ctx):
     conn = db.get_conn()
-    end_session(conn, token_from(ctx.handler))
+    token = token_from(ctx.handler)
+    user = user_for_token(conn, token)
+    if user:
+        access.record(conn, "auth.sign_out", user["email"], "", user, client_ip(ctx.handler))
+    end_session(conn, token)
     ctx.add_header("Set-Cookie", clear_cookie(ctx.handler))
     return 200, {"signedIn": False}
 
@@ -355,6 +391,7 @@ def setup(ctx):
         raise ApiError("The register is already set up. Sign in instead.", 409)
     given = (data.get("setupCode") or "").strip().upper().replace(" ", "")
     if not hmac.compare_digest(given.encode(), code.encode()):
+        failed_attempt(client_ip(ctx.handler))
         raise ApiError("That setup code is not right. Copy it from the terminal where the "
                        "register is running.", 400, "setupCode")
     if (data.get("password") or "") != (data.get("confirm") or ""):
@@ -365,7 +402,9 @@ def setup(ctx):
                                    ctx.handler.headers.get("User-Agent"))
     ctx.add_header("Set-Cookie", session_cookie(ctx.handler, token, max_age))
     row = conn.execute("SELECT * FROM app_user WHERE id = ?", (user_id,)).fetchone()
-    return 201, {"signedIn": True, "user": _public(row)}
+    access.record(conn, "user.create", row["email"], "First Super Admin, created with the setup code",
+                  {"id": row["id"], "name": row["name"], "email": row["email"]}, client_ip(ctx.handler))
+    return 201, {"signedIn": True, "user": _public(conn, row)}
 
 
 # Reachable without signing in. Everything else under /api/ needs a session.

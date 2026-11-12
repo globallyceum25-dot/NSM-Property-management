@@ -20,6 +20,11 @@ window.API = (function () {
       location.replace('/login?expired=1' + (location.hash ? '&next=' + encodeURIComponent(location.hash) : ''));
       return new Promise(function () {});       // the page is leaving
     }
+    if (response.status === 403 && payload && payload.changePassword) {
+      // Signed in with a temporary password: it has to be replaced first.
+      location.replace('/login?change=1');
+      return new Promise(function () {});
+    }
     if (!response.ok) {
       const err = new Error((payload && payload.error) || ('Request failed (' + response.status + ')'));
       err.status = response.status;
@@ -44,6 +49,20 @@ window.API = (function () {
     reference: () => request('GET', '/api/reference'),
     authStatus: () => request('GET', '/api/auth/status'),
     logout: () => request('POST', '/api/auth/logout'),
+    changePassword: (data) => request('POST', '/api/account/password', data),
+
+    listUsers: () => request('GET', '/api/users'),
+    createUser: (data) => request('POST', '/api/users', data),
+    updateUser: (id, data) => request('PUT', '/api/users/' + id, data),
+    resetPassword: (id) => request('POST', '/api/users/' + id + '/reset-password'),
+    signOutUser: (id) => request('POST', '/api/users/' + id + '/sign-out'),
+    unlockUser: (id) => request('POST', '/api/users/' + id + '/unlock'),
+    listRoles: () => request('GET', '/api/roles'),
+    createRole: (data) => request('POST', '/api/roles', data),
+    updateRole: (code, data) => request('PUT', '/api/roles/' + code, data),
+    deleteRole: (code) => request('DELETE', '/api/roles/' + code),
+    listAudit: (filters) => request('GET', '/api/audit' + qs(filters || {})),
+
     listSbus: () => request('GET', '/api/sbus'),
     createSbu: (data) => request('POST', '/api/sbus', data),
     updateSbu: (id, data) => request('PUT', '/api/sbus/' + id, data),

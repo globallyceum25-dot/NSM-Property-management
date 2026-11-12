@@ -8,7 +8,7 @@ import os
 import re
 import uuid
 
-from . import db, errors, masters, srilanka, storage
+from . import access, db, errors, masters, srilanka, storage
 from .srilanka import valid_codes
 
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024
@@ -447,9 +447,16 @@ def _property_filters(q):
     return where, params
 
 
+def _visible_filters(ctx, *keys):
+    """The request's filters plus, for a person with limited access, their scope."""
+    where, params = _property_filters(ctx.query)
+    scope_where, scope_params = access.scope_for(ctx, *keys)
+    return where + scope_where, params + scope_params
+
+
 def list_properties(ctx):
     conn = db.get_conn()
-    where, params = _property_filters(ctx.query)
+    where, params = _visible_filters(ctx, "properties.view")
     sql = _PROPERTY_SELECT
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -461,13 +468,17 @@ def list_properties(ctx):
 def get_property(ctx):
     conn = db.get_conn()
     pid = int(ctx.match.group("id"))
+    access.check_property(ctx, conn, "properties.view", pid)
     row = conn.execute(_PROPERTY_SELECT + " WHERE p.id = ?", (pid,)).fetchone()
     if row is None:
         raise ApiError("Property not found.", 404)
     data = _row_to_dict(row)
+    acc = access.of(ctx)
+    show_documents = acc is None or (acc.can("documents.view") and (
+        acc.level("documents.view") == "yes" or acc.in_scope(row["sbu_id"], row["legal_entity_id"])))
     data["documents"] = [_row_to_dict(d) for d in conn.execute(
         """SELECT * FROM document WHERE property_id = ?
-           ORDER BY doc_type, issue_date DESC NULLS LAST""", (pid,))]
+           ORDER BY doc_type, issue_date DESC NULLS LAST""", (pid,))] if show_documents else []
     return 200, data
 
 
@@ -578,6 +589,7 @@ def _property_payload(ctx, conn):
 def create_property(ctx):
     conn = db.get_conn()
     payload, code = _property_payload(ctx, conn)
+    access.check_payload(ctx, "properties.create", payload["sbu_id"], payload["legal_entity_id"])
     payload["property_code"] = code.upper() if code else _next_property_code(conn, payload["sbu_id"])
     if conn.execute("SELECT 1 FROM property WHERE property_code = ?",
                     (payload["property_code"],)).fetchone():
@@ -600,8 +612,10 @@ def update_property(ctx):
     existing = conn.execute("SELECT * FROM property WHERE id = ?", (pid,)).fetchone()
     if existing is None:
         raise ApiError("Property not found.", 404)
+    access.check_property(ctx, conn, "properties.edit", pid, write=True)
 
     payload, code = _property_payload(ctx, conn)
+    access.check_payload(ctx, "properties.edit", payload["sbu_id"], payload["legal_entity_id"])
     payload["property_code"] = code.upper() if code else existing["property_code"]
     clash = conn.execute("SELECT 1 FROM property WHERE property_code = ? AND id <> ?",
                          (payload["property_code"], pid)).fetchone()
@@ -623,8 +637,13 @@ def update_property(ctx):
 def delete_property(ctx):
     conn = db.get_conn()
     pid = int(ctx.match.group("id"))
+    gone = conn.execute("SELECT property_code, name FROM property WHERE id = ?", (pid,)).fetchone()
+    if gone is None:
+        raise ApiError("Property not found.", 404)
     docs = conn.execute("SELECT stored_name FROM document WHERE property_id = ?",
                         (pid,)).fetchall()
+    ctx.audit_target = "%s · %s" % (gone["property_code"], gone["name"])
+    ctx.audit_detail = "Deleted with its %d document%s" % (len(docs), "" if len(docs) == 1 else "s")
     conn.execute("DELETE FROM document WHERE property_id = ?", (pid,))
     conn.execute("DELETE FROM property WHERE id = ?", (pid,))
     conn.commit()
@@ -638,6 +657,7 @@ def delete_property(ctx):
 def list_documents(ctx):
     conn = db.get_conn()
     pid = int(ctx.match.group("id"))
+    access.check_property(ctx, conn, "documents.view", pid)
     rows = conn.execute(
         """SELECT * FROM document WHERE property_id = ?
            ORDER BY doc_type, issue_date DESC NULLS LAST""", (pid,)).fetchall()
@@ -649,6 +669,7 @@ def create_document(ctx):
     pid = int(ctx.match.group("id"))
     if not conn.execute("SELECT 1 FROM property WHERE id = ?", (pid,)).fetchone():
         raise ApiError("Property not found.", 404)
+    access.check_property(ctx, conn, "documents.upload", pid, write=True)
 
     fields, upload = ctx.form()
 
@@ -700,8 +721,9 @@ def create_document(ctx):
         payload["stored_name"] = "%s%s" % (uuid.uuid4().hex, ext)
         storage.save(payload["stored_name"], upload.data, upload.content_type)
 
+    payload["uploaded_by"] = ctx.user["id"] if ctx.user else None
     columns = ["property_id", "file_name", "stored_name", "mime_type",
-               "size_bytes"] + DOCUMENT_FIELDS
+               "size_bytes", "uploaded_by"] + DOCUMENT_FIELDS
     try:
         new_id = conn.execute(
             "INSERT INTO document (%s) VALUES (%s) RETURNING id"
@@ -746,6 +768,8 @@ def list_all_documents(ctx):
     q = dict(ctx.query)
     text = (q.pop("q", "") or "").strip()
     where, params = _property_filters(q)
+    scope_where, scope_params = access.scope_for(ctx, "documents.view")
+    where, params = where + scope_where, params + scope_params
 
     if text:
         term = "%" + text.lower() + "%"
@@ -779,7 +803,7 @@ def list_all_documents(ctx):
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     order = _DOC_SORT.get(q.get("sort", "newest"), _DOC_SORT["newest"])
     list_sql = """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
-                         s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+                         s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color, p.legal_entity_id,
                          loc.name AS location_name
                   """ + base + clause + " ORDER BY " + order
     *count_rows, rows = db.fetch_many(
@@ -795,7 +819,7 @@ def get_document(ctx):
     doc_id = int(ctx.match.group("id"))
     row = conn.execute(
         """SELECT d.*, p.property_code, p.name AS property_name, p.city, p.district,
-                  s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color,
+                  s.id AS sbu_id, s.code AS sbu_code, s.name AS sbu_name, s.color AS sbu_color, p.legal_entity_id,
                   loc.name AS location_name
            FROM document d
            JOIN property p ON p.id = d.property_id
@@ -804,6 +828,7 @@ def get_document(ctx):
            WHERE d.id = ?""", (doc_id,)).fetchone()
     if row is None:
         raise ApiError("Document not found.", 404)
+    access.check_property(ctx, conn, "documents.view", row["property_id"])
     return 200, _row_to_dict(row)
 
 
@@ -813,6 +838,11 @@ def delete_document(ctx):
     row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if row is None:
         raise ApiError("Document not found.", 404)
+    acc = access.of(ctx)
+    if acc is not None and acc.level("documents.delete") == "limited" and row["uploaded_by"] != acc.user_id:
+        raise ApiError("You can only delete documents you uploaded yourself.", 403)
+    prop = conn.execute("SELECT property_code FROM property WHERE id = ?", (row["property_id"],)).fetchone()
+    ctx.audit_target = "%s · %s" % (prop["property_code"] if prop else "?", row["title"])
     conn.execute("DELETE FROM document WHERE id = ?", (doc_id,))
     conn.commit()
     storage.remove(row["stored_name"])
@@ -826,6 +856,7 @@ def download_document(ctx):
     row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if row is None or not row["stored_name"]:
         raise ApiError("No file attached to this document.", 404)
+    access.check_property(ctx, conn, "documents.download", row["property_id"])
     data = storage.load(row["stored_name"])
     if data is None:
         raise ApiError("The stored file is missing.", 410)
@@ -848,7 +879,7 @@ def get_stats(ctx):
     never disagrees with the list next to it.
     """
     conn = db.get_conn()
-    where, params = _property_filters(ctx.query)
+    where, params = _visible_filters(ctx, "dashboard.view", "alerts.view")
     clause = (" WHERE " + " AND ".join(where)) if where else ""
     # The set every figure below is computed over.
     subset = "SELECT p.* FROM property p" + clause
@@ -977,7 +1008,9 @@ def get_stats(ctx):
 
 def export_properties_csv(ctx):
     conn = db.get_conn()
-    rows = conn.execute(_PROPERTY_SELECT + " ORDER BY COALESCE(s.sort_order, 500), s.name, p.property_code").fetchall()
+    where, params = access.scope_for(ctx, "properties.export")
+    rows = conn.execute(_PROPERTY_SELECT + (" WHERE " + " AND ".join(where) if where else "")
+                        + " ORDER BY COALESCE(s.sort_order, 500), s.name, p.property_code", params).fetchall()
     buf = io.StringIO()
     headers = ["property_code", "name", "sbu_code", "sbu_name",
                "entity_code", "entity_name",
@@ -1039,9 +1072,9 @@ ROUTES = ROUTES + masters.ROUTES
 from . import bulk  # noqa: E402  (bulk reads helpers above at request time)
 ROUTES = ROUTES + bulk.ROUTES
 
-# Sign-in and sessions.
-from . import auth  # noqa: E402
-ROUTES = ROUTES + auth.ROUTES
+# Sign-in and sessions; users, roles and the audit log.
+from . import admin, auth  # noqa: E402
+ROUTES = ROUTES + auth.ROUTES + admin.ROUTES
 
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]

@@ -145,7 +145,7 @@
 
   function coverHtml(p, ratio) {
     const aspect = 'aspect-ratio: 100 / ' + (ratio * 100).toFixed(1);
-    if (p.cover_document_id) {
+    if (p.cover_document_id && allowedOn('documents.download', p)) {
       return '<div class="cover" style="' + aspect + '">' +
         '<img class="photo" src="/api/documents/' + p.cover_document_id + '/file" ' +
           'alt="Photograph of ' + esc(p.name) + '" loading="lazy"></div>';
@@ -269,8 +269,10 @@
           '<div class="pcard-actions">' +
             '<button class="circle-btn sm" data-locate="' + p.id + '" title="Show on map" ' +
               'aria-label="Show on map">' + icon('map') + '</button>' +
-            '<button class="circle-btn sm" data-edit="' + p.id + '" title="Edit" ' +
-              'aria-label="Edit property">' + icon('pencil') + '</button>' +
+            (allowedOn('properties.edit', p)
+              ? '<button class="circle-btn sm" data-edit="' + p.id + '" title="Edit" ' +
+                'aria-label="Edit property">' + icon('pencil') + '</button>'
+              : '') +
           '</div>' +
         '</div>' +
         '<h3 class="pcard-title">' + esc(p.name) + verifiedHtml(p) + '</h3>' +
@@ -305,6 +307,69 @@
     return ((parts[0] || '?')[0] + (parts.length > 1 ? parts[parts.length - 1][0] : '')).toUpperCase();
   }
 
+  /* ---------- access: what the signed-in person may do ----------
+   * The server checks every request; this only keeps the screens to what the
+   * person can use. Controls carry data-perm="module.action" and are hidden by
+   * one generated style rule per permission they lack. */
+
+  const VIEW_PERMS = {
+    portfolio: ['properties.view'], documents: ['documents.view'], dashboard: ['dashboard.view'],
+    sbus: ['types.view'], entities: ['companies.view'], masters: ['masters.view'],
+    access: ['users.view', 'roles.manage', 'audit.view']
+  };
+
+  function level(key) {
+    return (state.access && state.access.permissions[key]) || 'no';
+  }
+
+  function can(key) {
+    return level(key) !== 'no';
+  }
+
+  // The same rule as the server: assigned types AND companies narrow; nothing
+  // assigned means nothing in scope.
+  function inScope(p) {
+    const scope = (state.access && state.access.scope) || { types: [], companies: [] };
+    if (!scope.types.length && !scope.companies.length) return false;
+    if (scope.types.length && scope.types.indexOf(Number(p.sbu_id)) === -1) return false;
+    if (scope.companies.length && scope.companies.indexOf(Number(p.legal_entity_id)) === -1) return false;
+    return true;
+  }
+
+  function allowedOn(key, p) {
+    const l = level(key);
+    return l === 'yes' || (l === 'limited' && !!p && inScope(p));
+  }
+
+  function mayDeleteDoc(d) {
+    const l = level('documents.delete');
+    return l === 'yes' || (l === 'limited' && state.user && d.uploaded_by === state.user.id);
+  }
+
+  function viewAllowed(view) {
+    return (VIEW_PERMS[view] || []).some(can);
+  }
+
+  function applyAccess() {
+    const rules = Object.keys(state.access.permissions)
+      .filter((key) => !can(key))
+      .map((key) => '[data-perm="' + key + '"]{display:none!important}');
+    Object.keys(VIEW_PERMS).forEach(function (view) {
+      if (!viewAllowed(view)) rules.push('.nav-pill .tab[data-view="' + view + '"]{display:none!important}');
+    });
+    let style = document.getElementById('access-rules');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'access-rules';
+      document.head.appendChild(style);
+    }
+    style.textContent = rules.join('\n');
+  }
+
+  function firstView() {
+    return Object.keys(VIEW_PERMS).filter(viewAllowed)[0] || 'portfolio';
+  }
+
   function renderAccount(user) {
     const initials = personInitials(user.name);
     $('#account-initials').textContent = initials;
@@ -323,7 +388,10 @@
       return;
     }
     state.user = status.user;
+    state.access = status.access;
+    if (state.user.mustChangePassword) { location.replace('/login?change=1'); return; }
     renderAccount(state.user);
+    applyAccess();
     try {
       state.reference = await API.reference();
     } catch (err) {
@@ -339,6 +407,8 @@
 
     buildStaticSelects();
     window.__districts = state.reference.districts;   // used by the masters form
+    Masters.setAccess(can);
+    Access.init(toast, state);
     Masters.init(toast, async function (key) {
       // Keep the filters and the property form in step with edits made in the
       // Master sheets module.
@@ -356,10 +426,12 @@
 
     await refreshSbus();
     await refreshEntities();
-    await refreshLocations();
-    await refreshProperties();
-    loadAlerts();
+    if (can('properties.view') || can('masters.view')) await refreshLocations();
+    if (can('properties.view')) await refreshProperties();
+    if (can('alerts.view')) loadAlerts();
 
+    // Someone without the Portfolio starts on the first page they can open.
+    if (!viewAllowed('portfolio') && !location.hash) location.replace('#' + firstView());
     applyHash();
     window.addEventListener('hashchange', applyHash);
     // A link straight to another page arrives through switchView; the
@@ -369,7 +441,7 @@
 
   /* ---------- links: #dashboard, #portfolio/grid, #property/12 ... ---------- */
 
-  const VIEWS = ['portfolio', 'documents', 'dashboard', 'sbus', 'entities', 'masters'];
+  const VIEWS = ['portfolio', 'documents', 'dashboard', 'sbus', 'entities', 'masters', 'access'];
   const MODES = ['map', 'grid', 'table'];
 
   function writeHash() {
@@ -952,10 +1024,10 @@
       '<div class="tile-top">' +
         avatarHtml(opts.code, opts.color, 'lg') +
         '<div class="tile-actions">' +
-          '<button class="circle-btn sm" ' + opts.editAttr + ' title="Edit" aria-label="Edit">' +
-            icon('pencil') + '</button>' +
-          '<button class="circle-btn sm danger" ' + opts.deleteAttr + ' title="Delete" aria-label="Delete">' +
-            icon('trash') + '</button>' +
+          (opts.canEdit ? '<button class="circle-btn sm" ' + opts.editAttr + ' title="Edit" aria-label="Edit">' +
+            icon('pencil') + '</button>' : '') +
+          (opts.canDelete ? '<button class="circle-btn sm danger" ' + opts.deleteAttr + ' title="Delete" aria-label="Delete">' +
+            icon('trash') + '</button>' : '') +
         '</div>' +
       '</div>' +
       '<h3>' + esc(opts.name) + ' <span class="code">' + esc(opts.code) + '</span></h3>' +
@@ -983,7 +1055,8 @@
       count: sbu.property_count,
       openId: sbu.id,
       editAttr: 'data-edit-sbu="' + sbu.id + '"',
-      deleteAttr: 'data-delete-sbu="' + sbu.id + '"'
+      deleteAttr: 'data-delete-sbu="' + sbu.id + '"',
+      canEdit: can('types.edit'), canDelete: can('types.delete')
     })).join('');
     if (onGroupPage()) renderGroupPage();
   }
@@ -1005,7 +1078,8 @@
       badge: entity.name === entity.short_code ? '<span class="warn-chip">Name unconfirmed</span>' : '',
       openId: entity.id,
       editAttr: 'data-edit-entity="' + entity.id + '"',
-      deleteAttr: 'data-delete-entity="' + entity.id + '"'
+      deleteAttr: 'data-delete-entity="' + entity.id + '"',
+      canEdit: can('companies.edit'), canDelete: can('companies.delete')
     })).join('');
     if (onGroupPage()) renderGroupPage();
   }
@@ -1223,7 +1297,7 @@
       ? '<span class="file-line" title="' + esc(d.file_name) + '">' + icon('file') +
           '<span>' + esc(d.file_name) + '</span><small>' + esc(Fmt.fileSize(d.size_bytes)) + '</small></span>'
       : '<span class="file-line is-none">No file attached</span>';
-    const fileButtons = d.stored_name
+    const fileButtons = d.stored_name && allowedOn('documents.download', d)
       ? '<a class="circle-btn sm" href="/api/documents/' + d.id + '/file" target="_blank" rel="noopener" ' +
           'title="View the file" aria-label="View ' + esc(d.file_name) + '">' + icon('open') + '</a>' +
         '<a class="circle-btn sm" href="/api/documents/' + d.id + '/file?disposition=attachment" ' +
@@ -2083,7 +2157,7 @@
       cards: '#sbu-cards', detail: '#sbu-detail', index: '#sbu-index', view: '#view-sbus',
       filter: 'sbu_id', plural: 'Property types', singular: 'Property type',
       list: () => state.sbus, code: (g) => g.code, colour: (g) => g.color,
-      meta: () => [], edit: 'data-edit-sbu', editLabel: 'Edit type',
+      meta: () => [], edit: 'data-edit-sbu', editLabel: 'Edit type', editPerm: 'types.edit',
       none: 'No properties of this type yet.', typeColumn: false
     },
     entities: {
@@ -2091,7 +2165,7 @@
       filter: 'legal_entity_id', plural: 'Owning companies', singular: 'Owning company',
       list: () => state.entities, code: (g) => g.short_code, colour: () => '#04524d',
       meta: (g) => [g.reg_no ? 'Reg. ' + g.reg_no : '', g.name === g.short_code ? 'Name unconfirmed' : ''],
-      edit: 'data-edit-entity', editLabel: 'Edit company',
+      edit: 'data-edit-entity', editLabel: 'Edit company', editPerm: 'companies.edit',
       none: 'No properties are recorded under this company yet.', typeColumn: true
     }
   };
@@ -2230,7 +2304,8 @@
             (item.description ? '<p class="sh-desc">' + esc(item.description) + '</p>' : '') + '</div>' +
         '</div>' +
         '<div class="sh-actions">' +
-          '<button class="btn btn-ghost btn-sm" ' + g.edit + '="' + id + '">' + icon('pencil') + esc(g.editLabel) + '</button>' +
+          (can(g.editPerm) ? '<button class="btn btn-ghost btn-sm" ' + g.edit + '="' + id + '">' +
+            icon('pencil') + esc(g.editLabel) + '</button>' : '') +
           '<button class="btn btn-dark btn-sm" data-group-map>' + icon('map') + 'Show on map</button>' +
         '</div>' +
         '<div class="sh-stats">' +
@@ -2337,6 +2412,10 @@
       return '<div class="dd-preview is-empty">' + icon('paperclip') +
         '<p><b>No file attached</b>The reference is recorded; the scan can follow later.</p></div>';
     }
+    if (!allowedOn('documents.download', d)) {
+      return '<div class="dd-preview is-empty">' + icon('lock') +
+        '<p><b>A file is attached</b>Your access lets you see the record, not open the file.</p></div>';
+    }
     const ext = extensionOf(d.file_name || '');
     if (IMAGE_TYPES.indexOf(ext) !== -1) {
       return '<div class="dd-preview"><img src="' + src + '" alt="' + esc(d.title) + '"></div>';
@@ -2352,7 +2431,7 @@
 
   function docPanelHtml(d) {
     const src = '/api/documents/' + d.id + '/file';
-    const actions = (d.stored_name
+    const actions = (d.stored_name && allowedOn('documents.download', d)
         ? '<a class="btn btn-dark btn-sm" href="' + src + '" target="_blank" rel="noopener">' +
             icon('open') + 'View file</a>' +
           '<a class="btn btn-ghost btn-sm" href="' + src + '?disposition=attachment">' +
@@ -2456,10 +2535,12 @@
       .filter(Boolean).map(esc).join('<br>');
 
     return '<div class="detail-actions">' +
-        '<button class="btn btn-dark btn-sm" data-edit="' + p.id + '">' + icon('pencil') + 'Edit property</button>' +
+        (allowedOn('properties.edit', p)
+          ? '<button class="btn btn-dark btn-sm" data-edit="' + p.id + '">' + icon('pencil') + 'Edit property</button>' : '') +
         '<button class="btn btn-ghost btn-sm" data-locate="' + p.id + '">' + icon('map') + 'Show on map</button>' +
-        '<button class="btn btn-ghost btn-sm" data-add-doc="' + p.id + '">' + icon('plus') + 'Add document</button>' +
-        '<button class="btn btn-danger btn-sm" data-delete="' + p.id + '">Delete</button>' +
+        (allowedOn('documents.upload', p)
+          ? '<button class="btn btn-ghost btn-sm" data-add-doc="' + p.id + '">' + icon('plus') + 'Add document</button>' : '') +
+        (can('properties.delete') ? '<button class="btn btn-danger btn-sm" data-delete="' + p.id + '">Delete</button>' : '') +
       '</div>' +
       '<section class="detail-section"><h3>Classification</h3><dl class="detail-grid">' +
         row('Property type', '<span class="sbu-pill"><span class="swatch" style="background:' +
@@ -2507,11 +2588,11 @@
         : '') +
 
       '<section class="detail-section"><h3>Documents (' + p.documents.length + ')</h3>' +
-        documentsHtml(p.documents) +
+        documentsHtml(p.documents, p) +
       '</section>';
   }
 
-  function documentsHtml(documents) {
+  function documentsHtml(documents, p) {
     if (!documents.length) {
       return '<p class="muted">No deed, lease or other document recorded for this property yet.</p>';
     }
@@ -2530,7 +2611,7 @@
         d.amount ? Fmt.money(d.amount, d.currency) : ''
       ].filter(Boolean).join(' · ');
 
-      const fileBits = d.stored_name
+      const fileBits = d.stored_name && allowedOn('documents.download', p)
         ? '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file" target="_blank" rel="noopener">' +
             icon('open') + 'View</a>' +
           '<a class="btn btn-ghost btn-sm" href="/api/documents/' + d.id + '/file?disposition=attachment">' +
@@ -2541,7 +2622,8 @@
       return '<div class="doc-item">' +
         '<div class="doc-top"><span class="doc-type ' + esc(d.doc_type) + '">' +
           esc(labelFor('documentTypes', d.doc_type)) + '</span>' +
-          '<button class="btn btn-danger btn-sm" data-delete-doc="' + d.id + '">Remove</button></div>' +
+          (mayDeleteDoc(d) ? '<button class="btn btn-danger btn-sm" data-delete-doc="' + d.id + '">Remove</button>' : '') +
+        '</div>' +
         '<h4>' + esc(d.title) + '</h4>' +
         '<p class="doc-meta">' + meta + expiryNote + '</p>' +
         (d.notes ? '<p class="doc-meta">' + esc(d.notes) + '</p>' : '') +
@@ -3292,6 +3374,7 @@
     if (view === 'dashboard') renderDashboard();
     if (view === 'documents') renderDocuments();
     if (view === 'masters') Masters.show();
+    if (view === 'access') Access.show();
     writeHash();
   }
 

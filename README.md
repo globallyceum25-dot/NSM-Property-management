@@ -252,8 +252,9 @@ an account exists. In a container, set `REGISTER_ADMIN_EMAIL`,
 `REGISTER_ADMIN_PASSWORD` (and optionally `REGISTER_ADMIN_NAME`) to create that
 account at start-up instead.
 
-**Everyone else**, from the same machine (passwords are typed at a hidden
-prompt, never on the command line):
+**Everyone else** is added from **Users & access** (below). From the same
+machine there is also a command line (passwords are typed at a hidden prompt,
+never on the command line):
 
 ```bash
 python3 -m server.users add --email a.perera@company.lk --name "A. Perera" --role PROPERTY_MANAGER
@@ -268,12 +269,8 @@ python3 -m server.users list
 everywhere. "Forgot password?" on the sign-in page tells people to ask their
 administrator; the register does not send email.
 
-**Roles** come from the access matrix in
-`docs/access/Property Register - Roles and Access.xlsx`: Super Admin, Admin,
-Property Manager, Property Officer, Document Controller, Auditor and Viewer.
-Each account has one, shown in its account menu. **They are not enforced yet:**
-until the matrix is approved, every signed-in person can see and change
-everything, so give accounts only to people who should.
+Anyone can change their own password from the account menu. Someone given a
+temporary password must choose their own before they can do anything else.
 
 **How it is protected:**
 
@@ -283,8 +280,9 @@ everything, so give accounts only to people who should.
   database keeps only its SHA-256. It lasts 12 hours from the last use, or 30
   days with "Keep me signed in". Signing out ends it on the server.
 - Five wrong passwords lock an account for 15 minutes, and one address gets 30
-  attempts per 15 minutes. The error never says whether the email or the
-  password was wrong.
+  failed attempts per 15 minutes (successful sign-ins don't count, so an office
+  sharing one address is not slowed down). The error never says whether the
+  email or the password was wrong.
 - Every API call except `/api/reference` (the health check) needs a session.
   Changes coming from another site's page are refused, and pages may not be
   framed by other sites.
@@ -295,6 +293,52 @@ everything, so give accounts only to people who should.
 
 Accounts are kept apart from the register data: `reset --wipe` and the bulk
 import leave them alone.
+
+## Users & access
+
+The **Users & access** page (shield icon) has three tabs, each shown only to
+those allowed to use it.
+
+**People.** Everyone who can sign in: role, scope, status (active, locked, must
+set a password, switched off) and last sign-in. **Add person** takes a name,
+email, role and scope, and shows a one-time temporary password to pass on in
+person or by phone; the register never stores it readably and the person must
+replace it at their first sign-in. Opening a person lets you change their role
+or scope, reset their password, sign them out everywhere, unlock them, or
+switch their access off. Switching off keeps the account, so their name stays
+on everything they did.
+
+**Roles & permissions.** The access matrix from
+`docs/access/Property Register - Roles and Access.xlsx`, now live. Each of the
+34 actions in 10 modules is **Yes**, **Limited** or **No** for each role:
+
+| Limited means | For |
+| --- | --- |
+| only properties of the person's assigned property types **and** owning companies | viewing, creating, editing and exporting properties; bulk upload; viewing, downloading and attaching documents; the dashboard and alerts |
+| only documents they uploaded themselves | editing and deleting documents |
+| not Super Admins, nor anyone who can manage roles | creating, changing and switching off users |
+| people sharing one of their property types or companies | viewing users |
+
+The seven roles start exactly as the workbook says. A Super Admin can change
+any role (changes apply at once), add custom roles, and compare all roles side
+by side. Super Admin itself always has everything.
+
+**Activity.** The audit log: every sign-in, failed sign-in and lockout; every
+change to people and roles (with what changed, from what to what); and every
+property, document, bulk upload, property type, company and master-sheet change
+— who, when and from which address. Filter by kind, person, period or text.
+
+**The rules the server enforces**, whatever the screen shows:
+
+- Every API route has a permission; a route without one is refused (a test
+  checks they all have one). Limited access filters lists, the dashboard and
+  exports to the person's scope, and refuses single records outside it.
+- Only someone with a protected role (Super Admin, or a role that can manage
+  roles) can create, change or switch off such a person, or hand such a role
+  out, so nobody can give away more power than they hold.
+- Nobody can change their own role or switch themselves off, and the last
+  active Super Admin cannot be removed.
+- Switching someone off or resetting their password signs them out everywhere.
 
 ## What it does
 
@@ -740,10 +784,17 @@ Sri Lanka; selecting a district fills the province automatically.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/auth/status` | whether this browser is signed in, as whom, and whether the register still needs its first account |
+| GET | `/api/auth/status` | whether this browser is signed in, as whom, with their `access` (permission levels and scope), and whether the register still needs its first account |
 | POST | `/api/auth/login` | `email`, `password`, `remember`; sets the session cookie |
 | POST | `/api/auth/logout` | ends this session |
 | POST | `/api/auth/setup` | first account only: `name`, `email`, `password`, `confirm`, `setupCode` |
+| POST | `/api/account/password` | change your own password: `current`, `password`, `confirm` |
+| GET/POST | `/api/users` | list people / add one (returns a one-time `temporaryPassword`) |
+| GET/PUT | `/api/users/{id}` | one person / change `name`, `email`, `role`, `scope` (`types`, `companies`), `isActive` |
+| POST | `/api/users/{id}/reset-password`, `/sign-out`, `/unlock` | new temporary password; end their sessions; clear a lockout |
+| GET/POST | `/api/roles` | the modules, actions and roles with their levels / add a custom role (`name`, `description`, `copyFrom`) |
+| PUT/DELETE | `/api/roles/{code}` | change a role's `name`, `description`, `permissions` (`{action: yes/limited/no}`) / delete a custom role |
+| GET | `/api/audit` | the audit log, newest first; `category`, `user_id`, `days`, `q`, `before` (paging), `limit` |
 | GET | `/api/reference` | districts, provinces, enumerations, map bounds (no sign-in needed) |
 | GET/POST | `/api/sbus` | list / create property types |
 | PUT/DELETE | `/api/sbus/{id}` | update / delete a property type |
@@ -798,9 +849,9 @@ confirmation, and act on whichever database `.env` names: on Supabase, use
 
 By design, and worth agreeing before Stage 2:
 
-- **Roles are recorded but not enforced.** Everyone signed in can read and
-  change everything until the access matrix is approved and built in; there is
-  no users screen yet (accounts are managed with `python3 -m server.users`).
+- Not yet built from the access matrix: editing a document's details, backup
+  and restore, and bulk clean-up of data. Their permissions are in place for
+  when they are.
 - No tenancy/rent ledger, invoicing, receipts or arrears tracking.
 - No maintenance requests, inspections or work orders.
 - No document versioning or approval workflow — uploading a new lease adds a

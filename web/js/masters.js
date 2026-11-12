@@ -14,6 +14,17 @@ window.Masters = (function () {
   let filter = '';
   let loaded = false;
   let notify = function () {};
+  let allowed = function () { return true; };   // the host app's permission check
+
+  // The property type and company sheets follow their own modules' permissions.
+  function perm(action, key) {
+    const module = { sbu: 'types', legal_entity: 'companies' }[key || (current && current.key)] || 'masters';
+    return allowed(module + '.' + action);
+  }
+
+  function setAccess(canFn) {
+    allowed = canFn || allowed;
+  }
   let onChange = function () {};       // lets the host app re-read the masters
 
   function init(toastFn, changeFn) {
@@ -41,7 +52,7 @@ window.Masters = (function () {
   async function show() {
     if (!loaded) {
       try {
-        sheets = await API.listMasters();
+        sheets = (await API.listMasters()).filter((sheet) => perm('view', sheet.key));
       } catch (err) {
         notify('Could not load master sheets: ' + err.message, true);
         return;
@@ -87,7 +98,7 @@ window.Masters = (function () {
     $('#master-search').value = '';
     $('#master-title').textContent = current.label;
     $('#master-description').textContent = current.description;
-    $('#btn-new-master-row').hidden = !current.editable;
+    $('#btn-new-master-row').hidden = !current.editable || !perm('create');
     renderNav();
     renderGrid();
   }
@@ -111,7 +122,7 @@ window.Masters = (function () {
     const columns = gridColumns();
     $('#master-head').innerHTML =
       columns.map((c) => '<th>' + Fmt.esc(c.label) + '</th>').join('') +
-      (current.editable ? '<th></th>' : '');
+      (current.editable && (perm('edit') || perm('delete')) ? '<th></th>' : '');
 
     const rows = current.rows.filter(function (row) {
       if (!filter) return true;
@@ -135,11 +146,11 @@ window.Masters = (function () {
       }).join('');
 
       const used = row._used || 0;
-      const actions = current.editable
+      const actions = current.editable && (perm('edit') || perm('delete'))
         ? '<td class="row-actions">' +
-            '<button class="btn btn-ghost btn-sm" data-master-edit="' + row.id + '">Edit</button> ' +
-            '<button class="btn btn-danger btn-sm" data-master-delete="' + row.id + '"' +
-              (used ? ' title="Used by ' + used + ' record(s)"' : '') + '>Delete</button>' +
+            (perm('edit') ? '<button class="btn btn-ghost btn-sm" data-master-edit="' + row.id + '">Edit</button> ' : '') +
+            (perm('delete') ? '<button class="btn btn-danger btn-sm" data-master-delete="' + row.id + '"' +
+              (used ? ' title="Used by ' + used + ' record(s)"' : '') + '>Delete</button>' : '') +
           '</td>'
         : '';
       return '<tr>' + cells + actions + '</tr>';
@@ -149,7 +160,7 @@ window.Masters = (function () {
     empty.hidden = rows.length > 0;
     empty.textContent = current.rows.length
       ? 'No rows match "' + filter + '".'
-      : 'This sheet is empty.' + (current.editable ? ' Use + New row to add one.' : '');
+      : 'This sheet is empty.' + (current.editable && perm('create') ? ' Use + New row to add one.' : '');
   }
 
   /* ---------- add / edit ---------- */
@@ -297,7 +308,7 @@ window.Masters = (function () {
   }
 
   async function reload() {
-    sheets = await API.listMasters();
+    sheets = (await API.listMasters()).filter((sheet) => perm('view', sheet.key));
     const key = current.key;
     current = await API.getMaster(key);
     renderNav();
@@ -305,5 +316,5 @@ window.Masters = (function () {
     try { await onChange(key); } catch (e) { /* host refresh is best-effort */ }
   }
 
-  return { init: init, show: show };
+  return { init: init, show: show, setAccess: setAccess };
 })();

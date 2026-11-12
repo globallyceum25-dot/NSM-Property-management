@@ -54,6 +54,13 @@ class BrowserSmokeTest(RegisterTestCase):
             page.locator("#view-masters.is-active #masters-nav .master-link").first.wait_for()
             page.goto(self.base + "/#dashboard")
             page.locator("#view-dashboard.is-active").wait_for()
+            # Users & access: the people list, the role matrix and the activity log.
+            page.goto(self.base + "/#access")
+            page.locator("#people-rows tr").first.wait_for()
+            page.click("[data-atab=roles]")
+            page.locator("#role-editor .perm-row").first.wait_for()
+            page.click("[data-atab=activity]")
+            page.locator("#audit-list .audit-item").first.wait_for()
 
             # Open a property from the register: the drawer loads its documents.
             page.goto(self.base + "/#property/1")

@@ -62,8 +62,24 @@
   if (params.get('expired')) show($('#login-note'), 'Your session has ended. Sign in again to carry on.');
   else if (params.get('signedout')) show($('#login-note'), 'You have signed out.');
 
+  // A temporary password: the person chooses their own before going in. The
+  // temporary one is kept only in this page's memory, to prove it is them.
+  let temporary = '';
+
+  function showChange(user, current) {
+    temporary = current || '';
+    $('#signin-view').hidden = true;
+    $('#setup-view').hidden = true;
+    $('#change-view').hidden = false;
+    $('#c-username').value = user ? user.email : '';
+    $('#c-current-field').hidden = !!temporary;
+    show($('#login-note'), '');
+    (temporary ? $('#c-password') : $('#c-current')).focus();
+  }
+
   // Already signed in? Go straight in. A brand-new register? Set it up.
   call('GET', '/api/auth/status').then(function (status) {
+    if (status.signedIn && status.user.mustChangePassword) { showChange(status.user, ''); return; }
     if (status.signedIn) { location.replace(home); return; }
     if (status.needsSetup) {
       $('#signin-view').hidden = true;
@@ -121,7 +137,12 @@
     const button = $('#btn-signin');
     busy(button, 'Signing in…');
     try {
-      await call('POST', '/api/auth/login', { email: email, password: password, remember: form.remember.checked });
+      const result = await call('POST', '/api/auth/login', { email: email, password: password, remember: form.remember.checked });
+      if (result.user && result.user.mustChangePassword) {
+        busy(button, null);
+        showChange(result.user, password);
+        return;
+      }
       button.textContent = 'Welcome';
       location.replace(home);
     } catch (err) {
@@ -146,16 +167,60 @@
     return password.length < 10 ? Math.min(s, 1) : s;
   }
 
-  $('#s-password').addEventListener('input', function () {
-    const value = this.value;
+  function meter(input, host) {
+    input.addEventListener('input', function () { paintStrength(this.value, host); });
+  }
+
+  function paintStrength(value, meter) {
     const s = value ? score(value) : 0;
-    const meter = $('#strength');
     meter.dataset.score = String(s);
     meter.querySelector('i').style.width = (s / 4 * 100) + '%';
     meter.querySelector('.label').textContent = !value
       ? 'At least 10 characters. A short sentence works well.'
       : (value.length < 10 ? (10 - value.length) + ' more characters needed.'
         : ['Weak', 'Weak', 'Fair', 'Good', 'Strong'][s] + '.');
+  }
+
+  meter($('#s-password'), $('#strength'));
+  meter($('#c-password'), $('#c-strength'));
+
+  $('#change-form').addEventListener('submit', async function (event) {
+    event.preventDefault();
+    const form = event.target;
+    const alert = $('#change-alert');
+    show(alert, '');
+    const current = temporary || form.current.value;
+    if (!current) {
+      markInvalid(form.current, true);
+      show(alert, 'Enter the temporary password you were given.');
+      form.current.focus();
+      return;
+    }
+    if (form.password.value !== form.confirm.value) {
+      markInvalid(form.confirm, true);
+      show(alert, 'The two passwords do not match.');
+      form.confirm.focus();
+      return;
+    }
+    const button = $('#btn-change');
+    busy(button, 'Saving…');
+    try {
+      await call('POST', '/api/account/password',
+        { current: current, password: form.password.value, confirm: form.confirm.value });
+      location.replace(home);
+    } catch (err) {
+      busy(button, null);
+      show(alert, err.message);
+      const field = err.field === 'current' ? form.current : (err.field && form.elements[err.field]);
+      if (err.field === 'current') { temporary = ''; $('#c-current-field').hidden = false; }
+      if (field) { markInvalid(field, true); field.focus(); }
+      shake(form);
+    }
+  });
+
+  $('#btn-change-signout').addEventListener('click', async function () {
+    try { await call('POST', '/api/auth/logout'); } catch (e) { /* signed out anyway */ }
+    location.replace('/login?signedout=1');
   });
 
   $('#setup-form').addEventListener('submit', async function (event) {

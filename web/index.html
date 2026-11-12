@@ -55,6 +55,15 @@
   <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6 6.5l.9 12.6a1.5 1.5 0 0 0 1.5 1.4h7.2a1.5 1.5 0 0 0 1.5-1.4L18 6.5M10 10.5v6M14 10.5v6"/></symbol>
   <symbol id="i-paperclip" viewBox="0 0 24 24"><path d="m20 11.5-8.1 8.1a5 5 0 0 1-7.1-7.1l8.4-8.4a3.3 3.3 0 0 1 4.7 4.7l-8.4 8.4a1.7 1.7 0 0 1-2.4-2.4l7.7-7.7"/></symbol>
   <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3 5 6v5.5c0 4.4 3 8.2 7 9.5 4-1.3 7-5.1 7-9.5V6z"/><path d="M12 8.5v4.5M12 16.3v.2"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.6 3.2-5.8 6.5-5.8s5.9 2.2 6.5 5.8"/><path d="M15.5 4.8a3.4 3.4 0 0 1 0 6.4M18 14.6c2 .8 3.2 2.7 3.6 5.4"/></symbol>
+  <symbol id="i-user-plus" viewBox="0 0 24 24"><circle cx="10" cy="8" r="3.6"/><path d="M3 20c.6-3.6 3.3-5.8 7-5.8 1.3 0 2.5.3 3.5.8M18.5 13v7M15 16.5h7"/></symbol>
+  <symbol id="i-key" viewBox="0 0 24 24"><circle cx="8" cy="15" r="4.2"/><path d="m11 12 8.5-8.5M16.5 6.5 19 9M14 9.5l2 2"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/></symbol>
+  <symbol id="i-unlock" viewBox="0 0 24 24"><rect x="5" y="10.5" width="14" height="10" rx="2.5"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 6.8-1.2"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><path d="M3 12h4l2.5-6 5 12 2.5-6h4"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14M10 16.5 5.5 12 10 7.5M5.5 12H15"/></symbol>
+  <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8M7 6.3a7.5 7.5 0 1 0 10 0"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.5 8.5 0 0 1 9.4 3.8a8.5 8.5 0 1 0 10.8 10.8z"/></symbol>
@@ -85,11 +94,12 @@
     <button class="tab" data-view="sbus" title="Property types"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Property types</span></button>
     <button class="tab" data-view="entities" title="Owning companies"><svg class="ic"><use href="#i-landmark"/></svg><span class="tab-label">Owning companies</span></button>
     <button class="tab" data-view="masters" title="Master sheets"><svg class="ic"><use href="#i-database"/></svg><span class="tab-label">Master sheets</span></button>
+    <button class="tab" data-view="access" title="Users &amp; access"><svg class="ic"><use href="#i-shield"/></svg><span class="tab-label">Users &amp; access</span></button>
   </nav>
 
   <div class="topbar-actions">
     <div class="pop-anchor">
-      <button class="circle-btn" id="btn-alerts" aria-label="Documents expiring soon" aria-haspopup="true" aria-expanded="false">
+      <button class="circle-btn" id="btn-alerts" data-perm="alerts.view" aria-label="Documents expiring soon" aria-haspopup="true" aria-expanded="false">
         <svg class="ic"><use href="#i-bell"/></svg>
         <span class="dot-badge" id="alert-count" hidden></span>
       </button>
@@ -113,10 +123,10 @@
         </button>
       </div>
     </div>
-    <a class="circle-btn" href="/api/export/properties.csv" title="Export the register as CSV" aria-label="Export CSV">
+    <a class="circle-btn" href="/api/export/properties.csv" data-perm="properties.export" title="Export the register as CSV" aria-label="Export CSV">
       <svg class="ic"><use href="#i-download"/></svg>
     </a>
-    <button class="btn btn-dark" id="btn-new-property"><svg class="ic"><use href="#i-plus"/></svg>New property</button>
+    <button class="btn btn-dark" id="btn-new-property" data-perm="properties.create"><svg class="ic"><use href="#i-plus"/></svg>New property</button>
     <div class="pop-anchor">
       <button class="account-btn" id="btn-account" aria-label="Your account" aria-haspopup="true" aria-expanded="false">
         <span class="account-initials" id="account-initials">··</span>
@@ -130,6 +140,7 @@
           </div>
         </div>
         <p class="account-role"><span>Role</span><b id="account-role"></b></p>
+        <button class="btn btn-ghost btn-block" id="btn-change-password" role="menuitem"><svg class="ic"><use href="#i-key"/></svg>Change password</button>
         <button class="btn btn-ghost btn-block" id="btn-signout" role="menuitem"><svg class="ic"><use href="#i-open"/></svg>Sign out</button>
       </div>
     </div>
@@ -266,7 +277,7 @@
           <h1>Documents</h1>
           <p class="found" id="docs-summary"></p>
         </div>
-        <button class="btn btn-dark" id="btn-new-doc"><svg class="ic"><use href="#i-plus"/></svg>Attach document</button>
+        <button class="btn btn-dark" id="btn-new-doc" data-perm="documents.upload"><svg class="ic"><use href="#i-plus"/></svg>Attach document</button>
       </div>
       <div class="filter-banner" id="docs-banner" hidden></div>
       <div class="docs-bar">
@@ -325,7 +336,7 @@
           <h1>Property types</h1>
           <p class="found">What each property is used for &mdash; Educational, Warehouse, Corporate Office and so on. Every property has one; open a type to see its properties and documents.</p>
         </div>
-        <button class="btn btn-dark" id="btn-new-sbu"><svg class="ic"><use href="#i-plus"/></svg>New property type</button>
+        <button class="btn btn-dark" id="btn-new-sbu" data-perm="types.create"><svg class="ic"><use href="#i-plus"/></svg>New property type</button>
       </div>
       <div id="sbu-cards" class="tile-grid"></div>
     </div>
@@ -345,7 +356,7 @@
             the lease document.
           </p>
         </div>
-        <button class="btn btn-dark" id="btn-new-entity"><svg class="ic"><use href="#i-plus"/></svg>New company</button>
+        <button class="btn btn-dark" id="btn-new-entity" data-perm="companies.create"><svg class="ic"><use href="#i-plus"/></svg>New company</button>
       </div>
       <div id="entity-cards" class="tile-grid"></div>
     </div>
@@ -375,6 +386,95 @@
           </table>
           <p class="empty" id="master-empty" hidden></p>
         </div>
+      </div>
+    </div>
+  </section>
+  <!-- Users & access: people, roles and the audit log (js/access.js) -->
+  <section class="view" id="view-access" aria-label="Users and access">
+    <div class="page access-page">
+      <div class="page-head">
+        <div>
+          <h1>Users &amp; access</h1>
+          <p class="found">Who can sign in, what each role may do, and a record of every sign-in and change.</p>
+        </div>
+        <div class="access-head-actions">
+          <button class="btn btn-dark" id="btn-add-person" data-perm="users.create"><svg class="ic"><use href="#i-user-plus"/></svg>Add person</button>
+          <button class="btn btn-dark" id="btn-new-role" data-perm="roles.manage" hidden><svg class="ic"><use href="#i-plus"/></svg>New role</button>
+        </div>
+      </div>
+
+      <div class="seg-toggle access-tabs" role="tablist" aria-label="Users and access">
+        <button role="tab" data-atab="people" data-perm="users.view" class="is-active" aria-selected="true"><svg class="ic"><use href="#i-users"/></svg>People</button>
+        <button role="tab" data-atab="roles" aria-selected="false"><svg class="ic"><use href="#i-shield"/></svg>Roles &amp; permissions</button>
+        <button role="tab" data-atab="activity" data-perm="audit.view" aria-selected="false"><svg class="ic"><use href="#i-activity"/></svg>Activity</button>
+      </div>
+
+      <!-- People -->
+      <div class="access-panel" id="access-people">
+        <div class="access-stats" id="people-stats"></div>
+        <div class="access-toolbar">
+          <label class="searchbox searchbox-sm">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input type="search" id="people-search" placeholder="Search name or email&hellip;" aria-label="Search people">
+          </label>
+          <select id="people-role" aria-label="Filter by role"><option value="">All roles</option></select>
+          <select id="people-status" aria-label="Filter by status">
+            <option value="">Any status</option>
+            <option value="active">Active</option>
+            <option value="locked">Locked</option>
+            <option value="pending">Must set a password</option>
+            <option value="off">Switched off</option>
+          </select>
+        </div>
+        <p class="access-note" id="people-limited" hidden>You see the people who share one of your assigned property types or owning companies.</p>
+        <div class="table-wrap people-wrap">
+          <table class="grid people-table">
+            <thead><tr><th>Person</th><th>Role</th><th>Scope</th><th>Status</th><th>Last sign-in</th><th class="row-actions"></th></tr></thead>
+            <tbody id="people-rows"></tbody>
+          </table>
+          <p class="empty" id="people-empty" hidden></p>
+        </div>
+      </div>
+
+      <!-- Roles & permissions -->
+      <div class="access-panel" id="access-roles" hidden>
+        <div class="roles-layout">
+          <nav class="roles-nav" id="roles-nav" aria-label="Roles"></nav>
+          <div class="role-editor" id="role-editor"></div>
+        </div>
+      </div>
+
+      <!-- Activity -->
+      <div class="access-panel" id="access-activity" hidden>
+        <div class="access-toolbar">
+          <label class="searchbox searchbox-sm">
+            <svg class="ic"><use href="#i-search"/></svg>
+            <input type="search" id="audit-search" placeholder="Search what changed&hellip;" aria-label="Search activity">
+          </label>
+          <select id="audit-category" aria-label="Filter by kind">
+            <option value="">Everything</option>
+            <option value="auth">Sign-ins</option>
+            <option value="user">People</option>
+            <option value="role">Roles</option>
+            <option value="property">Properties</option>
+            <option value="document">Documents</option>
+            <option value="bulk">Bulk uploads</option>
+            <option value="type">Property types</option>
+            <option value="company">Owning companies</option>
+            <option value="master">Master sheets</option>
+          </select>
+          <select id="audit-person" aria-label="Filter by person"><option value="">Anyone</option></select>
+          <select id="audit-days" aria-label="Period">
+            <option value="1">Last 24 hours</option>
+            <option value="7">Last 7 days</option>
+            <option value="30" selected>Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="">All time</option>
+          </select>
+        </div>
+        <ol class="audit-list" id="audit-list"></ol>
+        <p class="empty" id="audit-empty" hidden>Nothing recorded for these filters.</p>
+        <div class="audit-more"><button class="btn btn-ghost" id="btn-audit-more" hidden>Show older</button></div>
       </div>
     </div>
   </section>
@@ -409,7 +509,7 @@
         <h2 id="property-modal-title">New property</h2>
         <div class="seg-mini" id="property-mode" role="tablist" aria-label="How to add properties">
           <button type="button" role="tab" data-pmode="single" class="is-on" aria-selected="true">One property</button>
-          <button type="button" role="tab" data-pmode="bulk" aria-selected="false"><svg class="ic"><use href="#i-upload"/></svg>Bulk upload</button>
+          <button type="button" role="tab" data-pmode="bulk" data-perm="bulk.upload" aria-selected="false"><svg class="ic"><use href="#i-upload"/></svg>Bulk upload</button>
         </div>
       </div>
       <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
@@ -426,7 +526,7 @@
               from this register &mdash; property types, owning companies, location codes, districts and
               units &mdash; and it includes instructions and two example rows. Required columns have a dark heading with a <span class="req" aria-hidden="true">*</span>
               and pale yellow cells, so a missed one stands out.</p>
-            <a class="btn btn-ghost btn-sm" href="/api/import/template.xlsx" download id="btn-bulk-template">
+            <a class="btn btn-ghost btn-sm" href="/api/import/template.xlsx" download id="btn-bulk-template" data-perm="bulk.template">
               <svg class="ic"><use href="#i-download"/></svg>Download template (.xlsx)</a>
           </div>
         </li>
@@ -795,10 +895,119 @@
 
 <div id="toast" class="toast" hidden></div>
 
+<!-- One person: role, scope, security -->
+<aside class="drawer person-drawer" id="person-drawer" hidden aria-labelledby="person-name">
+  <button class="circle-btn drawer-close" id="btn-close-person" aria-label="Close">
+    <svg class="ic"><use href="#i-x"/></svg>
+  </button>
+  <div class="person-head" id="person-head"></div>
+  <div class="drawer-body" id="person-body"></div>
+  <footer class="person-foot" id="person-foot"></footer>
+</aside>
+
+<!-- Add a person -->
+<div class="modal" id="person-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="person-modal-title">Add a person</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <form id="person-form" class="modal-body" novalidate>
+      <p class="form-legend"><span class="req" aria-hidden="true">*</span> Required</p>
+      <div class="grid-2">
+        <label>Full name <span class="req" aria-hidden="true">*</span>
+          <input name="name" required maxlength="120" autocomplete="off" placeholder="e.g. Nimal Perera">
+        </label>
+        <label>Work email <span class="req" aria-hidden="true">*</span>
+          <input name="email" type="email" required maxlength="200" autocomplete="off" placeholder="name@company.lk">
+        </label>
+      </div>
+      <div class="role-pick" id="person-role-pick"></div>
+      <div class="scope-pick" id="person-scope-pick"></div>
+      <p class="form-hint">They get a one-time temporary password, which you pass on. They choose their own password the first time they sign in.</p>
+      <p class="form-error" id="person-form-error" hidden></p>
+    </form>
+    <div class="modal-body temp-pass" id="person-created" hidden></div>
+    <footer class="modal-foot" id="person-modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-dark" id="btn-save-person">Add person</button>
+    </footer>
+  </div>
+</div>
+
+<!-- A temporary password, shown once -->
+<div class="modal" id="secret-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="secret-title">Temporary password</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <div class="modal-body temp-pass" id="secret-body"></div>
+    <footer class="modal-foot">
+      <button class="btn btn-dark" data-close-modal>Done</button>
+    </footer>
+  </div>
+</div>
+
+<!-- New role -->
+<div class="modal" id="role-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>New role</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <form id="role-form" class="modal-body" novalidate>
+      <label>Name <span class="req" aria-hidden="true">*</span>
+        <input name="name" required maxlength="60" placeholder="e.g. Site Inspector">
+      </label>
+      <label>What it is for
+        <textarea name="description" rows="2" maxlength="400" placeholder="Who holds it, and what they need to do."></textarea>
+      </label>
+      <label>Start from
+        <select name="copyFrom" id="role-copy-from"><option value="">No access (start empty)</option></select>
+      </label>
+      <p class="form-error" id="role-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-dark" id="btn-save-role">Create role</button>
+    </footer>
+  </div>
+</div>
+
+<!-- Change your own password -->
+<div class="modal" id="password-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2>Change your password</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <form id="password-form" class="modal-body" novalidate>
+      <input type="text" name="username" autocomplete="username" hidden>
+      <label>Current password
+        <input name="current" type="password" required autocomplete="current-password">
+      </label>
+      <label>New password
+        <input name="password" type="password" required minlength="10" autocomplete="new-password">
+      </label>
+      <label>New password, again
+        <input name="confirm" type="password" required minlength="10" autocomplete="new-password">
+      </label>
+      <p class="form-hint">At least 10 characters. A short sentence works well. Your other signed-in devices are signed out.</p>
+      <p class="form-error" id="password-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-dark" id="btn-save-password">Change password</button>
+    </footer>
+  </div>
+</div>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="js/api.js"></script>
 <script src="js/map.js"></script>
 <script src="js/masters.js"></script>
+<script src="js/access.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/fx.js"></script>
 <script src="js/app.js"></script>
