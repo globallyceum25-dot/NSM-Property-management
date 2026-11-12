@@ -96,7 +96,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "SAMEORIGIN")
-        self.send_header("Referrer-Policy", "same-origin")
+        # Other sites learn only that a request came from this register (its
+        # origin), never which page. OpenStreetMap's tile servers require that
+        # much: with no Referer at all they answer "Access blocked".
+        self.send_header("Referrer-Policy", "strict-origin-when-cross-origin")
         items = extra_headers.items() if isinstance(extra_headers, dict) else (extra_headers or [])
         for key, value in items:
             self.send_header(key, value)

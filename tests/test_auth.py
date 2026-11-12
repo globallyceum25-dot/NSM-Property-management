@@ -64,6 +64,13 @@ class SignInTests(RegisterTestCase):
         self.ok("POST", "/api/auth/logout", headers={"Cookie": cookie})
         self.assertEqual(self.request("GET", "/api/properties", headers={"Cookie": cookie}).status, 401)
 
+    def test_pages_tell_other_sites_their_origin_only(self):
+        # The map tiles come from OpenStreetMap, which refuses requests that
+        # carry no Referer; the page path must still not leak.
+        for path in ("/", "/login", "/api/reference"):
+            response = self.request("GET", path, anonymous=True)
+            self.assertEqual(response.headers["Referrer-Policy"], "strict-origin-when-cross-origin", path)
+
     def test_keep_me_signed_in_lasts_30_days(self):
         email, password = self.make_user()
         cookie_header = self.sign_in(email, password, remember=True).headers["Set-Cookie"]
