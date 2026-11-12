@@ -122,6 +122,14 @@ html:has(.login-body), .login-body { height: auto; min-height: 100%; }
   font: inherit; font-size: 15px; color: var(--text);
 }
 .field-box input::placeholder { color: var(--text-faint); }
+/* Browser autofill paints its own (light blue) box; keep the field's colours. */
+.field-box input:-webkit-autofill,
+.field-box input:-webkit-autofill:hover,
+.field-box input:-webkit-autofill:focus {
+  -webkit-text-fill-color: var(--text); caret-color: var(--text);
+  -webkit-box-shadow: 0 0 0 100px var(--surface) inset;
+  transition: background-color 99999s;
+}
 .field-box.is-invalid { border-color: var(--danger); box-shadow: 0 0 0 4px var(--danger-ring); }
 .reveal {
   flex: 0 0 auto; width: 36px; height: 36px; display: grid; place-items: center;
