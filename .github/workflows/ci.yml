@@ -14,15 +14,21 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# Ubuntu 24.04 rather than ubuntu-latest: since GitHub moved ubuntu-latest to
+# 26.04 (October 2026), it has no Python 3.9 and Playwright cannot install
+# Chromium's system libraries there. Move up when both support it.
 env:
   POSTGRES_URL: postgresql://postgres:postgres@localhost:5432/register_test
+  # A sign-in for the throwaway containers in the Docker smoke test only.
+  REGISTER_ADMIN_EMAIL: ci@example.lk
+  REGISTER_ADMIN_PASSWORD: ci-only password for a throwaway container
 
 jobs:
   # --- static checks ----------------------------------------------------------
 
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -42,7 +48,7 @@ jobs:
 
   typecheck:
     name: Type check
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -59,15 +65,16 @@ jobs:
 
   test:
     name: Tests · Python ${{ matrix.python }} · ${{ matrix.database }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.9", "3.13"]
+        python: ["3.9", "3.13", "3.15"]  # 3.15: the Docker image
         database: [sqlite, postgres]
-        # Coverage is measured on the newest Python only: the code takes no
-        # version-specific paths, and current coverage releases need 3.10+.
+        # Coverage is measured on 3.13 only, where the Coverage job combines it:
+        # the code takes no version-specific paths, and coverage releases do not
+        # cover every Python here (current ones need 3.10+).
         include:
           - python: "3.13"
             coverage: true
@@ -116,7 +123,7 @@ jobs:
 
   oldest-python:
     name: Tests · Python 3.7 · sqlite
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -130,7 +137,7 @@ jobs:
   coverage:
     name: Coverage
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -160,7 +167,7 @@ jobs:
 
   browser:
     name: Browser smoke test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
       REQUIRE_BROWSER_TESTS: "1"
@@ -180,7 +187,7 @@ jobs:
 
   build:
     name: Build · Docker image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -198,12 +205,14 @@ jobs:
         run: docker build -t nsm-property-register:ci .
       - name: Smoke test on SQLite
         run: |
-          docker run -d --name register-sqlite -p 127.0.0.1:8001:8000 nsm-property-register:ci
+          docker run -d --name register-sqlite -p 127.0.0.1:8001:8000 \
+            -e REGISTER_ADMIN_EMAIL -e REGISTER_ADMIN_PASSWORD nsm-property-register:ci
           ./.github/scripts/wait-for-register.sh http://127.0.0.1:8001 13
       - name: Smoke test on Postgres
         run: |
           docker run -d --name register-postgres --network host \
-            -e DATABASE_URL="$POSTGRES_URL" nsm-property-register:ci
+            -e DATABASE_URL="$POSTGRES_URL" -e REGISTER_ADMIN_EMAIL -e REGISTER_ADMIN_PASSWORD \
+            nsm-property-register:ci
           ./.github/scripts/wait-for-register.sh http://127.0.0.1:8000 13
           docker logs register-postgres | grep -q "Database: Postgres"
       - name: Container logs
@@ -222,14 +231,14 @@ jobs:
 
   audit:
     name: Dependency audit
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
-      # Python 3.13, the version the Docker image runs.
+      # Python 3.15, the version the Docker image runs.
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.15"
       - name: Install pip-audit
         run: pip install "$(grep -E '^pip-audit==' requirements-dev.txt)"
       - name: Known vulnerabilities in the Python packages
@@ -237,7 +246,7 @@ jobs:
 
   secrets:
     name: Secret scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
@@ -260,7 +269,7 @@ jobs:
     name: CI passed
     if: always()
     needs: [lint, typecheck, test, oldest-python, coverage, browser, build, audit, secrets]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: A job failed, was cancelled or was skipped
         if: >-

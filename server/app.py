@@ -17,7 +17,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, quote
 
-from . import api, db, multipart, storage
+from . import api, auth, db, multipart, storage
 
 WEB_DIR = os.path.join(db.BASE_DIR, "web")
 MAX_BODY_BYTES = api.MAX_UPLOAD_BYTES + (2 * 1024 * 1024)
@@ -33,6 +33,11 @@ class Context(object):
         self.body = body
         self._json = None
         self._form = None
+        self.user = None            # the signed-in user, set before the handler runs
+        self.headers_out = []       # extra response headers, such as Set-Cookie
+
+    def add_header(self, name, value):
+        self.headers_out.append((name, value))
 
     def json(self):
         if self._json is None:
@@ -82,18 +87,21 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
-        for key, value in (extra_headers or {}).items():
+        self.send_header("X-Frame-Options", "SAMEORIGIN")
+        self.send_header("Referrer-Policy", "same-origin")
+        items = extra_headers.items() if isinstance(extra_headers, dict) else (extra_headers or [])
+        for key, value in items:
             self.send_header(key, value)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _send_json(self, status, payload):
+    def _send_json(self, status, payload, extra=()):
         body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
         self._send(status, body, "application/json; charset=utf-8",
-                   {"Cache-Control": "no-store"})
+                   [("Cache-Control", "no-store")] + list(extra))
 
-    def _send_raw(self, status, payload):
+    def _send_raw(self, status, payload, extra=()):
         filename = payload.get("filename") or "download"
         disposition = "inline" if payload.get("inline") else "attachment"
         header = '%s; filename="%s"; filename*=UTF-8\'\'%s' % (
@@ -102,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
             quote(filename),
         )
         self._send(status, payload["body"], payload["content_type"],
-                   {"Content-Disposition": header, "Cache-Control": "no-store"})
+                   [("Content-Disposition", header), ("Cache-Control", "no-store")] + list(extra))
 
     def _read_body(self):
         try:
@@ -124,6 +132,18 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/api/"):
             method = "GET" if self.command == "HEAD" else self.command
+            # A change must come from this register's own pages: a browser sends
+            # Origin with every cross-site POST, and it has to match our host.
+            if method in ("POST", "PUT", "PATCH", "DELETE"):
+                origin = self.headers.get("Origin")
+                if origin is not None and urlparse(origin).netloc != (self.headers.get("Host") or ""):
+                    self._send_json(403, {"error": "Request refused: it did not come from this register."})
+                    return
+            # Signed in, or one of the few public endpoints.
+            user = auth.user_for_token(db.get_conn(), auth.token_from(self))
+            if user is None and (method, path) not in auth.PUBLIC:
+                self._send_json(401, {"error": "Please sign in.", "signIn": True})
+                return
             matched_path = False
             for route_method, pattern, handler in api.COMPILED_ROUTES:
                 match = pattern.match(path)
@@ -133,11 +153,13 @@ class Handler(BaseHTTPRequestHandler):
                 if route_method != method:
                     continue
                 body = self._read_body() if method in ("POST", "PUT", "PATCH") else b""
-                status, payload = handler(Context(self, match, query, body))
+                ctx = Context(self, match, query, body)
+                ctx.user = user
+                status, payload = handler(ctx)
                 if isinstance(payload, dict) and payload.get("__raw__"):
-                    self._send_raw(status, payload)
+                    self._send_raw(status, payload, ctx.headers_out)
                 else:
-                    self._send_json(status, payload)
+                    self._send_json(status, payload, ctx.headers_out)
                 return
             self._send_json(405 if matched_path else 404,
                             {"error": "Method not allowed for this endpoint."
@@ -149,6 +171,8 @@ class Handler(BaseHTTPRequestHandler):
     def _serve_static(self, path):
         if path in ("/", "/index.html", "/."):
             path = "/index.html"
+        elif path in ("/login", "/login/"):
+            path = "/login.html"
         relative = path.lstrip("/")
         full = os.path.normpath(os.path.join(WEB_DIR, relative))
         if not full.startswith(WEB_DIR) or not os.path.isfile(full):
@@ -230,9 +254,19 @@ def main():
     db.init_db()
     storage.init()
     httpd.daemon_threads = True
+    conn = db.get_conn()
+    if auth.bootstrap_from_env(conn):
+        print("Created the first Super Admin from REGISTER_ADMIN_EMAIL.")
+    code = auth.setup_code(conn)
+    db.release()
     print("Property register running at http://%s:%d/" % (args.host, args.port))
     print("Database: %s" % db.describe())
     print("Uploads:  %s" % storage.describe())
+    if code:
+        print("")
+        print("No one can sign in yet. Open http://%s:%d/login to create the first" % (args.host, args.port))
+        print("Super Admin, and enter this one-time setup code:  %s" % code)
+        print("")
     print("Press Ctrl+C to stop.")
     sys.stdout.flush()   # show the banner even when output goes to a log file
     try:

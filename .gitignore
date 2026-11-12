@@ -17,3 +17,7 @@ __pycache__/
 .coverage
 .coverage.*
 htmlcov/
+
+# Lock files Excel and LibreOffice leave beside an open workbook.
+~$*
+.~*

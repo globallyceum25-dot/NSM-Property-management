@@ -192,7 +192,7 @@ GitHub Actions runs **CI** on every pull request and every push to `main`:
 | Stage | Jobs |
 | --- | --- |
 | Static checks | **Lint**: Ruff, JavaScript syntax, ShellCheck, actionlint on the workflows. **Type check**: mypy over the server and the tests. |
-| Tests | Python 3.9 and 3.13, each against SQLite and Postgres 17 (coverage measured on 3.13); Python 3.7 (the oldest supported) with nothing installed; the **browser smoke test** in Chromium. |
+| Tests | Python 3.9, 3.13 and 3.15 (the version the Docker image runs), each against SQLite and Postgres 17 (coverage measured on 3.13); Python 3.7 (the oldest supported) with nothing installed; the **browser smoke test** in Chromium. |
 | Coverage | Combines every test run into one report (job summary, plus an HTML artifact) and fails below the minimum in `.coveragerc`. |
 | Build | Builds the Docker image, smoke-tests it on SQLite and on Postgres, and scans it with Trivy for fixable high and critical vulnerabilities. |
 | Security | **Dependency audit** (pip-audit) of both requirement files; **secret scan** (gitleaks) of the whole git history. |
@@ -216,8 +216,11 @@ docker run --rm -p 127.0.0.1:8000:8000 --env-file .env nsm-property-register
 ```
 
 Without `--env-file` it runs on SQLite in `/app/data`; add
-`-v register-data:/app/data` to keep that data. Publish the port on
-`127.0.0.1` as above: the register has no login yet.
+`-v register-data:/app/data` to keep that data. The first start prints the
+setup code in `docker logs`, or pass `-e REGISTER_ADMIN_EMAIL=… -e
+REGISTER_ADMIN_PASSWORD=…` (see [Signing in](#signing-in)). Publish the port
+on `127.0.0.1` as above and put an HTTPS proxy in front before anyone reaches
+it over a network.
 
 ### Releasing
 
@@ -229,6 +232,70 @@ GitHub Release with generated notes:
 ```bash
 git tag v1.0.0 && git push origin v1.0.0
 ```
+
+## Signing in
+
+Everyone signs in at `/login` with an email and password their administrator
+gives them; there is no self sign-up. Any other page sends a signed-out visitor
+there, and back to where they were going afterwards.
+
+**The first account.** While a register has no accounts, `./run.sh` prints a
+one-time setup code:
+
+```text
+No one can sign in yet. Open http://127.0.0.1:8000/login to create the first
+Super Admin, and enter this one-time setup code:  3F7A-91C2
+```
+
+Open `/login`, fill in your name, email and a password, and enter that code.
+You are signed in as the first Super Admin. The code stops working as soon as
+an account exists. In a container, set `REGISTER_ADMIN_EMAIL`,
+`REGISTER_ADMIN_PASSWORD` (and optionally `REGISTER_ADMIN_NAME`) to create that
+account at start-up instead.
+
+**Everyone else**, from the same machine (passwords are typed at a hidden
+prompt, never on the command line):
+
+```bash
+python3 -m server.users add --email a.perera@company.lk --name "A. Perera" --role PROPERTY_MANAGER
+```
+
+```bash
+python3 -m server.users list
+```
+
+`list-roles` shows the roles; `reset-password`, `disable` and `enable` take
+`--email`. Resetting a password or disabling an account signs that person out
+everywhere. "Forgot password?" on the sign-in page tells people to ask their
+administrator; the register does not send email.
+
+**Roles** come from the access matrix in
+`docs/access/Property Register - Roles and Access.xlsx`: Super Admin, Admin,
+Property Manager, Property Officer, Document Controller, Auditor and Viewer.
+Each account has one, shown in its account menu. **They are not enforced yet:**
+until the matrix is approved, every signed-in person can see and change
+everything, so give accounts only to people who should.
+
+**How it is protected:**
+
+- Passwords are stored as PBKDF2-SHA256 hashes (600,000 iterations, a random
+  salt each), never as text. They must be at least 10 characters.
+- A session is a random token in an `HttpOnly`, `SameSite=Lax` cookie; the
+  database keeps only its SHA-256. It lasts 12 hours from the last use, or 30
+  days with "Keep me signed in". Signing out ends it on the server.
+- Five wrong passwords lock an account for 15 minutes, and one address gets 30
+  attempts per 15 minutes. The error never says whether the email or the
+  password was wrong.
+- Every API call except `/api/reference` (the health check) needs a session.
+  Changes coming from another site's page are refused, and pages may not be
+  framed by other sites.
+- Behind HTTPS, set `REGISTER_SECURE_COOKIES=1` (or have the proxy send
+  `X-Forwarded-Proto: https`) so the cookie is only ever sent encrypted. Serve
+  the register over HTTPS before opening it to a network: over plain HTTP the
+  password crosses the network readable.
+
+Accounts are kept apart from the register data: `reset --wipe` and the bulk
+import leave them alone.
 
 ## What it does
 
@@ -274,6 +341,17 @@ type's code as their prefix (`CORP-0001`).
 Bare land, Land & building, Building only or Other. When property types
 arrived, the old Type values that described use (Office, Warehouse, Showroom,
 Factory, Residential, Estate) became *Land & building*.
+
+**Owning company pages** — click any card under Owning companies to open the
+company's page. It works like a property type page:
+
+- the company's figures
+- **Properties** and **Documents** tabs; the properties table adds each
+  property's type, since one company spans several
+- shortcuts to show the company on the map, in the Portfolio or in Documents,
+  as an "Owned by" filter
+
+Each page has its own link, e.g. `#entities/6`.
 
 **Property type pages** — click any card under Property types to open that
 unit's page:
@@ -663,7 +741,11 @@ Sri Lanka; selecting a district fills the province automatically.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| GET | `/api/reference` | districts, provinces, enumerations, map bounds |
+| GET | `/api/auth/status` | whether this browser is signed in, as whom, and whether the register still needs its first account |
+| POST | `/api/auth/login` | `email`, `password`, `remember`; sets the session cookie |
+| POST | `/api/auth/logout` | ends this session |
+| POST | `/api/auth/setup` | first account only: `name`, `email`, `password`, `confirm`, `setupCode` |
+| GET | `/api/reference` | districts, provinces, enumerations, map bounds (no sign-in needed) |
 | GET/POST | `/api/sbus` | list / create property types |
 | PUT/DELETE | `/api/sbus/{id}` | update / delete a property type |
 | GET/POST | `/api/legal-entities` | list / create owning companies |
@@ -717,17 +799,12 @@ confirmation, and act on whichever database `.env` names: on Supabase, use
 
 By design, and worth agreeing before Stage 2:
 
-- **No login or access control.** Bind to `127.0.0.1` (the default) and it is
-  reachable only from that machine. Do not expose it to a network until
-  authentication is added — anyone who can reach the port can read and change
-  everything, including downloading deed scans.
+- **Roles are recorded but not enforced.** Everyone signed in can read and
+  change everything until the access matrix is approved and built in; there is
+  no users screen yet (accounts are managed with `python3 -m server.users`).
 - No tenancy/rent ledger, invoicing, receipts or arrears tracking.
 - No maintenance requests, inspections or work orders.
 - No document versioning or approval workflow — uploading a new lease adds a
   second document rather than superseding the first.
 - No audit trail of who changed what.
-- No bulk import. An Excel importer is the first thing worth building next, and
-  it must tolerate bad rows rather than reject the file: in the source sheet 36 of
-  70 records have no property code, 32 have no usable address, and `LLKO` is used
-  for both Kottawa and Kegalle.
 - Map pins are points only — no plot boundaries or polygons.
