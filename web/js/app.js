@@ -95,7 +95,21 @@
   function avatarHtml(code, colour, size) {
     const text = initials(code);
     return '<span class="avatar' + (size ? ' ' + size : '') + (text.length > 3 ? ' is-long' : '') + '"' +
-      ' style="background:' + esc(colour) + '">' + esc(text) + '</span>';
+      ' style="background:' + esc(colour) + ';--c:' + esc(colour) + ';--ink:' + inkOn(colour) + '">' + esc(text) + '</span>';
+  }
+
+  // Text on a coloured badge: white or near-black, whichever contrasts more
+  // with that colour (WCAG relative luminance), so every type colour reads.
+  function inkOn(colour) {
+    const m = /^#?([0-9a-f]{6})$/i.exec(String(colour || '').trim());
+    if (!m) return '#fff';
+    const lin = (i) => {
+      const c = parseInt(m[1].slice(i, i + 2), 16) / 255;
+      return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
+    };
+    const L = 0.2126 * lin(0) + 0.7152 * lin(2) + 0.0722 * lin(4);
+    const onWhite = 1.05 / (L + 0.05), onDark = (L + 0.05) / 0.0629;   // #0f1d1c is L = 0.0129
+    return onDark > onWhite ? '#0f1d1c' : '#fff';
   }
 
   // Avatar text: short codes as they are, longer ones cut to three (RETAIL -> RET).

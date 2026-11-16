@@ -52,7 +52,7 @@ window.Access = (function () {
   }
 
   function avatar(person, size) {
-    return '<span class="avatar' + (size ? ' ' + size : '') + '" style="--h:' + hue(person.email) + '">' +
+    return '<span class="p-avatar' + (size ? ' ' + size : '') + '" style="--h:' + hue(person.email) + '">' +
       esc(initials(person.name)) + '</span>';
   }
 
@@ -916,7 +916,7 @@ window.Access = (function () {
       const bad = /failed|locked|delete|deactivate/.test(e.action);
       const who = e.userName
         ? avatar({ name: e.userName, email: e.userEmail || e.userName }, 'sm') + '<b>' + esc(e.userName) + '</b>'
-        : '<span class="avatar sm anon">?</span><b>Someone</b>';
+        : '<span class="p-avatar sm anon">?</span><b>Someone</b>';
       return header + '<li class="audit-item' + (bad ? ' is-alert' : '') + '">' +
         '<span class="audit-icon cat-' + esc(category) + '">' + icon(CATEGORY_ICON[category] || 'activity') + '</span>' +
         '<div class="audit-main"><p class="audit-line">' + who + ' ' + esc(ACTION_TEXT[e.action] || e.action) +
