@@ -374,9 +374,23 @@ costs, how much of that is rent, its **net result** and margin, and a status:
 With capital recorded, it also shows the return a year and roughly how many
 years the property takes to pay back what was invested.
 
+**Is it getting better?** Each property's net result is also followed month
+by month over up to the last two years, from its first month with figures to
+its last. A straight line fitted through those months (least squares) gives the
+trend — *improving*, *worsening* or *steady* (a change under 0.4% of the
+property's monthly turnover a month) — and is carried 12 months forward as a
+projection: when a loss-making property is on course to break even, or when a
+profitable one could turn loss-making (up to three years out). Fewer than four
+months of figures is too little to call; irregular figures are flagged as
+uncertain. It is a guide, not a forecast of what will happen.
+
 The page has the portfolio totals, income against running costs month by month,
-how many properties are in each status, the five biggest losses, and a table of
-every property, worst first, with a CSV export. It follows the same tenure tabs,
+how many properties are in each status, the properties *turning around*
+(losing money but improving, with their break-even month), the five biggest
+losses, and a table of every property, worst first, with each one's trend as a
+small chart (sortable by most improving or worsening) and a CSV export. Each
+property's panel has a profit-trend chart: monthly results, a 3-month average
+and the projection. It follows the same tenure tabs,
 search and filters as the Portfolio. Each property's panel has its own Finance
 section, with its entries and **Record entry**.
 
@@ -869,7 +883,7 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/roles` | the modules, actions and roles with their levels / add a custom role (`name`, `description`, `copyFrom`) |
 | PUT/DELETE | `/api/roles/{code}` | change a role's `name`, `description`, `permissions` (`{action: yes/limited/no}`) / delete a custom role |
 | GET | `/api/finance/summary` | each property's income, running costs, rent, net result and status for `from`–`to` (`YYYY-MM`; default this financial year to date), with the portfolio totals and month-by-month figures; takes the property filters |
-| GET/POST | `/api/properties/{id}/finance` | one property's figures and entries / record an entry: `kind`, `category`, `amount`, `period_start` (`YYYY-MM`), `months`, `description`, `counterparty`, `reference_no`, `notes` |
+| GET/POST | `/api/properties/{id}/finance` | one property's figures, entries and `trend` (monthly history, fitted slope, projection, break-even month) / record an entry: `kind`, `category`, `amount`, `period_start` (`YYYY-MM`), `months`, `description`, `counterparty`, `reference_no`, `notes` |
 | PUT/DELETE | `/api/finance/{id}` | change / remove an entry |
 | GET | `/api/export/finance.csv` | the finance report as CSV, worst result first |
 | GET | `/api/test-data` | how much test data there is, whether you are looking at it, and whether you may manage it |

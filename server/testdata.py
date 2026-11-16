@@ -90,6 +90,12 @@ PROFILES = {
     "cost-lease": (0, 120000, 30000, 0),
 }
 
+# How income moves from quarter to quarter, so the trend has something to show:
+# a loss-making school and bus yard turning around, a showroom slipping.
+# This year's level is the profile's; last year is scaled back from it.
+GROWTH = {"school-loss": 0.12, "yard-loss": 0.10, "school-rented": 0.03, "hostel": 0.02, "school": 0.015,
+          "shop": -0.07, "warehouse-thin": -0.05, "let": 0.02}
+
 # doc type, title, months to expiry (None: no expiry), with a file?
 DOCS = [
     ("DEED", "Deed of Transfer", None, True), ("TITLE_CERTIFICATE", "Title certificate", None, True),
@@ -246,7 +252,8 @@ def load(conn, user_id=None, today=None):
                                 VALUES (?, ?, ?, ?, 'LKR', ?, ?, ?, ?, NULL, 'Test entry', ?, ?, ?)""",
                              (pid, kind, category, round(amount, 2), start.isoformat(), months, what, who, user_id, stamp,
                               stamp))
-            for year in (last_fy, fy):
+            growth = GROWTH.get(profile, 0)
+            for y, year in enumerate((last_fy, fy)):
                 if rent:
                     entry("cost", "RENT", rent * 12, year, 12, "Test landlord", "Rent for the year")
                 if running:
@@ -262,7 +269,8 @@ def load(conn, user_id=None, today=None):
                 if income:
                     category = "RENT_RECEIVED" if tenure == "LEASED_OUT" else "BUSINESS_REVENUE"
                     for q in range(4):
-                        entry("income", category, income * 3 * (1 + 0.02 * (q % 2)), _day(year, q * 3), 3,
+                        level = (1 + growth) ** (y * 4 + q - 4) if growth else 1 + 0.02 * (q % 2)
+                        entry("income", category, income * 3 * level, _day(year, q * 3), 3,
                               "Test tenant" if category == "RENT_RECEIVED" else None, "Quarter %d" % (q + 1))
             if capital:
                 entry("capital", "PURCHASE", capital * 0.8, _day(last_fy, -14 - i), 1, "Test vendor", "Purchase")

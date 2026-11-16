@@ -268,6 +268,84 @@ def _finish(t):
     return t
 
 
+# --- trend and projection ---------------------------------------------------------
+
+TREND_MONTHS = 24        # history looked at: up to two years, ending this month
+PROJECT_MONTHS = 12      # how far ahead the line is drawn
+MIN_TREND_MONTHS = 4     # fewer months than this is too little to call a trend
+STEADY_BAND = 0.004      # a change under 0.4% of monthly turnover a month counts as steady
+HORIZON_MONTHS = 36      # break-even (or turning to a loss) further out than this is not shown
+
+
+def trend(entries, last, today=None):
+    """A property's monthly result over time, a straight line fitted through it
+    (least squares), and that line carried forward.
+
+    History runs from the first to the last month with figures, within the two
+    years up to `last` or this month (whichever is earlier), so months not yet
+    lived or not yet recorded are not mistaken for results. Returns None when
+    nothing has been recorded.
+    """
+    today = today or datetime.date.today()
+    end = min(last, datetime.date(today.year, today.month, 1))
+    months = spread(entries, _add_months(end, -(TREND_MONTHS - 1)), end)
+    keys = list(months)
+    recorded = [i for i, k in enumerate(keys) if months[k]["income"] or months[k]["cost"]]
+    if not recorded:
+        return None
+    # Months before the first figures, and after the last, are not results:
+    # nothing had been (or has yet been) recorded for them.
+    keys = keys[recorded[0]:recorded[-1] + 1]
+    history, nets = [], []
+    for i, k in enumerate(keys):
+        m = months[k]
+        net = m["income"] - m["cost"]
+        nets.append(net)
+        window = nets[max(0, i - 2):i + 1]
+        history.append({"month": k, "income": round(m["income"], 2), "cost": round(m["cost"], 2),
+                        "net": round(net, 2), "avg3": round(sum(window) / len(window), 2)})
+    out = {"history": history, "months": len(nets), "direction": "short", "slope": None, "confidence": None,
+           "projection": [], "breakEven": None, "turnsLoss": None, "fitNow": None}
+    n = len(nets)
+    if n < MIN_TREND_MONTHS:
+        return out
+    mean_x, mean_y = (n - 1) / 2, sum(nets) / n
+    sxx = sum((x - mean_x) ** 2 for x in range(n))
+    slope = sum((x - mean_x) * (y - mean_y) for x, y in enumerate(nets)) / sxx
+    intercept = mean_y - slope * mean_x
+    ss_tot = sum((y - mean_y) ** 2 for y in nets)
+    ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in enumerate(nets))
+    r2 = 1 - ss_res / ss_tot if ss_tot else 1.0
+    turnover = sum(h["income"] + h["cost"] for h in history) / n
+    rel = slope / turnover if turnover else 0
+    fit = lambda x: intercept + slope * x  # noqa: E731
+    now = fit(n - 1)
+    out.update(
+        direction="up" if rel > STEADY_BAND else "down" if rel < -STEADY_BAND else "flat",
+        slope=round(slope, 2), fitNow=round(now, 2),
+        confidence="low" if n < 6 or r2 < 0.3 else "medium" if r2 < 0.6 else "high",
+        projection=[{"month": _key(_add_months(end, i)), "net": round(fit(n - 1 + i), 2)}
+                    for i in range(1, PROJECT_MONTHS + 1)])
+    if now < 0 < slope:
+        ahead = -now / slope
+        if ahead <= HORIZON_MONTHS:
+            out["breakEven"] = _key(_add_months(end, max(1, int(ahead + 0.999))))
+    elif now >= 0 > slope:
+        ahead = now / -slope
+        if ahead <= HORIZON_MONTHS:
+            out["turnsLoss"] = _key(_add_months(end, max(1, int(ahead + 0.999))))
+    return out
+
+
+def _brief(t):
+    """The trend as the property list needs it: direction, pace and a sparkline."""
+    if t is None:
+        return None
+    brief = {k: t[k] for k in ("direction", "slope", "confidence", "breakEven", "turnsLoss", "months")}
+    brief["spark"] = [h["net"] for h in t["history"][-12:]]
+    return brief
+
+
 def _report(conn, where, params, first, last):
     """Per-property and portfolio totals for the months first..last."""
     from . import api
@@ -306,7 +384,8 @@ def _report(conn, where, params, first, last):
                          district=p["district"], invested=invested,
                          returnPct=round(yearly / invested * 100, 1) if invested and t["status"] != "none" else None,
                          paybackYears=round(invested / yearly, 1) if invested and yearly > 0 else None,
-                         entries=len(entries.get(p["id"], []))))
+                         entries=len(entries.get(p["id"], [])),
+                         trend=_brief(trend(entries.get(p["id"], []), last))))
     total = _empty()
     for m in portfolio_months.values():
         for k in total:
@@ -341,8 +420,9 @@ def property_finance(ctx):
     rows = conn.execute("""SELECT f.*, u.name AS created_by_name FROM finance_entry f
                            LEFT JOIN app_user u ON u.id = f.created_by
                            WHERE f.property_id = ? ORDER BY f.period_start DESC, f.id DESC""", (pid,)).fetchall()
+    every = conn.execute("SELECT * FROM finance_entry WHERE property_id = ?", (pid,)).fetchall()
     return 200, {"period": report["period"], "summary": report["properties"][0], "byMonth": report["byMonth"],
-                 "entries": [_entry_json(r) for r in rows]}
+                 "trend": trend(every, last), "entries": [_entry_json(r) for r in rows]}
 
 
 def export_csv(ctx):

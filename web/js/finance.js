@@ -131,6 +131,10 @@ window.Finance = (function () {
       const li = event.target.closest('[data-property]');
       if (li) hooks.openProperty(Number(li.dataset.property));
     });
+    $('#fin-turning-list').addEventListener('click', function (event) {
+      const li = event.target.closest('[data-property]');
+      if (li) hooks.openProperty(Number(li.dataset.property));
+    });
     $('#btn-fin-new').addEventListener('click', () => openEntry(null, null));
     $('#btn-fin-export').addEventListener('click', function () {
       const p = period(), q = Object.assign({}, hooks.filters(), { from: p.from, to: p.to });
@@ -250,6 +254,13 @@ window.Finance = (function () {
       Fx.rise($('#fin-rows'), 10);
       $('#fin-table-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
+    const turning = report.properties.filter((r) => (r.status === 'loss' || r.status === 'cost-only') && r.trend &&
+      r.trend.direction === 'up').sort((a, b) => (a.trend.breakEven || '9999') < (b.trend.breakEven || '9999') ? -1 : 1).slice(0, 5);
+    $('#fin-turning').hidden = !turning.length;
+    $('#fin-turning-list').innerHTML = turning.map((r) => '<li data-property="' + r.id + '" tabindex="0"><span class="swatch" style="background:' +
+      esc(r.sbu_color) + '"></span><span class="fin-lname"><b>' + esc(r.name) + '</b><small>' + esc(r.property_code) + ' · ' +
+      esc(trendSentence(r.trend, true).replace(/ · .*/, '')) + '</small></span><span class="fin-lval up">' +
+      (r.trend.breakEven ? 'break-even ~' + esc(monthLabel(r.trend.breakEven)) : icon('fin-up') + 'improving') + '</span></li>').join('');
     const losers = report.properties.filter((r) => r.net < 0).sort((a, b) => a.net - b.net).slice(0, 5);
     $('#fin-losers').innerHTML = losers.length
       ? losers.map((r) => '<li data-property="' + r.id + '" tabindex="0"><span class="swatch" style="background:' + esc(r.sbu_color) + '"></span>' +
@@ -259,12 +270,121 @@ window.Finance = (function () {
       : '<li class="empty-li">No property is losing money in this period.</li>';
   }
 
+  function slopeOf(r) { return r.trend && r.trend.slope !== null ? r.trend.slope : 0; }
+
+  /* ---------- trend: is a property getting better or worse? ---------- */
+
+  const DIRECTION = {
+    up: { label: 'Improving', icon: 'fin-up', cls: 'ok' },
+    down: { label: 'Worsening', icon: 'fin-down', cls: 'bad' },
+    flat: { label: 'Steady', icon: 'fin-level', cls: 'flat' },
+    short: { label: 'Too new to tell', icon: 'fin-dot', cls: 'none' }
+  };
+
+  function trendSentence(t, short) {
+    if (!t) return 'No figures recorded yet.';
+    if (t.direction === 'short') return 'Only ' + t.months + ' month' + (t.months === 1 ? '' : 's') + ' of figures — at least 4 are needed to see a trend.';
+    const pace = lkr(Math.abs(t.slope));
+    let text = t.direction === 'up' ? 'Improving by about ' + pace + ' a month'
+      : t.direction === 'down' ? 'Worsening by about ' + pace + ' a month' : 'Holding steady';
+    if (t.breakEven) text += short ? ' · breaks even ~' + monthLabel(t.breakEven) : '. At this rate it breaks even around ' + monthLabel(t.breakEven);
+    else if (t.turnsLoss) text += short ? ' · could turn to a loss ~' + monthLabel(t.turnsLoss) : '. At this rate it could turn loss-making around ' + monthLabel(t.turnsLoss);
+    return text + (short ? '' : '.');
+  }
+
+  function spark(values) {
+    const w = 84, h = 28, n = values.length;
+    if (!n) return '';
+    const max = Math.max.apply(null, values.map(Math.abs).concat([1]));
+    const step = w / n, bar = Math.max(2, step * 0.62), mid = h / 2;
+    return '<svg class="fin-spark" viewBox="0 0 ' + w + ' ' + h + '" width="' + w + '" height="' + h + '" aria-hidden="true">' +
+      '<line x1="0" x2="' + w + '" y1="' + mid + '" y2="' + mid + '" class="zero"/>' +
+      values.map(function (v, i) {
+        const len = Math.max(v ? 1.5 : 0, Math.abs(v) / max * (mid - 1));
+        return '<rect x="' + (i * step + (step - bar) / 2).toFixed(1) + '" y="' + (v >= 0 ? mid - len : mid).toFixed(1) +
+          '" width="' + bar.toFixed(1) + '" height="' + len.toFixed(1) + '" rx="1" class="' + (v >= 0 ? 'pos' : 'neg') + '"/>';
+      }).join('') + '</svg>';
+  }
+
+  function trendCell(t) {
+    if (!t) return '<span class="dash">—</span>';
+    const d = DIRECTION[t.direction];
+    return '<div class="fin-trend" data-tip-label="Trend" data-tip-value="' + esc(trendSentence(t, true)) + '" tabindex="0">' +
+      spark(t.spark) + '<span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></div>';
+  }
+
+  // The property panel's chart: each month's result, a 3-month average, and
+  // the fitted line carried forward as a projection.
+  function trendChart(t) {
+    const hist = t.history, proj = t.projection || [];
+    const W = 432, H = 200, padL = 46, padR = 8, padT = 14, padB = 26;
+    const all = hist.map((h) => h.net).concat(hist.map((h) => h.avg3), proj.map((p) => p.net), [0]);
+    let top = Math.max.apply(null, all), bottom = Math.min.apply(null, all);
+    if (top === bottom) { top += 1; bottom -= 1; }
+    const span = top - bottom;
+    top += span * 0.08; bottom -= span * 0.08;
+    const slots = hist.length + proj.length, step = (W - padL - padR) / slots;
+    const x = (i) => padL + step * (i + 0.5);
+    const y = (v) => padT + (top - v) / (top - bottom) * (H - padT - padB);
+    const zero = y(0), bw = Math.max(2, step * 0.62);
+    const tickVals = [top - span * 0.08, 0, bottom + span * 0.08].filter((v, i, a) => a.indexOf(v) === i);
+    let svg = '<svg class="fin-trend-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(trendSentence(t)) + '">';
+    if (proj.length) {
+      svg += '<rect class="proj-zone" x="' + (padL + step * hist.length).toFixed(1) + '" y="' + padT + '" width="' +
+        (step * proj.length).toFixed(1) + '" height="' + (H - padT - padB) + '" rx="6"/>' +
+        '<text class="proj-label" x="' + (padL + step * (hist.length + proj.length / 2)).toFixed(1) + '" y="' + (padT + 12) + '">Projection</text>';
+    }
+    tickVals.forEach(function (v) {
+      svg += '<line class="' + (v === 0 ? 'zero' : 'grid') + '" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
+        '<text class="tick" x="' + (padL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '">' + esc(v === 0 ? '0' : lkr(v, true).replace('LKR ', '')) + '</text>';
+    });
+    hist.forEach(function (h, i) {
+      const top_ = Math.min(y(h.net), zero), len = Math.max(h.net ? 1.5 : 0, Math.abs(y(h.net) - zero));
+      svg += '<rect class="bar ' + (h.net >= 0 ? 'pos' : 'neg') + '" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + top_.toFixed(1) +
+        '" width="' + bw.toFixed(1) + '" height="' + len.toFixed(1) + '" rx="2" tabindex="0" data-tip-label="' + esc(monthLabel(h.month)) +
+        '" data-tip-value="' + esc(signed(h.net) + ' · income ' + lkr(h.income, true) + ', costs ' + lkr(h.cost, true)) + '"/>';
+    });
+    if (hist.length > 1) {
+      svg += '<polyline class="avg" points="' + hist.map((h, i) => x(i).toFixed(1) + ',' + y(h.avg3).toFixed(1)).join(' ') + '"/>';
+    }
+    if (proj.length && t.fitNow !== null) {
+      const pts = [[x(hist.length - 1), y(t.fitNow)]].concat(proj.map((p, i) => [x(hist.length + i), y(p.net)]));
+      svg += '<polyline class="proj" points="' + pts.map((p) => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ') + '"/>';
+      const mark = t.breakEven || t.turnsLoss;
+      const at = mark ? proj.findIndex((p) => p.month === mark) : -1;
+      if (at !== -1) {
+        svg += '<circle class="mark ' + (t.breakEven ? 'pos' : 'neg') + '" cx="' + x(hist.length + at).toFixed(1) + '" cy="' + zero.toFixed(1) + '" r="4.5" tabindex="0"' +
+          ' data-tip-label="' + (t.breakEven ? 'Breaks even' : 'Turns to a loss') + '" data-tip-value="around ' + esc(monthLabel(mark)) + '"/>';
+      }
+    }
+    const label = (i, key, anchor) => '<text class="xlab" text-anchor="' + anchor + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '">' + esc(monthLabel(key)) + '</text>';
+    svg += label(0, hist[0].month, 'start');
+    if (hist.length > 2) svg += label(hist.length - 1, hist[hist.length - 1].month, proj.length ? 'middle' : 'end');
+    if (proj.length) svg += label(slots - 1, proj[proj.length - 1].month, 'end');
+    return svg + '</svg>';
+  }
+
+  function trendHtml(t) {
+    if (!t) return '';
+    const d = DIRECTION[t.direction];
+    return '<div class="fin-trend-box"><div class="fin-trend-head"><b>Profit trend</b><span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></div>' +
+      '<p class="fin-trend-text">' + esc(trendSentence(t)) + '</p>' +
+      (t.history.length ? trendChart(t) : '') +
+      '<div class="fin-trend-legend"><span><i class="k-bar"></i>Monthly result</span><span><i class="k-avg"></i>3-month average</span>' +
+        (t.projection.length ? '<span><i class="k-proj"></i>Projection</span>' : '') + '</div>' +
+      (t.direction !== 'short' ? '<p class="fin-trend-note">A straight line through the last ' + t.months + ' months, carried forward: a guide, not a promise.' +
+        (t.confidence === 'low' ? ' <b>The figures vary a lot, so treat it with care.</b>' : '') + '</p>' : '') +
+      '</div>';
+  }
+
   const SORTS = {
     'net-asc': (a, b) => a.net - b.net,
     'net-desc': (a, b) => b.net - a.net,
     income: (a, b) => b.income - a.income,
     cost: (a, b) => b.cost - a.cost,
     rent: (a, b) => (b.rentShare || 0) - (a.rentShare || 0),
+    improving: (a, b) => slopeOf(b) - slopeOf(a),
+    worsening: (a, b) => slopeOf(a) - slopeOf(b),
     name: (a, b) => a.name.localeCompare(b.name)
   };
 
@@ -289,6 +409,7 @@ window.Finance = (function () {
         '<td class="num net ' + (r.net < 0 ? 'neg' : r.net > 0 ? 'pos' : '') + '">' + (none ? '<span class="dash">—</span>' : esc(signed(r.net)) +
           (r.margin !== null ? '<small>' + r.margin + '% margin</small>' : '')) + '</td>' +
         '<td>' + badge(r.status, true) + '</td>' +
+        '<td>' + trendCell(r.trend) + '</td>' +
         '<td class="num">' + (r.invested ? esc(lkr(r.invested, true)) + (r.paybackYears ? '<small>pays back in ' + r.paybackYears + ' yrs</small>' :
           r.returnPct !== null ? '<small>no return yet</small>' : '') : '<span class="dash">—</span>') + '</td>' +
         '<td class="row-actions"><span class="circle-btn sm" aria-hidden="true">' + icon('chevron') + '</span></td></tr>';
@@ -327,6 +448,7 @@ window.Finance = (function () {
         '<div class="' + (s.net < 0 ? 'neg' : s.net > 0 ? 'pos' : '') + '"><span>Net</span><b>' + esc(signed(s.net)) + '</b>' +
           (s.margin !== null ? '<small>' + s.margin + '% margin</small>' : '') + '</div>' +
       '</div>' +
+      trendHtml(data.trend) +
       (s.invested ? '<p class="fin-capital">' + icon('landmark') + 'Capital invested <b>' + esc(lkr(s.invested)) + '</b>' +
         (s.paybackYears ? ' · pays back in about <b>' + s.paybackYears + ' years</b> at this rate' : '') + '</p>' : '') +
       (list.length ? '<ul class="fin-entries">' + list.map((e) => '<li data-entry="' + e.id + '" class="' + (mayEdit ? 'is-editable' : '') + '"' + (mayEdit ? ' tabindex="0"' : '') + '>' +
@@ -340,6 +462,8 @@ window.Finance = (function () {
         (mayRecord ? '<button type="button" class="btn btn-dark btn-sm" data-fin-new>' + icon('plus') + 'Record entry</button>' : '') +
         '<button type="button" class="btn btn-ghost btn-sm" data-fin-open>' + icon('chart') + 'Finance page</button></div>';
     Fx.countUp(box, '.fin-mini b');
+    Charts.bindTooltips(box);
+    Fx.draw(box);
     Fx.rise($('.fin-entries', box), 6);
     const entries = {};
     data.entries.forEach((e) => { entries[e.id] = e; });

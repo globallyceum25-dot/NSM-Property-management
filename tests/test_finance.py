@@ -34,6 +34,68 @@ class SpreadTests(AccessTestCase):
         self.assertEqual(v(1000, 1500), "loss")
 
 
+def monthly(kind, category, amounts, start=datetime.date(2025, 1, 1)):
+    """One entry a month from `start`, with the given amounts."""
+    rows = []
+    for i, amount in enumerate(amounts):
+        y, m = divmod(start.year * 12 + start.month - 1 + i, 12)
+        rows.append({"kind": kind, "category": category, "amount": amount,
+                     "period_start": datetime.date(y, m + 1, 1).isoformat(), "months": 1})
+    return rows
+
+
+class TrendTests(AccessTestCase):
+    today = datetime.date(2026, 6, 15)          # history runs Jan 2025 - Jun 2026: 18 months
+    last = datetime.date(2026, 6, 1)
+
+    def test_a_loss_maker_that_is_improving_gets_a_break_even_month(self):
+        rows = monthly("cost", "RENT", [100000] * 18) + monthly("income", "BUSINESS_REVENUE",
+                                                                [20000 + 3000 * i for i in range(18)])
+        t = finance.trend(rows, self.last, self.today)
+        self.assertEqual((t["direction"], t["months"], t["confidence"]), ("up", 18, "high"))
+        self.assertAlmostEqual(t["slope"], 3000, delta=1)
+        self.assertLess(t["fitNow"], 0)
+        self.assertEqual(t["breakEven"], "2027-04")       # -29,000 in Jun 2026, +3,000 a month -> 10 months
+        self.assertIsNone(t["turnsLoss"])
+        self.assertEqual(len(t["projection"]), finance.PROJECT_MONTHS)
+        self.assertEqual(t["history"][-1]["avg3"], round(sum(r - 100000 for r in (65000, 68000, 71000)) / 3, 2))
+
+    def test_a_profitable_property_slipping_could_turn_to_a_loss(self):
+        rows = monthly("cost", "RENT", [100000] * 18) + monthly("income", "BUSINESS_REVENUE",
+                                                                [200000 - 4000 * i for i in range(18)])
+        t = finance.trend(rows, self.last, self.today)
+        self.assertEqual(t["direction"], "down")
+        self.assertEqual(t["turnsLoss"], "2027-02")        # +32,000 in Jun 2026, -4,000 a month -> 8 months
+        self.assertIsNone(t["breakEven"])
+
+    def test_steady_short_and_none(self):
+        steady = monthly("cost", "RENT", [100000] * 12) + monthly("income", "BUSINESS_REVENUE", [150000] * 12)
+        self.assertEqual(finance.trend(steady, self.last, self.today)["direction"], "flat")
+        self.assertEqual(finance.trend(steady, self.last, self.today)["history"][-1]["month"], "2025-12")
+        new = monthly("cost", "RENT", [1000] * 3, start=datetime.date(2026, 4, 1))
+        short = finance.trend(new, self.last, self.today)
+        self.assertEqual((short["direction"], short["months"], short["projection"]), ("short", 3, []))
+        self.assertIsNone(finance.trend([], self.last, self.today))
+
+    def test_months_not_yet_lived_are_left_out(self):
+        rows = monthly("cost", "RENT", [100000] * 30)       # Jan 2025 to Jun 2027
+        t = finance.trend(rows, datetime.date(2027, 3, 1), self.today)
+        self.assertEqual(t["history"][-1]["month"], "2026-06")
+
+    def test_the_reports_carry_the_trend(self):
+        for i in range(8):
+            month = "2026-%02d" % (i + 1)
+            self.ok("POST", "/api/properties/1/finance", 201, data=entry("cost", "RENT", 100000, month))
+            self.ok("POST", "/api/properties/1/finance", 201,
+                    data=entry("income", "BUSINESS_REVENUE", 60000 + 8000 * i, month))
+        mine = self.get("/api/properties/1/finance", **{"from": "2026-01", "to": "2026-08"})
+        self.assertEqual(mine["trend"]["direction"], "up")
+        row = next(p for p in self.get("/api/finance/summary", **{"from": "2026-01", "to": "2026-08"})["properties"]
+                   if p["id"] == 1)
+        self.assertEqual(row["trend"]["direction"], "up")
+        self.assertEqual(len(row["trend"]["spark"]), 8)
+
+
 class EntryTests(AccessTestCase):
 
     def test_record_and_read_a_propertys_result(self):

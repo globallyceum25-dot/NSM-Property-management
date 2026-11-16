@@ -440,6 +440,10 @@
         <section class="fin-card">
           <header><div><h2>How the properties stand</h2><p>Income against running costs for the period.</p></div></header>
           <div id="fin-standing"></div>
+          <div id="fin-turning" hidden>
+            <h3 class="fin-sub">Turning around</h3>
+            <ul class="fin-losers fin-turning" id="fin-turning-list"></ul>
+          </div>
           <h3 class="fin-sub">Biggest losses</h3>
           <ul class="fin-losers" id="fin-losers"></ul>
         </section>
@@ -454,12 +458,14 @@
               <option value="income">Income</option>
               <option value="cost">Running costs</option>
               <option value="rent">Rent as share of income</option>
+              <option value="improving">Most improving</option>
+              <option value="worsening">Most worsening</option>
               <option value="name">Name</option>
             </select></label>
         </header>
         <div class="table-wrap">
           <table class="grid fin-table">
-            <thead><tr><th>Property</th><th>Tenure</th><th class="num">Income</th><th class="num">Running costs</th><th class="num">Of which rent</th><th class="num">Net</th><th>Status</th><th class="num">Capital</th><th class="row-actions"></th></tr></thead>
+            <thead><tr><th>Property</th><th>Tenure</th><th class="num">Income</th><th class="num">Running costs</th><th class="num">Of which rent</th><th class="num">Net</th><th>Status</th><th>Trend</th><th class="num">Capital</th><th class="row-actions"></th></tr></thead>
             <tbody id="fin-rows"></tbody>
           </table>
           <p class="empty" id="fin-empty" hidden></p>

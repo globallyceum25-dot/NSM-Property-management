@@ -3183,3 +3183,56 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
 .tb-btn.solid:hover { filter: brightness(.95); background: var(--warn); }
 /* A reminder at the very top of every page. */
 body.test-mode .topbar { box-shadow: inset 0 -3px 0 var(--warn); }
+
+/* Finance trend: the table's sparkline and the property panel's chart */
+.fin-trend { display: flex; flex-direction: column; gap: 3px; min-width: 96px; outline: none; }
+.fin-spark { display: block; }
+.fin-spark .zero { stroke: var(--border-strong); stroke-width: 1; }
+.fin-spark .pos, .fin-trend-chart .bar.pos { fill: var(--viz-good); }
+.fin-spark .neg, .fin-trend-chart .bar.neg { fill: var(--viz-critical); }
+.fin-dirlabel { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 700; white-space: nowrap; }
+.fin-dirlabel .ic { width: 13px; height: 13px; stroke-width: 2.4; }
+.fin-dirlabel.ok { color: var(--ok); }
+.fin-dirlabel.bad { color: var(--danger); }
+.fin-dirlabel.flat { color: var(--text-muted); }
+.fin-dirlabel.none { color: var(--text-faint); font-weight: 600; }
+.fin-lval.up { color: var(--ok); display: inline-flex; align-items: center; gap: 4px; }
+.fin-lval.up .ic { width: 13px; height: 13px; }
+
+.fin-trend-box { margin-top: 14px; padding: 14px 14px 10px; border: 1px solid var(--border); border-radius: 14px; }
+.fin-trend-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.fin-trend-head b { font-size: 14px; }
+.fin-trend-text { margin: 6px 0 8px; font-size: 13px; line-height: 1.5; color: var(--text-2); }
+.fin-trend-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.fin-trend-chart .grid { stroke: var(--border); stroke-dasharray: 3 4; }
+.fin-trend-chart .zero { stroke: var(--border-strong); stroke-width: 1.2; }
+.fin-trend-chart .tick { font-size: 10px; fill: var(--text-muted); text-anchor: end; }
+.fin-trend-chart .xlab { font-size: 10.5px; fill: var(--text-muted); }
+.fin-trend-chart .proj-zone { fill: var(--surface-2); }
+.fin-trend-chart .proj-label { font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; fill: var(--text-faint); text-anchor: middle; }
+.fin-trend-chart .bar { outline: none; transition: opacity .15s; }
+.fin-trend-chart .bar:hover, .fin-trend-chart .bar:focus-visible { opacity: .75; }
+.fin-trend-chart .avg { fill: none; stroke: var(--viz-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.fin-trend-chart .proj { fill: none; stroke: var(--viz-1); stroke-width: 2; stroke-dasharray: 5 5; stroke-linecap: round; }
+.fin-trend-chart .mark { stroke: var(--surface); stroke-width: 2; outline: none; }
+.fin-trend-chart .mark.pos { fill: var(--viz-good); }
+.fin-trend-chart .mark.neg { fill: var(--viz-critical); }
+.fin-trend-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 11.5px; color: var(--text-muted); }
+.fin-trend-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.fin-trend-legend i { display: inline-block; }
+.fin-trend-legend .k-bar { width: 10px; height: 10px; border-radius: 2px; background: linear-gradient(90deg, var(--viz-good) 50%, var(--viz-critical) 50%); }
+.fin-trend-legend .k-avg { width: 16px; height: 2px; background: var(--viz-1); }
+.fin-trend-legend .k-proj { width: 16px; height: 0; border-top: 2px dashed var(--viz-1); }
+.fin-trend-note { margin: 8px 0 2px; font-size: 11.5px; line-height: 1.5; color: var(--text-muted); }
+.fin-trend-note b { color: var(--amber-text); font-weight: 600; }
+
+/* drawn in, like the other charts */
+.fx-draw .fin-trend-chart .bar { transform-box: fill-box; animation: fx-grow-y .7s var(--ease-out) both; animation-delay: .15s; }
+.fx-draw .fin-trend-chart .bar.pos { transform-origin: center bottom; }
+.fx-draw .fin-trend-chart .bar.neg { transform-origin: center top; }
+.fx-draw .fin-trend-chart .avg, .fx-draw .fin-trend-chart .proj, .fx-draw .fin-trend-chart .mark { animation: fx-fade-in .6s var(--ease-out) both; animation-delay: .55s; }
+.fx-draw .fin-spark rect { transform-box: fill-box; transform-origin: center; animation: fx-grow-y .6s var(--ease-out) both; animation-delay: .2s; }
+@media (prefers-reduced-motion: reduce) {
+  .fx-draw .fin-trend-chart .bar, .fx-draw .fin-trend-chart .avg, .fx-draw .fin-trend-chart .proj,
+  .fx-draw .fin-trend-chart .mark, .fx-draw .fin-spark rect { animation: none; }
+}
