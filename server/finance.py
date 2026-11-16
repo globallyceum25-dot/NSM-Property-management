@@ -341,8 +341,11 @@ def _brief(t):
     """The trend as the property list needs it: direction, pace and a sparkline."""
     if t is None:
         return None
-    brief = {k: t[k] for k in ("direction", "slope", "confidence", "breakEven", "turnsLoss", "months")}
+    brief = {k: t[k] for k in ("direction", "slope", "confidence", "breakEven", "turnsLoss", "months", "fitNow")}
     brief["spark"] = [h["net"] for h in t["history"][-12:]]
+    # Enough to draw the small chart of each property on the Finance page.
+    brief["history"] = [{"month": h["month"], "net": h["net"], "avg3": h["avg3"]} for h in t["history"]]
+    brief["projection"] = t["projection"]
     return brief
 
 
@@ -392,10 +395,13 @@ def _report(conn, where, params, first, last):
             total[k] += m[k]
     totals = _finish(total)
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("profit", "break-even", "loss", "cost-only", "none")}
+    # The same trend for all these properties together.
+    portfolio_trend = trend([e for p in props for e in entries.get(p["id"], [])], last)
     return {
         "period": {"from": _key(first), "to": _key(last), "months": n_months},
         "totals": totals, "counts": counts,
         "byMonth": [dict(month=k, **{x: round(v, 2) for x, v in m.items()}) for k, m in portfolio_months.items()],
+        "trend": portfolio_trend,
         "properties": rows,
     }
 

@@ -94,6 +94,10 @@ class TrendTests(AccessTestCase):
                    if p["id"] == 1)
         self.assertEqual(row["trend"]["direction"], "up")
         self.assertEqual(len(row["trend"]["spark"]), 8)
+        self.assertEqual(len(row["trend"]["history"]), 8)
+        self.assertEqual(len(row["trend"]["projection"]), finance.PROJECT_MONTHS)
+        portfolio = self.get("/api/finance/summary", **{"from": "2026-01", "to": "2026-08"})["trend"]
+        self.assertEqual(portfolio["direction"], "up")
 
 
 class EntryTests(AccessTestCase):

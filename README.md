@@ -390,7 +390,10 @@ how many properties are in each status, the properties *turning around*
 losses, and a table of every property, worst first, with each one's trend as a
 small chart (sortable by most improving or worsening) and a CSV export. Each
 property's panel has a profit-trend chart: monthly results, a 3-month average
-and the projection. It follows the same tenure tabs,
+and the projection. To see the pattern across the portfolio, the page also
+has **Net result over time** for all the properties shown, and **Trends by
+property**: a small chart for every property, most improving first, filtered to
+those turning around, improving, worsening or steady. It follows the same tenure tabs,
 search and filters as the Portfolio. Each property's panel has its own Finance
 section, with its entries and **Record entry**.
 

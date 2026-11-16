@@ -131,6 +131,19 @@ window.Finance = (function () {
       const li = event.target.closest('[data-property]');
       if (li) hooks.openProperty(Number(li.dataset.property));
     });
+    $('#fin-mult-filter').addEventListener('click', function (event) {
+      const b = event.target.closest('[data-mult]');
+      if (!b) return;
+      multFilter = b.dataset.mult;
+      renderMultiples();
+      Charts.bindTooltips($('#fin-mults'));
+      Fx.rise($('#fin-mults'), 12);
+      Fx.draw($('#fin-mults'));
+    });
+    $('#fin-mults').addEventListener('click', function (event) {
+      const b = event.target.closest('[data-property]');
+      if (b) hooks.openProperty(Number(b.dataset.property));
+    });
     $('#fin-turning-list').addEventListener('click', function (event) {
       const li = event.target.closest('[data-property]');
       if (li) hooks.openProperty(Number(li.dataset.property));
@@ -179,6 +192,8 @@ window.Finance = (function () {
     renderKpis();
     renderChart();
     renderStanding();
+    renderPortfolioTrend();
+    renderMultiples();
     renderTable();
     Charts.bindTooltips($('#view-finance'));
     animate();
@@ -196,6 +211,7 @@ window.Finance = (function () {
     Fx.rise($('#fin-kpis'));
     Fx.rise($('.fin-grid', page), 4);
     Fx.rise($('#fin-losers'), 5);
+    Fx.rise($('#fin-mults'), 12);
     Fx.rise($('#fin-rows'), 10);
     Fx.draw(page);
   }
@@ -315,9 +331,12 @@ window.Finance = (function () {
 
   // The property panel's chart: each month's result, a 3-month average, and
   // the fitted line carried forward as a projection.
-  function trendChart(t) {
+  function trendChart(t, opts) {
+    opts = opts || {};
+    const compact = !!opts.compact;
     const hist = t.history, proj = t.projection || [];
-    const W = 432, H = 200, padL = 46, padR = 8, padT = 14, padB = 26;
+    const W = opts.width || 432, H = opts.height || 200;
+    const padL = compact ? 4 : 46, padR = compact ? 4 : 8, padT = compact ? 6 : 14, padB = compact ? 6 : 26;
     const all = hist.map((h) => h.net).concat(hist.map((h) => h.avg3), proj.map((p) => p.net), [0]);
     let top = Math.max.apply(null, all), bottom = Math.min.apply(null, all);
     if (top === bottom) { top += 1; bottom -= 1; }
@@ -328,13 +347,20 @@ window.Finance = (function () {
     const y = (v) => padT + (top - v) / (top - bottom) * (H - padT - padB);
     const zero = y(0), bw = Math.max(2, step * 0.62);
     const tickVals = [top - span * 0.08, 0, bottom + span * 0.08].filter((v, i, a) => a.indexOf(v) === i);
-    let svg = '<svg class="fin-trend-chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(trendSentence(t)) + '">';
-    if (proj.length) {
+    let svg = '<svg class="fin-trend-chart' + (compact ? ' compact' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(trendSentence(t)) + '">';
+    if (proj.length && compact) {
+      svg += '<rect class="proj-zone" x="' + (padL + step * hist.length).toFixed(1) + '" y="' + padT + '" width="' +
+        (step * proj.length).toFixed(1) + '" height="' + (H - padT - padB) + '" rx="4"/>';
+    } else if (proj.length) {
       svg += '<rect class="proj-zone" x="' + (padL + step * hist.length).toFixed(1) + '" y="' + padT + '" width="' +
         (step * proj.length).toFixed(1) + '" height="' + (H - padT - padB) + '" rx="6"/>' +
         '<text class="proj-label" x="' + (padL + step * (hist.length + proj.length / 2)).toFixed(1) + '" y="' + (padT + 12) + '">Projection</text>';
     }
-    tickVals.forEach(function (v) {
+    (compact ? [0] : tickVals).forEach(function (v) {
+      if (compact) {
+        svg += '<line class="zero" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(0).toFixed(1) + '" y2="' + y(0).toFixed(1) + '"/>';
+        return;
+      }
       svg += '<line class="' + (v === 0 ? 'zero' : 'grid') + '" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
         '<text class="tick" x="' + (padL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '">' + esc(v === 0 ? '0' : lkr(v, true).replace('LKR ', '')) + '</text>';
     });
@@ -357,6 +383,7 @@ window.Finance = (function () {
           ' data-tip-label="' + (t.breakEven ? 'Breaks even' : 'Turns to a loss') + '" data-tip-value="around ' + esc(monthLabel(mark)) + '"/>';
       }
     }
+    if (compact) return svg + '</svg>';
     const label = (i, key, anchor) => '<text class="xlab" text-anchor="' + anchor + '" x="' + x(i).toFixed(1) + '" y="' + (H - 8) + '">' + esc(monthLabel(key)) + '</text>';
     svg += label(0, hist[0].month, 'start');
     if (hist.length > 2) svg += label(hist.length - 1, hist[hist.length - 1].month, proj.length ? 'middle' : 'end');
@@ -375,6 +402,65 @@ window.Finance = (function () {
       (t.direction !== 'short' ? '<p class="fin-trend-note">A straight line through the last ' + t.months + ' months, carried forward: a guide, not a promise.' +
         (t.confidence === 'low' ? ' <b>The figures vary a lot, so treat it with care.</b>' : '') + '</p>' : '') +
       '</div>';
+  }
+
+  /* ---------- the pattern across properties ---------- */
+
+  let multFilter = '';
+  const MULT_FILTERS = [['', 'All'], ['turning', 'Turning around'], ['up', 'Improving'], ['down', 'Worsening'], ['flat', 'Steady']];
+
+  function multMatches(r) {
+    const t = r.trend;
+    if (!t || t.direction === 'short') return multFilter === '';
+    if (multFilter === 'turning') return (r.status === 'loss' || r.status === 'cost-only') && t.direction === 'up';
+    return !multFilter || t.direction === multFilter;
+  }
+
+  function renderPortfolioTrend() {
+    const t = report.trend;
+    const host = $('#fin-portfolio-trend');
+    if (!t || !t.history.length) {
+      $('#fin-pt-text').textContent = 'Income less running costs, month by month, for the properties shown.';
+      host.innerHTML = '<div class="chart-empty">No income or costs recorded for these properties yet.</div>';
+      return;
+    }
+    const d = DIRECTION[t.direction];
+    $('#fin-pt-text').innerHTML = '<span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span> ' +
+      esc(trendSentence(t)) + (t.direction !== 'short' ? ' <span class="fin-pt-note">Last ' + t.months + ' months, carried forward: a guide, not a promise.</span>' : '');
+    host.innerHTML = trendChart(t, { width: 1000, height: 260 });
+  }
+
+  function renderMultiples() {
+    const withTrend = report.properties.filter((r) => r.trend && r.trend.history.length);
+    const counts = {
+      '': withTrend.length,
+      turning: withTrend.filter((r) => (r.status === 'loss' || r.status === 'cost-only') && r.trend.direction === 'up').length,
+      up: withTrend.filter((r) => r.trend.direction === 'up').length,
+      down: withTrend.filter((r) => r.trend.direction === 'down').length,
+      flat: withTrend.filter((r) => r.trend.direction === 'flat').length
+    };
+    $('#fin-mult-filter').innerHTML = MULT_FILTERS.map((f) => '<button type="button" data-mult="' + f[0] + '" class="' +
+      (multFilter === f[0] ? 'is-active' : '') + '">' + esc(f[1]) + ' <b>' + counts[f[0]] + '</b></button>').join('');
+    const rows = withTrend.filter(multMatches).sort((a, b) => slopeOf(b) - slopeOf(a));
+    $('#fin-mults').innerHTML = rows.map(function (r) {
+      const t = r.trend, d = DIRECTION[t.direction];
+      const nets = t.history.map((h) => h.net), last = nets[nets.length - 1];
+      return '<button type="button" class="fin-mult" data-property="' + r.id + '">' +
+        '<span class="fin-mult-name" title="' + esc(r.name) + '">' + esc(r.name) + '</span>' +
+        '<span class="fin-mult-meta"><span class="swatch" style="background:' + esc(r.sbu_color) + '"></span>' +
+          '<span class="fin-mult-code">' + esc(r.property_code) + '</span>' +
+          '<span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></span>' +
+        trendChart(t, { compact: true, width: 300, height: 92 }) +
+        '<span class="fin-mult-foot"><span class="' + (last < 0 ? 'neg' : 'pos') + '">' + esc(signed(last)) + '/mo now</span>' +
+          '<span>' + esc(t.direction === 'short' ? 'only ' + t.months + ' months of figures'
+          : t.breakEven ? 'breaks even ~' + monthLabel(t.breakEven)
+          : t.turnsLoss ? 'could turn to a loss ~' + monthLabel(t.turnsLoss)
+          : (t.direction === 'flat' ? 'about the same each month' : (t.slope > 0 ? '+' : '−') + lkr(Math.abs(t.slope), true) + ' a month')) +
+        '</span></span></button>';
+    }).join('');
+    const empty = $('#fin-mults-empty');
+    empty.hidden = rows.length > 0;
+    empty.textContent = withTrend.length ? 'No property matches this choice.' : 'No property has figures recorded yet.';
   }
 
   const SORTS = {
