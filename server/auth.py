@@ -108,7 +108,8 @@ def role_name(conn, code):
 def _public(conn, row):
     return {"id": row["id"], "email": row["email"], "name": row["name"], "role": row["role"],
             "roleLabel": role_name(conn, row["role"]),
-            "mustChangePassword": bool(row["must_change_password"])}
+            "mustChangePassword": bool(row["must_change_password"]),
+            "testMode": bool(row["test_mode"])}
 
 
 def count_users(conn):

@@ -326,7 +326,7 @@ def get_summary(ctx):
     from . import api
     conn = db.get_conn()
     first, last = period_from_query(ctx.query)
-    where, params = api._property_filters(ctx.query)
+    where, params = api._property_filters(ctx.query, ctx)
     scope_where, scope_params = access.scope_for(ctx, "finance.view")
     return 200, _report(conn, where + scope_where, params + scope_params, first, last)
 
@@ -349,7 +349,7 @@ def export_csv(ctx):
     from . import api
     conn = db.get_conn()
     first, last = period_from_query(ctx.query)
-    where, params = api._property_filters(ctx.query)
+    where, params = api._property_filters(ctx.query, ctx)
     scope_where, scope_params = access.scope_for(ctx, "finance.export")
     report = _report(conn, where + scope_where, params + scope_params, first, last)
     labels = {"profit": "Profitable", "break-even": "Break-even", "loss": "Loss-making",

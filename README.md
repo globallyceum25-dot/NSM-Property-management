@@ -385,6 +385,35 @@ Property Managers see and record for their own scope, Auditors read and export,
 and the others do not see Finance. Every entry recorded, changed or removed is
 in the activity log.
 
+## Test data
+
+A ready-made **test data** set lets anyone try every section without touching
+the real register. The **Real data / Test data** switch at the top of the
+Portfolio chooses which one *you* see; each person's choice is their own and is
+remembered.
+
+- **Kept apart.** Test properties are flagged (`property.is_test`); their
+  documents and finance entries belong to them. In real-data mode test data is
+  invisible everywhere — lists, map, counts, dashboard, alerts, finance, type
+  and company pages, exports — and a link to a test property answers "not
+  found". In test-data mode it is the other way round. Property types, owning
+  companies and the master lists are shared, and the test set adds nothing to
+  them.
+- **Clearly marked.** While looking at test data, a striped banner sits at the
+  top of every page, and property codes start with `TST-`. Anything added in
+  test mode (one property, a bulk upload, documents, finance) is saved as test
+  data.
+- **What's in it.** 24 properties across every property type, the owning
+  companies, every tenure, status, structure and area unit; about 80 documents
+  across the whole renewal ladder (expired, due within 3 / 6 / 9 / 12 months,
+  later, with and without files); and two years of finance that is profitable,
+  break-even, loss-making and cost only. Dates are relative to the day it is
+  loaded.
+- **Managing it.** Administrators (anyone allowed to delete properties) can
+  **Load**, **Reset** or **Remove** it from the banner. Removing deletes every
+  test property with its documents, files and finance entries; real data is
+  never touched. Each is in the activity log.
+
 ## What it does
 
 ![Portfolio: property cards beside the map](docs/screenshots/1-portfolio-map.png)
@@ -843,6 +872,9 @@ Sri Lanka; selecting a district fills the province automatically.
 | GET/POST | `/api/properties/{id}/finance` | one property's figures and entries / record an entry: `kind`, `category`, `amount`, `period_start` (`YYYY-MM`), `months`, `description`, `counterparty`, `reference_no`, `notes` |
 | PUT/DELETE | `/api/finance/{id}` | change / remove an entry |
 | GET | `/api/export/finance.csv` | the finance report as CSV, worst result first |
+| GET | `/api/test-data` | how much test data there is, whether you are looking at it, and whether you may manage it |
+| PUT | `/api/test-data/mode` | `{"on": true}` to look at test data, `false` for real data (your own choice) |
+| POST/DELETE | `/api/test-data` | load (or reset) / remove the test set |
 | GET | `/api/audit` | the audit log, newest first; `category`, `user_id`, `days`, `q`, `before` (paging), `limit` |
 | GET | `/api/reference` | districts, provinces, enumerations, map bounds (no sign-in needed) |
 | GET/POST | `/api/sbus` | list / create property types |

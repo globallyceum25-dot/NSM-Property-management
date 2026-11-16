@@ -787,18 +787,18 @@ def check_rows(conn, sheet_rows):
     return results, unknown, header_no
 
 
-def import_rows(conn, results):
+def import_rows(conn, results, is_test=0):
     """Insert every row that passed, in one transaction; returns the new codes."""
     from . import api
 
     columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
-               "latitude", "longitude"] + api.PROPERTY_FIELDS
+               "latitude", "longitude", "is_test"] + api.PROPERTY_FIELDS
     created = []
     try:
         for r in results:
             if not r["ok"]:
                 continue
-            payload = dict(r["_payload"])
+            payload = dict(r["_payload"], is_test=is_test)
             payload["property_code"] = r["_code"] or api._next_property_code(conn, payload["sbu_id"])
             conn.execute("INSERT INTO property (%s) VALUES (%s)"
                          % (", ".join(columns), ", ".join(":" + c for c in columns)), payload)
@@ -844,7 +844,7 @@ def upload_properties(ctx):
     if fields.get("mode") == "import":
         if not valid:
             raise ApiError("No rows are ready to import. Fix the rows marked in red and upload again.")
-        created = import_rows(conn, results)
+        created = import_rows(conn, results, access.test_mode(ctx))
     public = [{k: v for k, v in r.items() if not k.startswith("_")} for r in results]
     return (201 if created else 200), {
         "sheet": sheet, "total": len(results), "valid": valid, "invalid": len(results) - valid,

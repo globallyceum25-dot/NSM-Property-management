@@ -669,6 +669,8 @@ MIGRATIONS = [
     ("sbu", "sort_order", "INTEGER"),
     ("app_user", "must_change_password", "INTEGER NOT NULL DEFAULT 0"),
     ("document", "uploaded_by", "INTEGER"),
+    ("property", "is_test", "INTEGER NOT NULL DEFAULT 0"),
+    ("app_user", "test_mode", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

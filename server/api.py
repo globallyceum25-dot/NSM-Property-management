@@ -154,8 +154,8 @@ def list_sbus(ctx):
     conn = db.get_conn()
     rows = conn.execute(
         """SELECT s.*,
-                  (SELECT COUNT(*) FROM property p WHERE p.sbu_id = s.id) AS property_count
-           FROM sbu s ORDER BY COALESCE(s.sort_order, 500), s.name"""
+                  (SELECT COUNT(*) FROM property p WHERE p.sbu_id = s.id AND p.is_test = ?) AS property_count
+           FROM sbu s ORDER BY COALESCE(s.sort_order, 500), s.name""", (access.test_mode(ctx),)
     ).fetchall()
     return 200, [_row_to_dict(r) for r in rows]
 
@@ -225,9 +225,9 @@ def list_legal_entities(ctx):
     conn = db.get_conn()
     rows = conn.execute(
         """SELECT e.*,
-                  (SELECT COUNT(*) FROM property p WHERE p.legal_entity_id = e.id)
+                  (SELECT COUNT(*) FROM property p WHERE p.legal_entity_id = e.id AND p.is_test = ?)
                       AS property_count
-           FROM legal_entity e ORDER BY e.short_code"""
+           FROM legal_entity e ORDER BY e.short_code""", (access.test_mode(ctx),)
     ).fetchall()
     return 200, [_row_to_dict(r) for r in rows]
 
@@ -330,9 +330,9 @@ def list_locations(ctx):
                   (SELECT lc.code FROM location_code lc
                     WHERE lc.location_id = l.id AND lc.is_active = 1
                     ORDER BY lc.code LIMIT 1) AS code,
-                  (SELECT COUNT(*) FROM property p WHERE p.location_id = l.id)
+                  (SELECT COUNT(*) FROM property p WHERE p.location_id = l.id AND p.is_test = ?)
                       AS property_count
-           FROM location l ORDER BY l.name"""
+           FROM location l ORDER BY l.name""", (access.test_mode(ctx),)
     ).fetchall()
     return 200, [_row_to_dict(r) for r in rows]
 
@@ -384,13 +384,14 @@ def _renewal_buckets():
     }
 
 
-def _property_filters(q):
+def _property_filters(q, ctx=None):
     """Build the WHERE clauses shared by the property list and the dashboard.
 
     Every condition refers only to `p.`, so the same fragment can be dropped into
-    any query that selects FROM property p.
+    any query that selects FROM property p. With the request's `ctx`, only the
+    kind of data the person is looking at (real or test) is included.
     """
-    where, params = [], []
+    where, params = access.mode_sql(ctx) if ctx is not None else ([], [])
 
     if q.get("sbu_id"):
         ids = [int(x) for x in q["sbu_id"].split(",") if x.strip().isdigit()]
@@ -450,7 +451,7 @@ def _property_filters(q):
 
 def _visible_filters(ctx, *keys):
     """The request's filters plus, for a person with limited access, their scope."""
-    where, params = _property_filters(ctx.query)
+    where, params = _property_filters(ctx.query, ctx)
     scope_where, scope_params = access.scope_for(ctx, *keys)
     return where + scope_where, params + scope_params
 
@@ -592,13 +593,14 @@ def create_property(ctx):
     payload, code = _property_payload(ctx, conn)
     access.check_payload(ctx, "properties.create", payload["sbu_id"], payload["legal_entity_id"])
     payload["property_code"] = code.upper() if code else _next_property_code(conn, payload["sbu_id"])
+    payload["is_test"] = access.test_mode(ctx)      # made while looking at test data: test data
     if conn.execute("SELECT 1 FROM property WHERE property_code = ?",
                     (payload["property_code"],)).fetchone():
         raise ApiError("Property code '%s' is already in use." % payload["property_code"],
                        409, "property_code")
 
     columns = ["property_code", "sbu_id", "legal_entity_id", "location_id",
-               "latitude", "longitude"] + PROPERTY_FIELDS
+               "latitude", "longitude", "is_test"] + PROPERTY_FIELDS
     new_id = conn.execute(
         "INSERT INTO property (%s) VALUES (%s) RETURNING id"
         % (", ".join(columns), ", ".join(":" + c for c in columns)), payload).fetchone()["id"]
@@ -641,6 +643,7 @@ def delete_property(ctx):
     gone = conn.execute("SELECT property_code, name FROM property WHERE id = ?", (pid,)).fetchone()
     if gone is None:
         raise ApiError("Property not found.", 404)
+    access.check_mode(ctx, conn, pid)
     docs = conn.execute("SELECT stored_name FROM document WHERE property_id = ?",
                         (pid,)).fetchall()
     ctx.audit_target = "%s · %s" % (gone["property_code"], gone["name"])
@@ -769,7 +772,7 @@ def list_all_documents(ctx):
     conn = db.get_conn()
     q = dict(ctx.query)
     text = (q.pop("q", "") or "").strip()
-    where, params = _property_filters(q)
+    where, params = _property_filters(q, ctx)
     scope_where, scope_params = access.scope_for(ctx, "documents.view")
     where, params = where + scope_where, params + scope_params
 
@@ -840,6 +843,7 @@ def delete_document(ctx):
     row = conn.execute("SELECT * FROM document WHERE id = ?", (doc_id,)).fetchone()
     if row is None:
         raise ApiError("Document not found.", 404)
+    access.check_mode(ctx, conn, row["property_id"])
     acc = access.of(ctx)
     if acc is not None and acc.level("documents.delete") == "limited" and row["uploaded_by"] != acc.user_id:
         raise ApiError("You can only delete documents you uploaded yourself.", 403)
@@ -1005,12 +1009,16 @@ def get_stats(ctx):
                  "byTenure": rows["byTenure"], "byType": rows["byType"], "byProvince": by_province,
                  "byDocType": rows["byDocType"], "renewals": renewals,
                  "byEntitySbu": rows["byEntitySbu"],
-                 "expiringSoon": rows["expiringSoon"], "filtered": bool(where)}
+                 "expiringSoon": rows["expiringSoon"],
+                 # Filtered by the person's own choices, not by the data mode or their scope.
+                 "filtered": bool(_property_filters(ctx.query)[0])}
 
 
 def export_properties_csv(ctx):
     conn = db.get_conn()
     where, params = access.scope_for(ctx, "properties.export")
+    mode_where, mode_params = access.mode_sql(ctx)
+    where, params = mode_where + where, mode_params + params
     rows = conn.execute(_PROPERTY_SELECT + (" WHERE " + " AND ".join(where) if where else "")
                         + " ORDER BY COALESCE(s.sort_order, 500), s.name, p.property_code", params).fetchall()
     buf = io.StringIO()
@@ -1081,6 +1089,10 @@ ROUTES = ROUTES + auth.ROUTES + admin.ROUTES
 # What each property costs and earns.
 from . import finance  # noqa: E402
 ROUTES = ROUTES + finance.ROUTES
+
+# Test data, kept apart from the real register.
+from . import testdata  # noqa: E402
+ROUTES = ROUTES + testdata.ROUTES
 
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]

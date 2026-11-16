@@ -451,6 +451,7 @@
     window.__districts = state.reference.districts;   // used by the masters form
     Masters.setAccess(can);
     Access.init(toast, state);
+    TestData.init(toast, state);
     Finance.init(toast, state, {
       filters: activeFilters, can: can, allowedOn: allowedOn,
       openProperty: (id) => openDrawer(id),

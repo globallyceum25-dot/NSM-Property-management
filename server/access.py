@@ -398,11 +398,35 @@ def scope_for(ctx, *keys):
     return acc.scope_sql("p")
 
 
+def test_mode(ctx):
+    """1 when the signed-in person is looking at test data, else 0."""
+    user = getattr(ctx, "user", None)
+    return 1 if user and user.get("testMode") else 0
+
+
+def mode_sql(ctx, alias="p"):
+    """Keep real and test data apart: only the kind the person is looking at."""
+    if getattr(ctx, "user", None) is None:
+        return [], []
+    return ["%s.is_test = ?" % alias], [test_mode(ctx)]
+
+
+def check_mode(ctx, conn, property_id):
+    """A property of the other kind (test or real) does not exist for this person."""
+    if getattr(ctx, "user", None) is None:
+        return
+    row = conn.execute("SELECT is_test FROM property WHERE id = ?", (property_id,)).fetchone()
+    if row is not None and (row["is_test"] or 0) != test_mode(ctx):
+        raise ApiError("Property not found.", 404)
+
+
 def check_property(ctx, conn, key, property_id, write=False):
-    """Refuse a property outside the person's scope when `key` is limited.
+    """Refuse a property outside the person's scope when `key` is limited, or
+    of the other kind of data (test or real).
 
     Reading answers 404, as if the property were not there; changing answers 403.
     """
+    check_mode(ctx, conn, property_id)
     acc = of(ctx)
     if acc is None or acc.level(key) != "limited":
         return
@@ -488,6 +512,10 @@ ROUTE_PERMISSIONS = {
     "admin.update_role": "roles.manage",
     "admin.delete_role": "roles.manage",
     "admin.list_audit": "audit.view",
+    "testdata.get_state": SIGNED_IN,
+    "testdata.set_mode": SIGNED_IN,
+    "testdata.load_data": "properties.delete",
+    "testdata.remove_data": "properties.delete",
     "finance.get_summary": "finance.view",
     "finance.property_finance": "finance.view",
     "finance.create_entry": "finance.create",

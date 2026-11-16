@@ -64,6 +64,7 @@
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14M10 16.5 5.5 12 10 7.5M5.5 12H15"/></symbol>
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8M7 6.3a7.5 7.5 0 1 0 10 0"/></symbol>
+  <symbol id="i-flask" viewBox="0 0 24 24"><path d="M9.5 3h5M10 3v6.2L4.8 18.2A1.9 1.9 0 0 0 6.4 21h11.2a1.9 1.9 0 0 0 1.6-2.8L14 9.2V3"/><path d="M7.2 15h9.6"/></symbol>
   <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2H5"/><circle cx="16.5" cy="13.5" r="1.2" fill="currentColor"/></symbol>
   <symbol id="i-fin-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
   <symbol id="i-fin-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
@@ -155,6 +156,17 @@
 </header>
 
 <main class="main">
+  <!-- Shown only while looking at test data (js/testdata.js) -->
+  <div class="test-banner" id="test-banner" role="status" hidden>
+    <svg class="ic"><use href="#i-flask"/></svg>
+    <p id="test-banner-text"><b>Test data.</b> You are looking at test data only; real data is hidden.</p>
+    <div class="test-banner-actions">
+      <button type="button" class="btn btn-sm tb-btn" id="btn-test-load" hidden>Load test data</button>
+      <button type="button" class="btn btn-sm tb-btn" id="btn-test-reset" hidden>Reset test data</button>
+      <button type="button" class="btn btn-sm tb-btn" id="btn-test-remove" hidden>Remove test data</button>
+      <button type="button" class="btn btn-sm tb-btn solid" id="btn-test-off">Back to real data</button>
+    </div>
+  </div>
   <!-- Search + filters: shared by Portfolio and Dashboard -->
   <div class="toolbar" id="toolbar">
     <div class="tenure-tabs" id="tenure-tabs" role="tablist" aria-label="Tenure">
@@ -215,6 +227,11 @@
         <h1 id="portfolio-title">Property portfolio</h1>
         <p class="found"><span id="result-count">0</span> <span id="result-caption">properties</span></p>
       </div>
+      <div class="heading-tools">
+      <div class="data-switch" id="data-switch" role="radiogroup" aria-label="Which data to show">
+        <button type="button" role="radio" data-mode="real" aria-checked="true"><svg class="ic"><use href="#i-verified"/></svg>Real data</button>
+        <button type="button" role="radio" data-mode="test" aria-checked="false"><svg class="ic"><use href="#i-flask"/></svg>Test data</button>
+      </div>
       <label class="sort-by">
         <span>Sort by:</span>
         <select id="sort-by">
@@ -226,6 +243,7 @@
         </select>
         <svg class="ic"><use href="#i-chevron"/></svg>
       </label>
+      </div>
     </div>
 
     <!-- Summary: every figure covers the properties currently shown -->
@@ -1153,6 +1171,7 @@
 <script src="js/masters.js"></script>
 <script src="js/access.js"></script>
 <script src="js/finance.js"></script>
+<script src="js/testdata.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/fx.js"></script>
 <script src="js/app.js"></script>
