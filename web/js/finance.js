@@ -497,8 +497,7 @@ window.Finance = (function () {
         '<td>' + badge(r.status, true) + '</td>' +
         '<td>' + trendCell(r.trend) + '</td>' +
         '<td class="num">' + (r.invested ? esc(lkr(r.invested, true)) + (r.paybackYears ? '<small>pays back in ' + r.paybackYears + ' yrs</small>' :
-          r.returnPct !== null ? '<small>no return yet</small>' : '') : '<span class="dash">—</span>') + '</td>' +
-        '<td class="row-actions"><span class="circle-btn sm" aria-hidden="true">' + icon('chevron') + '</span></td></tr>';
+          r.returnPct !== null ? '<small>no return yet</small>' : '') : '<span class="dash">—</span>') + '</td></tr>';
     }).join('');
     const empty = $('#fin-empty');
     empty.hidden = rows.length > 0;
