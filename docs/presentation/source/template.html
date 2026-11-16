@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Property Register</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+:root{
+  --ink:#0f1d1c;--deep:#063734;--deeper:#052624;--teal:#006e66;--teal2:#00a69a;--sea:#81e4dd;--ice:#e3f7f6;--mist:#f1fbfa;
+  --line:#dbe7e6;--muted:#5e716f;--faint:#94a3a1;--red:#E5233B;
+  --ease:cubic-bezier(.22,.9,.24,1);
+  --font:"Plus Jakarta Sans",-apple-system,BlinkMacSystemFont,"Segoe UI","Helvetica Neue",Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:#E4EFEE;overflow:hidden;font-family:var(--font);color:var(--ink);-webkit-font-smoothing:antialiased}
+#wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+#stage{width:1600px;height:900px;position:relative;flex:none;transform-origin:center center;background:#fff;border-radius:18px;overflow:hidden;box-shadow:0 30px 80px rgba(6,55,52,.18)}
+body.fs #stage{border-radius:0;box-shadow:none}
+.ic{width:18px;height:18px;flex:none;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* slides */
+.slide{position:absolute;inset:0;padding:72px 84px 96px;display:flex;flex-direction:column;opacity:0;visibility:hidden;transform:translateX(26px) scale(.992);transition:opacity .55s var(--ease),transform .7s var(--ease),visibility 0s .7s;background:#fff}
+.slide.on{opacity:1;visibility:visible;transform:none;transition:opacity .55s var(--ease),transform .7s var(--ease),visibility 0s}
+.slide.back{transform:translateX(-26px) scale(.992)}
+.rv{opacity:0;transform:translateY(14px)}
+.slide.on .rv{animation:rv .7s var(--ease) both;animation-delay:calc(var(--d,0)*80ms + 120ms)}
+@keyframes rv{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.pop{opacity:0;transform:scale(.94)}
+.slide.on .pop{animation:pop .6s var(--ease) both;animation-delay:calc(var(--d,0)*80ms + 150ms)}
+@keyframes pop{from{opacity:0;transform:scale(.94)}to{opacity:1;transform:none}}
+.flow{stroke-dasharray:6 7;animation:dash 1.4s linear infinite}
+@keyframes dash{to{stroke-dashoffset:-26}}
+.grow{transform-origin:left center;transform:scaleX(0)}
+.slide.on .grow{animation:grow 1s var(--ease) both;animation-delay:calc(var(--d,0)*70ms + 250ms)}
+@keyframes grow{to{transform:none}}
+
+/* type */
+.kick{font-size:15px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--teal)}
+h2{font-size:42px;line-height:1.08;font-weight:800;letter-spacing:-.025em;color:var(--deep)}
+.lead{font-size:21px;line-height:1.45;color:var(--muted);font-weight:500}
+.muted{color:var(--muted)}
+.note{font-size:13px;color:var(--faint)}
+.fill{flex:1;display:flex;flex-direction:column;justify-content:center;min-height:0}
+
+/* chrome */
+#top{position:absolute;left:0;top:0;height:4px;background:var(--teal2);width:0;transition:width .6s var(--ease);z-index:20}
+#bar{position:absolute;left:0;right:0;bottom:0;height:64px;display:flex;align-items:center;justify-content:space-between;padding:0 36px;z-index:20;pointer-events:none}
+#bar>*{pointer-events:auto}
+#sec{font-size:13px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#88a09d;display:flex;align-items:center;gap:10px}
+#sec b{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--teal2)}
+#nav{display:flex;gap:8px;align-items:center}
+.nb{height:38px;min-width:38px;padding:0 12px;border-radius:12px;border:1px solid var(--line);background:rgba(255,255,255,.92);backdrop-filter:blur(10px);color:var(--deep);font:600 13px var(--font);display:flex;align-items:center;justify-content:center;gap:6px;cursor:pointer;transition:transform .15s,background .2s,border-color .2s}
+.nb:hover{background:var(--ice);border-color:#a9dcd6}
+.nb:active{transform:scale(.95)}
+.nb .ic{width:17px;height:17px}
+#count{font:600 13px var(--font);color:var(--muted);min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
+#toc{position:absolute;top:0;right:0;bottom:0;width:430px;background:rgba(255,255,255,.97);backdrop-filter:blur(18px);border-left:1px solid var(--line);z-index:30;transform:translateX(100%);transition:transform .45s var(--ease);padding:36px 28px;overflow:auto}
+#toc.open{transform:none;box-shadow:-30px 0 60px rgba(6,55,52,.12)}
+#toc h3{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);margin-bottom:16px}
+#toc a{display:flex;gap:12px;align-items:center;padding:9px 12px;border-radius:10px;color:var(--ink);text-decoration:none;font-size:15px;cursor:pointer}
+#toc a:hover{background:var(--ice)}
+#toc a.cur{background:var(--teal);color:#fff}
+#toc a i{font-style:normal;font-size:12px;font-weight:700;color:#88a09d;width:26px;font-variant-numeric:tabular-nums}
+#toc a.cur i{color:#bfe9e4}
+
+/* presenter pointer */
+#cdot,#cring{position:fixed;left:0;top:0;pointer-events:none;z-index:9999;border-radius:50%;opacity:0;transition:opacity .25s}
+#cdot{width:10px;height:10px;margin:-5px 0 0 -5px;background:var(--red);box-shadow:0 0 0 3px rgba(229,35,59,.25),0 0 18px rgba(229,35,59,.7)}
+#cring{width:44px;height:44px;margin:-22px 0 0 -22px;border:2.5px solid rgba(229,35,59,.85);background:rgba(229,35,59,.08);transition:opacity .25s,width .25s var(--ease),height .25s var(--ease),margin .25s var(--ease)}
+#cring.big{width:64px;height:64px;margin:-32px 0 0 -32px;background:rgba(229,35,59,.13)}
+#cring.press{animation:press .45s var(--ease)}
+@keyframes press{0%{box-shadow:0 0 0 0 rgba(229,35,59,.5)}100%{box-shadow:0 0 0 26px rgba(229,35,59,0)}}
+body.cur-on #cdot,body.cur-on #cring{opacity:1}
+body.cur-off #cdot,body.cur-off #cring{display:none}
+
+/* cover */
+.cover{background:radial-gradient(1100px 700px at 86% 22%,#d5f3f0 0%,rgba(213,243,240,0) 60%),linear-gradient(160deg,#fff 0%,#f1fbfa 100%)}
+.cover .logo{position:absolute;left:84px;top:64px;height:46px}
+.cover .title{font-size:92px;line-height:.96;letter-spacing:-.04em;font-weight:800;color:var(--deep)}
+.cover .title span{color:var(--teal2)}
+.tag{display:inline-flex;align-items:center;gap:8px;padding:8px 14px;border-radius:999px;background:var(--ice);color:var(--teal);font-weight:700;font-size:14px}
+.tag .ic{width:16px;height:16px}
+.chip{display:inline-flex;align-items:center;gap:8px;padding:10px 15px;border-radius:12px;background:#fff;border:1px solid var(--line);font-size:16px;font-weight:600;color:var(--deep)}
+.chip .ic{width:16px;height:16px;color:var(--teal2)}
+.orbit text{font-family:var(--font)}
+.orbit .nd{cursor:pointer}
+.orbit .nd circle{transition:fill .25s,stroke .25s}
+.orbit .nd:hover circle.o{fill:var(--ice)}
+
+/* cards */
+.card{background:#fff;border:1px solid var(--line);border-radius:18px;padding:22px 24px;box-shadow:0 1px 0 rgba(6,55,52,.03),0 10px 30px rgba(6,55,52,.05)}
+.ib{width:44px;height:44px;border-radius:13px;background:var(--ice);color:var(--teal);display:flex;align-items:center;justify-content:center;flex:none}
+.ib .ic{width:22px;height:22px}
+.ib.solid{background:var(--teal);color:#fff}
+.ib.deep{background:var(--deep);color:#fff}
+.mgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:18px}
+.mcard{position:relative;padding:24px 22px 22px;border-radius:18px;border:1px solid var(--line);background:#fff;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s,border-color .3s;min-height:236px;display:flex;flex-direction:column;gap:16px}
+.mcard:hover{transform:translateY(-4px);box-shadow:0 18px 40px rgba(0,110,102,.14);border-color:#9fd9d2}
+.mcard .n{font-size:13px;font-weight:800;color:#9fb3b0;letter-spacing:.08em}
+.mcard h4{font-size:21px;line-height:1.2;color:var(--deep);font-weight:750}
+.mcard p{font-size:15.5px;line-height:1.4;color:var(--muted)}
+
+/* module slides */
+.mod{display:grid;grid-template-columns:420px 1fr;gap:40px;flex:1;min-height:0}
+.mod>.left{display:flex;flex-direction:column;justify-content:center;transition:opacity .4s}
+.mhead{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.mnum{font-size:15px;font-weight:800;color:#fff;background:var(--teal);border-radius:10px;padding:6px 10px;letter-spacing:.04em}
+.crumbs{display:flex;gap:5px;margin:22px 0 26px}
+.crumbs i{height:5px;flex:1;border-radius:3px;background:#e2eceb}
+.crumbs i.done{background:#9fdcd5}.crumbs i.now{background:var(--teal2)}
+.pts{display:flex;flex-direction:column;gap:12px;margin-top:26px}
+.pt{display:flex;gap:14px;align-items:center;padding:13px 16px;border-radius:14px;background:var(--mist);border:1px solid #e1efed}
+.pt .ib{width:38px;height:38px;border-radius:11px}
+.pt .ib .ic{width:19px;height:19px}
+.pt small{display:block;font-size:11.5px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);margin-bottom:2px}
+.pt span{font-size:16px;line-height:1.35;color:var(--ink);font-weight:600}
+.pt.auto{background:#e8f8f6;border-color:#c4eeeb}
+.pt.auto .ib{background:var(--teal);color:#fff}
+
+/* demo player */
+.stagec{display:flex;align-items:center;justify-content:center}
+.player{position:relative;width:1000px;border-radius:16px;overflow:hidden;background:var(--deeper);box-shadow:0 30px 70px rgba(6,55,52,.22),0 0 0 1px rgba(6,55,52,.08);transition:all .6s var(--ease)}
+.pchrome{height:38px;background:linear-gradient(#f7fafa,#ecf3f2);border-bottom:1px solid #dbe6e5;display:flex;align-items:center;gap:8px;padding:0 14px}
+.pchrome .d{width:11px;height:11px;border-radius:50%}
+.pchrome .d:nth-child(1){background:#FF6159}.pchrome .d:nth-child(2){background:#FFBD2E}.pchrome .d:nth-child(3){background:#28C941}
+.pchrome .url{flex:1;margin:0 70px 0 14px;height:24px;border-radius:7px;background:#fff;border:1px solid #dde8e7;display:flex;align-items:center;justify-content:center;gap:6px;font-size:12px;color:var(--muted);font-weight:600}
+.pchrome .url .ic{width:12px;height:12px;color:var(--teal2)}
+.live{position:absolute;top:50px;left:12px;z-index:5;display:flex;align-items:center;gap:7px;padding:6px 11px;border-radius:999px;background:rgba(5,38,36,.8);color:#fff;font-size:12px;font-weight:700;letter-spacing:.04em;backdrop-filter:blur(8px)}
+.live b{width:7px;height:7px;border-radius:50%;background:#FF4B5C;animation:blink 1.2s infinite}
+@keyframes blink{50%{opacity:.25}}
+.vbox{position:relative;aspect-ratio:16/9;background:#f3f6f6;overflow:hidden;cursor:pointer}
+.vbox img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .35s ease}
+.vbox img.on{opacity:1}
+.hs{position:absolute;border-radius:10px;border:3px solid var(--teal2);opacity:0;transform:scale(1.04);transition:opacity .35s var(--ease),transform .45s var(--ease);pointer-events:none;z-index:3}
+.hs.on{opacity:1;transform:none;animation:ring 1.6s ease-out infinite}
+.hs.spot.on{box-shadow:0 0 0 4px rgba(0,166,154,.25),0 0 0 2000px rgba(5,38,36,.22)}
+@keyframes ring{0%,100%{border-color:#00a69a}50%{border-color:#81e4dd}}
+.hs .lbl{position:absolute;white-space:nowrap;background:var(--teal);color:#fff;font-size:15px;font-weight:700;padding:7px 12px;border-radius:9px;box-shadow:0 8px 20px rgba(0,110,102,.35)}
+.hs .lbl.up{bottom:calc(100% + 9px)}.hs .lbl.down{top:calc(100% + 9px)}.hs .lbl.in{top:12px}
+.hs .lbl.l{left:-3px}.hs .lbl.r{right:-3px}.hs .lbl.in.l{left:12px}.hs .lbl.in.r{right:12px}
+.rp{position:absolute;left:0;top:0;width:0;height:0;z-index:4;pointer-events:none;opacity:0;transition:opacity .25s}
+.rp.on{opacity:1}
+.rp i{position:absolute;left:-11px;top:-11px;width:22px;height:22px;border-radius:50%;background:radial-gradient(circle,#FF2D46 0 45%,rgba(255,45,70,.35) 46% 100%);box-shadow:0 0 0 2px #fff,0 0 16px 4px rgba(255,35,60,.55)}
+.rp b{position:absolute;left:-26px;top:-26px;width:52px;height:52px;border-radius:50%;border:3px solid #FF2D46;opacity:0;transform:scale(.3)}
+.rp.clk b{animation:clk .7s ease-out}
+@keyframes clk{0%{opacity:1;transform:scale(.3)}100%{opacity:0;transform:scale(1.6)}}
+.pctl{height:46px;background:var(--deeper);display:flex;align-items:center;gap:10px;padding:0 12px;color:#fff}
+.pb{width:32px;height:32px;border-radius:9px;border:0;background:rgba(255,255,255,.08);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;font:700 12px var(--font);transition:background .2s}
+.pb:hover{background:rgba(255,255,255,.18)}
+.pb .ic{width:15px;height:15px}
+.pb.w{width:auto;padding:0 10px}
+.segs{flex:1;display:flex;gap:4px;height:22px;align-items:center;cursor:pointer}
+.segs span{flex:1;height:6px;border-radius:3px;background:rgba(255,255,255,.16);overflow:hidden;position:relative}
+.segs span i{position:absolute;left:0;top:0;bottom:0;width:0;background:linear-gradient(90deg,#81e4dd,#00a69a);border-radius:3px}
+.tm{font-size:12px;font-variant-numeric:tabular-nums;color:#a8c7c3;min-width:58px;text-align:right}
+.slide.focus .mod>.left{opacity:0;pointer-events:none}
+.slide.focus .player{position:absolute;z-index:15;top:14px;left:calc(50% - 650px);width:1300px}
+
+/* diagrams */
+.flowrow{display:flex;align-items:stretch;gap:0}
+.fnode{flex:1;position:relative;padding:22px 20px;border-radius:18px;border:1px solid var(--line);background:#fff;display:flex;flex-direction:column;gap:12px;cursor:pointer;transition:transform .3s var(--ease),box-shadow .3s,border-color .3s}
+.fnode:hover{transform:translateY(-3px);box-shadow:0 16px 36px rgba(0,110,102,.12);border-color:#9fd9d2}
+.fnode b{font-size:20px;line-height:1.2;color:var(--deep)}
+.fnode p{font-size:15.5px;line-height:1.45;color:var(--muted)}
+#process .fnode{min-height:236px;padding:26px 22px}#process .fnode b{font-size:22px}#process .fnode p{font-size:16.5px}
+.fnode.auto{background:#eefaf8;border-color:#c4eeeb}
+.fnode.gate{background:var(--teal);border-color:var(--teal)}
+.fnode.gate b,.fnode.gate p{color:#fff}.fnode.gate p{opacity:.85}
+.fnode.gate .ib{background:rgba(255,255,255,.18);color:#fff}
+.farrow{width:46px;flex:none;display:flex;align-items:center;justify-content:center}
+.ftag{font-size:12px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--teal2);text-align:center;margin-top:12px}
+.band{display:grid;grid-template-columns:240px 1fr;gap:22px;align-items:center;padding:24px 26px;border-radius:18px}
+.band h5{font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);font-weight:800}
+.band p{font-size:15px;color:var(--muted);margin-top:4px}
+.band .row{display:flex;flex-wrap:wrap;gap:10px}
+.vlink{height:30px;display:flex;justify-content:center}
+.tbl{width:100%;border-collapse:separate;border-spacing:0 8px}
+.tbl th{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:#88a09d;text-align:left;padding:0 16px 4px}
+.tbl td{background:var(--mist);padding:17px 20px;font-size:16.5px;vertical-align:top;border-top:1px solid #e1efed;border-bottom:1px solid #e1efed}
+.tbl td:first-child{border-left:1px solid #e1efed;border-radius:14px 0 0 14px;font-weight:750;color:var(--deep);white-space:nowrap}
+.tbl td:last-child{border-right:1px solid #e1efed;border-radius:0 14px 14px 0}
+.tk{display:inline-flex;align-items:center;gap:6px;margin:2px 12px 2px 0;color:var(--ink)}
+.tk .ic{width:15px;height:15px;color:var(--teal2)}
+.tk.c{font-weight:650}.tk.c .ic{color:var(--teal)}
+.kpi{padding:20px 22px;border-radius:18px;border:1px solid var(--line);background:#fff}
+.kpi small{font-size:13px;font-weight:700;color:var(--muted)}
+.kpi b{display:block;font-size:42px;font-weight:800;color:var(--deep);letter-spacing:-.02em;margin-top:6px;font-variant-numeric:tabular-nums}
+.kpi span{font-size:13.5px;color:var(--faint)}
+.kpi.hero{background:var(--deep);border-color:var(--deep)}
+.kpi.hero small{color:#9fbcb8}.kpi.hero b{color:#fff}.kpi.hero span{color:#d7ebe9}
+.bars{display:flex;flex-direction:column;gap:11px;margin-top:16px}
+.bar{display:grid;grid-template-columns:210px 1fr 40px;align-items:center;gap:12px;font-size:14.5px}
+.bar .lbl{display:flex;align-items:center;gap:8px;color:var(--ink);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bar .lbl i{width:10px;height:10px;border-radius:3px;flex:none}
+.bar .tr{height:12px;border-radius:6px;background:#eef4f3;overflow:hidden}
+.bar .tr em{display:block;height:100%;border-radius:6px}
+.bar b{font-variant-numeric:tabular-nums;color:var(--deep);text-align:right}
+.ladder{display:flex;height:96px;border-radius:18px;overflow:hidden;box-shadow:0 10px 30px rgba(6,55,52,.08)}
+.ladder div{flex:1;display:flex;flex-direction:column;justify-content:center;padding:0 20px;color:#fff}
+.ladder b{font-size:20px}.ladder span{font-size:14px;opacity:.9;margin-top:3px}
+.heat{width:100%;border-collapse:separate;border-spacing:6px;table-layout:fixed}
+.heat col.first{width:210px}
+.heat th{font-size:12.5px;font-weight:700;color:var(--muted);text-align:center;padding:4px 6px;line-height:1.25}
+.heat th:first-child{text-align:left}
+.heat td{height:46px;border-radius:10px;text-align:center;font-size:13px;font-weight:700}
+.heat td:first-child{text-align:left;font-size:15.5px;color:var(--deep);padding-right:10px;white-space:nowrap}
+.heat .full{background:var(--teal);color:#fff}.heat .partial{background:#8fdcd4;color:var(--deeper)}
+.heat .view{background:var(--ice);color:var(--teal)}.heat .none{background:#f2f5f5;color:#b3c0be}
+.lg{display:inline-flex;align-items:center;gap:7px;margin-right:18px;font-size:13.5px;color:var(--muted)}
+.lg i{width:14px;height:14px;border-radius:4px;display:inline-block}
+.col{padding:26px 28px 14px;border-radius:20px;background:var(--mist);border:1px solid #e1efed}
+.col.now{background:var(--deep);border-color:var(--deep)}
+.col h4{display:flex;align-items:center;gap:12px;font-size:14px;letter-spacing:.12em;text-transform:uppercase;color:var(--teal);font-weight:800;margin-bottom:12px}
+.col.now h4{color:#81e4dd}
+.li{display:flex;gap:14px;align-items:flex-start;padding:18px 0;border-top:1px solid var(--line);font-size:19px;line-height:1.4;font-weight:600;color:var(--deep)}
+.col.now .li{border-color:rgba(255,255,255,.14);color:#fff}
+.li .ic{width:22px;height:22px;color:var(--teal2);margin-top:2px}
+.col.now .li .ic{color:#81e4dd}
+@media (prefers-reduced-motion:reduce){
+  .slide,.slide.on{transition:opacity .2s linear;transform:none!important}
+  .slide.on .rv,.slide.on .pop,.slide.on .grow{animation:none;opacity:1;transform:none}
+  .flow,.hs.on,.live b{animation:none}
+}
+</style>
+</head>
+<body class="cur-off">
+__SPRITE__
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M7 5v14l12-7z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/><rect x="14" y="5" width="4" height="14" rx="1" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-restart" viewBox="0 0 24 24"><path d="M20 11a8 8 0 0 0-14.5-4.5L4 8M4 4v4h4M4 13a8 8 0 0 0 14.5 4.5L20 16M20 20v-4h-4"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+  <symbol id="i-flow" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="6" rx="1.5"/><rect x="14" y="15" width="7" height="6" rx="1.5"/><path d="M6.5 9v3.5a2 2 0 0 0 2 2H17.5V15"/></symbol>
+  <symbol id="i-menu" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></symbol>
+  <symbol id="i-left" viewBox="0 0 24 24"><path d="M15 6l-6 6 6 6"/></symbol>
+  <symbol id="i-right" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-full" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+  <symbol id="i-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2" fill="currentColor"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h15M14 7l5 5-5 5"/></symbol>
+</svg>
+<div id="wrap"><div id="stage">
+<div id="top"></div>
+
+<!-- 1 · cover -->
+<section class="slide cover" data-title="Property Register" data-sec="Overview">
+  <img class="logo rv" src="__LOGO__" alt="Serengeti Property Management">
+  <svg class="orbit pop" style="--d:2;position:absolute;right:56px;top:120px" viewBox="0 0 640 640" width="640" height="640">
+    <circle cx="320" cy="320" r="222" fill="none" stroke="#bfe9e4" stroke-width="2" class="flow"/>
+    <circle cx="320" cy="320" r="148" fill="none" stroke="#e1f4f2" stroke-width="2"/>
+    <circle cx="320" cy="320" r="104" fill="#063734"/>
+    <text x="320" y="312" text-anchor="middle" fill="#fff" font-size="24" font-weight="800">Property</text>
+    <text x="320" y="340" text-anchor="middle" fill="#fff" font-size="24" font-weight="800">Register</text>
+    <text x="320" y="368" text-anchor="middle" fill="#81e4dd" font-size="13.5" font-weight="600">10 connected modules</text>
+    <g id="orbit-nodes"></g>
+  </svg>
+  <div style="position:absolute;left:84px;top:188px;width:790px">
+    <div class="tag rv" style="--d:0"><svg class="ic"><use href="#i-building"/></svg>LGH · Serengeti Property Management</div>
+    <div class="title rv" style="--d:1;margin-top:28px">Property<br><span>Register</span></div>
+    <p class="lead rv" style="--d:2;margin-top:28px;max-width:660px">Every property, deed and lease in one place — on the map, documented, tracked to renewal, and opened only to the people who should see it.</p>
+    <div class="rv" style="--d:3;display:flex;gap:12px;margin-top:38px;flex-wrap:wrap">
+      <span class="chip"><svg class="ic"><use href="#i-play"/></svg>10 module demos</span>
+      <span class="chip"><svg class="ic"><use href="#i-flow"/></svg>End-to-end workflow</span>
+      <span class="chip"><svg class="ic"><use href="#i-shield"/></svg>Role-based access</span>
+    </div>
+    <p class="note rv" style="--d:4;margin-top:96px">Group IT · __MONTH__ · Press <b>→</b> to begin, <b>F</b> for full screen</p>
+  </div>
+</section>
+
+<!-- 2 · modules -->
+<section class="slide" data-title="Ten modules at a glance" data-sec="Overview">
+  <div class="kick rv">The system at a glance</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Ten modules, one property register</h2>
+  <div class="fill"><div class="mgrid" id="mgrid"></div>
+    <p class="note rv" style="--d:13;margin-top:26px">Click any module to jump to its demo.</p></div>
+</section>
+
+<!-- 3 · process -->
+<section class="slide" data-title="End-to-end process" data-sec="Overview">
+  <div class="kick rv">End-to-end process</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">From a new property to a governed register</h2>
+  <div class="fill">
+    <div class="flowrow" id="process"></div>
+    <div class="rv" style="--d:12;display:flex;gap:22px;margin-top:34px;font-size:14px;color:var(--muted);align-items:center">
+      <span class="lg"><i style="background:#eefaf8;border:1px solid #c4eeeb"></i>Automated by the system</span>
+      <span class="lg"><i style="background:var(--teal)"></i>Control point</span>
+      <span>Click a step to open its module</span>
+    </div>
+  </div>
+</section>
+
+<!-- 4 · architecture -->
+<section class="slide" data-title="Architecture" data-sec="Overview">
+  <div class="kick rv">Architecture</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">How the pieces fit together</h2>
+  <div class="fill"><div id="arch"></div></div>
+</section>
+
+<section class="slide" data-mod="signin"></section>
+<section class="slide" data-mod="portfolio"></section>
+<section class="slide" data-mod="property"></section>
+
+<!-- record structure -->
+<section class="slide" data-title="What a property record holds" data-sec="Module 03 · Property record">
+  <div class="kick rv">Module 03 · Inside the record</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Six sections, checked before saving</h2>
+  <div class="fill">
+    <div id="record" style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px"></div>
+    <div class="rv" style="--d:9;display:flex;align-items:center;gap:14px;margin-top:22px;padding:18px 22px;border-radius:16px;background:var(--deep);color:#fff">
+      <div class="ib" style="background:rgba(255,255,255,.12);color:#81e4dd"><svg class="ic"><use href="#i-ruler"/></svg></div>
+      <div style="flex:none"><b style="font-size:16px">Areas in any unit, compared in sq ft</b><div style="font-size:13.5px;color:#9fbcb8;margin-top:2px">Sri Lankan units converted for every total</div></div>
+      <div id="units" style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;justify-content:flex-end"></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" data-mod="bulk"></section>
+
+<!-- bulk flow -->
+<section class="slide" data-title="Bulk upload flow" data-sec="Module 04 · Bulk upload">
+  <div class="kick rv">Module 04 · Bulk upload flow</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Nothing is saved until every row is checked</h2>
+  <div class="fill">
+    <div class="flowrow" id="bulkflow"></div>
+    <div class="rv" style="--d:10;display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:40px" id="bulkchecks"></div>
+  </div>
+</section>
+
+<section class="slide" data-mod="documents"></section>
+
+<!-- renewal ladder -->
+<section class="slide" data-title="Renewal ladder" data-sec="Module 05 · Documents">
+  <div class="kick rv">Module 05 · Renewals</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Every expiry date on a 3 / 6 / 9 / 12-month ladder</h2>
+  <div class="fill">
+    <div class="ladder pop" style="--d:2">
+      <div style="background:#d03b3b"><b>Expired</b><span>Past the expiry date</span></div>
+      <div style="background:#e8890c"><b>Within 3 months</b><span>Act now</span></div>
+      <div style="background:#00a69a"><b>3 – 6 months</b><span>Plan the renewal</span></div>
+      <div style="background:#008a80"><b>6 – 9 months</b><span>On the radar</span></div>
+      <div style="background:#006e66"><b>9 – 12 months</b><span>Coming up</span></div>
+      <div style="background:#063734"><b>Later</b><span>Nothing due</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin-top:30px" id="renewcards"></div>
+  </div>
+</section>
+
+<section class="slide" data-mod="dashboard"></section>
+
+<!-- live figures -->
+<section class="slide" data-title="What management sees" data-sec="Module 06 · Dashboard">
+  <div class="kick rv">Module 06 · The register today</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">The portfolio in numbers</h2>
+  <div class="fill" id="figures"></div>
+</section>
+
+<section class="slide" data-mod="groups"></section>
+<section class="slide" data-mod="masters"></section>
+<section class="slide" data-mod="users"></section>
+<section class="slide" data-mod="roles"></section>
+
+<!-- roles matrix -->
+<section class="slide" data-title="Roles and access" data-sec="Module 10 · Roles, permissions & activity">
+  <div class="kick rv">Module 10 · Roles and access</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Seven roles, each with only what the job needs</h2>
+  <div class="fill" id="heat"></div>
+</section>
+
+<!-- governance -->
+<section class="slide" data-title="Security and controls" data-sec="Governance">
+  <div class="kick rv">Governance</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">Checks and controls at every step</h2>
+  <div class="fill"><table class="tbl" id="gov"></table></div>
+</section>
+
+<!-- next -->
+<section class="slide" data-title="What comes next" data-sec="Roadmap">
+  <div class="kick rv">Roadmap</div>
+  <h2 class="rv" style="--d:1;margin-top:12px">What comes next</h2>
+  <div class="fill"><div id="next" style="display:grid;grid-template-columns:repeat(3,1fr);gap:22px"></div></div>
+</section>
+
+<!-- thanks -->
+<section class="slide cover" data-title="Summary &amp; thank you" data-sec="Summary">
+  <div class="fill">
+    <div class="kick rv">Summary</div>
+    <h2 class="rv" style="--d:1;margin-top:12px;font-size:64px;letter-spacing:-.035em">Thank you</h2>
+    <p class="lead rv" style="--d:2;margin-top:16px;max-width:900px">One register for every property — mapped, documented, tracked to renewal, and opened only to the people who should see it.</p>
+    <div id="summary" style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px;margin-top:44px"></div>
+    <div class="rv" style="--d:9;display:flex;align-items:center;gap:16px;margin-top:48px">
+      <img src="__LOGO__" alt="" style="height:38px">
+      <span class="note" style="font-size:14px">Group IT · Questions and feedback welcome</span>
+    </div>
+  </div>
+</section>
+
+<div id="bar">
+  <div id="sec"><b></b><span id="secname"></span></div>
+  <div id="nav">
+    <button class="nb" id="bToc" title="Contents (M)"><svg class="ic"><use href="#i-menu"/></svg>Contents</button>
+    <button class="nb" id="bCur" title="Red pointer (C)"><svg class="ic"><use href="#i-dot"/></svg></button>
+    <button class="nb" id="bPrev" title="Previous (←)"><svg class="ic"><use href="#i-left"/></svg></button>
+    <span id="count"></span>
+    <button class="nb" id="bNext" title="Next (→)"><svg class="ic"><use href="#i-right"/></svg></button>
+    <button class="nb" id="bFs" title="Full screen (F)"><svg class="ic"><use href="#i-full"/></svg></button>
+  </div>
+</div>
+<div id="toc"><h3>Contents</h3><div id="tocl"></div></div>
+</div></div>
+<div id="cring"></div><div id="cdot"></div>
+
+<script>
+const DEMOS = __DEMOS__;
+const STATS = __STATS__;
+const ROLES = __ROLES__;
+
+const $ = (s, r) => (r || document).querySelector(s), $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+const icon = (n) => '<svg class="ic"><use href="#i-' + n + '"/></svg>';
+const esc = (t) => String(t == null ? '' : t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const num = (n) => Number(n || 0).toLocaleString('en-US');
+
+/* ---------- the ten modules ---------- */
+const MODS = [
+  { key: 'signin', icon: 'key', title: 'Sign-in & Security', short: 'Accounts given by an administrator',
+    lead: 'Accounts are given by an administrator — nobody signs themselves up.',
+    pts: [['key', 'How it starts', 'An administrator adds the person, with a one-time password'],
+          ['users', 'Who acts', 'Every employee signs in with their own email'],
+          ['zap', 'Automated', '5 wrong passwords lock the account for 15 minutes', 1],
+          ['shield', 'Control', 'Temporary passwords are replaced at first sign-in']] },
+  { key: 'portfolio', icon: 'map', title: 'Portfolio', short: 'Every property on one map',
+    lead: 'Every property on one map — or as cards, or as a table.',
+    pts: [['map', 'How it starts', 'Open the Portfolio: the whole register at a glance'],
+          ['sliders', 'Filters', 'Tenure tabs, type, company, district, status, search'],
+          ['zap', 'Automated', 'Totals and cards follow every filter instantly', 1],
+          ['shield', 'Control', 'People with limited access see only their scope']] },
+  { key: 'property', icon: 'home', title: 'Property Record', short: 'Type, owner, location, areas, value',
+    lead: 'One record holds everything about a property.',
+    pts: [['home', 'Identity', 'Name, code, property type, owning company, tenure'],
+          ['pin', 'Location', 'Map pin, district and province, location code'],
+          ['zap', 'Automated', 'Land and floor areas converted to sq ft', 1],
+          ['check', 'Control', 'Required fields, master lists and unique codes']] },
+  { key: 'bulk', icon: 'upload', title: 'Bulk Upload', short: 'Many properties from one Excel file',
+    lead: 'Load many properties at once from one Excel template.',
+    pts: [['download', 'How it starts', 'Download the template — lists come from the register'],
+          ['users', 'Who acts', 'Property staff fill it in Excel'],
+          ['zap', 'Automated', 'Every row checked: fields, lists, coordinates, duplicates', 1],
+          ['shield', 'Control', 'Only rows that pass are imported, all in one step']] },
+  { key: 'documents', icon: 'file', title: 'Documents', short: 'Deeds, leases and plans, tracked',
+    lead: 'Deeds, leases and plans — attached, previewed and tracked to expiry.',
+    pts: [['paperclip', 'How it starts', 'Attach a document and its scan to a property'],
+          ['file', 'Types', 'Deeds, titles, leases, plans, valuations, policies…'],
+          ['zap', 'Automated', 'Expiry tracked on a 3 / 6 / 9 / 12-month ladder', 1],
+          ['lock', 'Control', 'Only permitted roles can open or download files']] },
+  { key: 'dashboard', icon: 'chart', title: 'Dashboard & Alerts', short: 'Signals, charts and the expiry bell',
+    lead: 'The whole portfolio in numbers — and what needs attention.',
+    pts: [['bell', 'Signals', 'Missing deeds, expired documents, renewals due'],
+          ['chart', 'Charts', 'Tenure, coverage, document types, renewals, owners'],
+          ['zap', 'Automated', 'Click any chart to filter the whole dashboard', 1],
+          ['clock', 'Alerts', 'The bell lists everything expiring within 180 days']] },
+  { key: 'groups', icon: 'building', title: 'Types & Companies', short: 'A page for every type and owner',
+    lead: 'Every property type and owning company has its own page.',
+    pts: [['building', 'Property types', 'What a property is used for: Educational, Hostels…'],
+          ['landmark', 'Owning companies', 'The group company that holds title'],
+          ['zap', 'Automated', 'Live counts of properties, documents and gaps', 1],
+          ['shield', 'Control', 'Only administrators create, rename or delete them']] },
+  { key: 'masters', icon: 'database', title: 'Master Sheets', short: 'Every list kept consistent',
+    lead: 'One place to keep every list consistent.',
+    pts: [['database', 'Editable', 'Locations, location codes, property types, companies'],
+          ['lock', 'System lists', 'Districts, provinces, tenures, units — locked'],
+          ['zap', 'Automated', 'Forms and the Excel template read from these lists', 1],
+          ['shield', 'Control', 'An entry that is in use cannot be deleted']] },
+  { key: 'users', icon: 'users', title: 'Users & Access', short: 'People, roles and data scope',
+    lead: 'Give each person exactly the access their job needs.',
+    pts: [['user-plus', 'How it starts', 'Add person: name, email, role and data scope'],
+          ['target', 'Scope', 'Limit work to chosen property types and companies'],
+          ['zap', 'Automated', 'One-time password, replaced at first sign-in', 1],
+          ['power', 'Control', 'Switch off, reset or sign out — effective at once']] },
+  { key: 'roles', icon: 'shield', title: 'Roles, Permissions & Activity', short: 'Access matrix and audit log',
+    lead: 'Seven roles, 34 permissions — and a record of every change.',
+    pts: [['shield', 'Roles', 'Super Admin to Viewer, from the approved access matrix'],
+          ['sliders', 'Levels', 'Yes, Limited or No for every action'],
+          ['zap', 'Automated', 'Every sign-in and change written to the audit log', 1],
+          ['eye', 'Control', 'Everyone can see the access they were given']] }
+];
+
+function buildModuleSlides() {
+  MODS.forEach(function (m, i) {
+    const s = $('section[data-mod="' + m.key + '"]');
+    const label = 'Module ' + String(i + 1).padStart(2, '0') + ' · ' + m.title;
+    s.dataset.title = String(i + 1).padStart(2, '0') + ' · ' + m.title;
+    s.dataset.sec = label;
+    const demo = DEMOS[m.key] || { url: '', steps: [] };
+    s.innerHTML = '<div class="mod"><div class="left">' +
+      '<div class="mhead rv"><span class="mnum">MODULE ' + String(i + 1).padStart(2, '0') + '</span>' +
+        '<span class="kick" style="color:#88a09d">of ' + MODS.length + '</span></div>' +
+      '<h2 class="rv" style="--d:1">' + esc(m.title) + '</h2>' +
+      '<div class="crumbs rv" style="--d:2">' + MODS.map((_, j) => '<i class="' + (j < i ? 'done' : j === i ? 'now' : '') + '"></i>').join('') + '</div>' +
+      '<p class="lead rv" style="--d:3;font-size:20px">' + esc(m.lead) + '</p>' +
+      '<div class="pts">' + m.pts.map((p, j) => '<div class="pt rv' + (p[3] ? ' auto' : '') + '" style="--d:' + (4 + j) + '">' +
+        '<div class="ib">' + icon(p[0]) + '</div><div><small>' + esc(p[1]) + '</small><span>' + esc(p[2]) + '</span></div></div>').join('') + '</div>' +
+      '</div>' +
+      '<div class="stagec"><div class="player pop" style="--d:3" data-v="' + m.key + '">' +
+        '<div class="pchrome"><span class="d"></span><span class="d"></span><span class="d"></span>' +
+          '<div class="url">' + icon('lock') + esc(demo.url) + '</div></div>' +
+        '<div class="live"><b></b>DEMO · ' + esc(m.title.toUpperCase()) + '</div>' +
+        '<div class="vbox"></div>' +
+        '<div class="pctl"><button class="pb pp" title="Play / pause (P)"></button>' +
+          '<button class="pb rs" title="Restart">' + icon('restart') + '</button>' +
+          '<div class="segs"></div><span class="tm"></span>' +
+          '<button class="pb w sp" title="Speed">1×</button>' +
+          '<button class="pb fo" title="Focus on the demo">' + icon('eye') + '</button></div>' +
+      '</div></div></div>';
+  });
+}
+
+/* ---------- static slides filled from data ---------- */
+function slideIndex(key) { return $$('.slide').indexOf($('section[data-mod="' + key + '"]')); }
+
+function buildContent() {
+  const orbit = [['Register', 'property'], ['Map', 'portfolio'], ['Import', 'bulk'], ['Document', 'documents'],
+                 ['Renew', 'documents'], ['Report', 'dashboard'], ['Classify', 'groups'], ['Secure', 'users']];
+  $('#orbit-nodes').innerHTML = orbit.map(function (o, i) {
+    const a = -Math.PI / 2 + i * 2 * Math.PI / orbit.length, x = 320 + 222 * Math.cos(a), y = 320 + 222 * Math.sin(a);
+    const solid = i % 2 === 0;
+    return '<g class="nd" data-goto="' + o[1] + '"><circle class="' + (solid ? '' : 'o') + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) +
+      '" r="39" fill="' + (solid ? '#00a69a' : '#fff') + '" stroke="#00a69a" stroke-width="2"/>' +
+      '<text x="' + x.toFixed(1) + '" y="' + (y + 4.5).toFixed(1) + '" text-anchor="middle" font-size="12.5" font-weight="700" fill="' +
+      (solid ? '#fff' : '#006e66') + '">' + o[0] + '</text></g>';
+  }).join('');
+
+  $('#mgrid').innerHTML = MODS.map((m, i) => '<div class="mcard rv" style="--d:' + (2 + i) + '" data-goto="' + m.key + '">' +
+    '<div style="display:flex;justify-content:space-between;align-items:center"><div class="ib">' + icon(m.icon) + '</div>' +
+    '<span class="n">' + String(i + 1).padStart(2, '0') + '</span></div><h4>' + esc(m.title) + '</h4><p>' + esc(m.short) + '</p></div>').join('');
+
+  const arrow = '<div class="farrow"><svg width="46" height="20" viewBox="0 0 46 20"><line x1="4" y1="10" x2="36" y2="10" stroke="#00a69a" stroke-width="2.5" class="flow"/><path d="M34 4l8 6-8 6z" fill="#00a69a"/></svg></div>';
+  const process = [['home', 'Register', 'Add a property — or many from Excel', 'property', ''],
+                   ['building', 'Classify', 'Property type, owning company, location', 'groups', ''],
+                   ['paperclip', 'Document', 'Attach deeds, leases and plans', 'documents', ''],
+                   ['clock', 'Track', 'Expiry dates on the renewal ladder', 'documents', 'auto'],
+                   ['chart', 'Report', 'Dashboard signals, charts and alerts', 'dashboard', 'auto'],
+                   ['shield', 'Govern', 'Roles, scope and an audit log of every change', 'roles', 'gate']];
+  $('#process').innerHTML = process.map((p, i) => (i ? arrow : '') +
+    '<div class="rv" style="--d:' + (2 + i) + ';flex:1;display:flex;flex-direction:column"><div class="fnode ' + p[4] + '" data-goto="' + p[3] + '" style="flex:1">' +
+    '<div class="ib">' + icon(p[0]) + '</div><b>' + p[1] + '</b><p>' + p[2] + '</p></div>' +
+    '<div class="ftag">' + (p[4] === 'auto' ? 'Automated' : p[4] === 'gate' ? 'Control point' : '&nbsp;') + '</div></div>').join('');
+
+  const chip = (i, t) => '<span class="chip">' + icon(i) + esc(t) + '</span>';
+  const link = '<div class="vlink"><svg width="4" height="30"><line x1="2" y1="0" x2="2" y2="30" stroke="#00a69a" stroke-width="2.5" class="flow"/></svg></div>';
+  const bands = [
+    ['People', 'Who uses it', '#f1fbfa', [['shield', 'Super Admin'], ['users', 'Administrators'], ['home', 'Property managers & officers'], ['file', 'Document controllers'], ['eye', 'Auditors & viewers']]],
+    ['Register modules', 'Where work happens', '#e8f8f6', [['map', 'Portfolio'], ['home', 'Property record'], ['upload', 'Bulk upload'], ['file', 'Documents'], ['chart', 'Dashboard'], ['building', 'Types & companies'], ['database', 'Master sheets'], ['users', 'Users & access']]],
+    ['Built-in services', 'Run on every request', '#d9f3f0', [['shield', 'Permission check'], ['target', 'Scope filter'], ['activity', 'Audit log'], ['check', 'Row validation'], ['ruler', 'Area conversion']]],
+  ];
+  $('#arch').innerHTML = bands.map((b, i) => (i ? link : '') + '<div class="band rv" style="--d:' + (2 + i) + ';background:' + b[2] + '">' +
+    '<div><h5>' + b[0] + '</h5><p>' + b[1] + '</p></div><div class="row">' + b[3].map((c) => chip(c[0], c[1])).join('') + '</div></div>').join('') + link +
+    '<div class="band rv" style="--d:5;background:#063734;color:#fff"><div><h5 style="color:#81e4dd">Data &amp; connections</h5><p style="color:#9fbcb8">Where it lives</p></div><div class="row">' +
+    [['database', 'SQLite or Supabase Postgres'], ['paperclip', 'Document files: disk or Supabase Storage'], ['map', 'OpenStreetMap tiles'], ['download', 'Excel / CSV in and out']].map((c) => chip(c[0], c[1])).join('') + '</div></div>';
+
+  const record = [['home', 'Identity', ['Property name', 'Property code (or auto)', 'Property type', 'Owning company']],
+                  ['shield', 'Holding', ['Tenure: freehold, leasehold, rented in, leased out', 'Structure', 'Status']],
+                  ['pin', 'Location', ['Map pin, inside Sri Lanka', 'District → province', 'Address, location code']],
+                  ['ruler', 'Land & building', ['Land extent + unit', 'Floor area + unit', 'Both shown in sq ft']],
+                  ['chart', 'Value', ['Acquisition date and cost', 'Current value', 'Currency (LKR by default)']],
+                  ['file', 'References', ['Assessment no.', 'Survey plan and lot', 'Custodian, contact, notes']]];
+  $('#record').innerHTML = record.map((r, i) => '<div class="card rv" style="--d:' + (2 + i) + '"><div style="display:flex;gap:12px;align-items:center">' +
+    '<div class="ib' + (i === 3 ? ' solid' : '') + '">' + icon(r[0]) + '</div><b style="font-size:19px;color:var(--deep)">' + r[1] + '</b></div>' +
+    '<div style="margin-top:12px">' + r[2].map((f) => '<div class="tk">' + icon('check') + esc(f) + '</div>').join('<br>') + '</div></div>').join('');
+  $('#units').innerHTML = STATS.units.map((u) => '<span style="padding:7px 12px;border-radius:10px;background:rgba(255,255,255,.1);font-size:13.5px;white-space:nowrap">1 ' +
+    esc(u[0]) + ' = <b>' + esc(u[1]) + '</b> sq ft</span>').join('');
+
+  $('#bulkflow').innerHTML = [['download', 'Download template', 'Drop-down lists filled from the live register', ''],
+    ['flow', 'Fill in Excel', 'One row per property; required columns marked', ''],
+    ['upload', 'Upload', '.xlsx or .csv, up to 2,000 rows', ''],
+    ['zap', 'System checks every row', 'Ready · needs fixing · check warnings', 'auto'],
+    ['check', 'Import', 'Rows that pass are saved together', 'gate']]
+    .map((p, i) => (i ? arrow : '') + '<div class="rv" style="--d:' + (2 + i) + ';flex:1;display:flex;flex-direction:column"><div class="fnode ' + p[3] + '" style="flex:1;cursor:default">' +
+      '<div class="ib">' + icon(p[0]) + '</div><b>' + p[1] + '</b><p>' + p[2] + '</p></div>' +
+      '<div class="ftag">' + (p[3] === 'auto' ? 'Automated' : p[3] === 'gate' ? 'Control point' : '&nbsp;') + '</div></div>').join('');
+  $('#bulkchecks').innerHTML = [['check', 'Checked on every row', 'Required fields · values from the lists · coordinates inside Sri Lanka · dates and numbers'],
+    ['shield', 'Duplicates caught', 'A code already in the register, or used twice in the file, stops the row; a similar name is flagged'],
+    ['activity', 'Clear results', 'Each problem is named by row and column, so the file can be fixed and uploaded again']]
+    .map((c) => '<div class="card"><div style="display:flex;gap:12px;align-items:center"><div class="ib">' + icon(c[0]) + '</div><b style="font-size:18px;color:var(--deep)">' + c[1] + '</b></div><p class="muted" style="margin-top:10px;font-size:15px;line-height:1.5">' + c[2] + '</p></div>').join('');
+
+  $('#renewcards').innerHTML = [['bell', 'The bell', 'Everything expiring within 180 days, one click from any page'],
+    ['clock', 'Expiring tab', 'The document register sorted soonest first, with days left'],
+    ['file', STATS.docTypes.length + ' document types', STATS.docTypes.join(' · ')]]
+    .map((c, i) => '<div class="card rv" style="--d:' + (4 + i) + '"><div style="display:flex;gap:12px;align-items:center"><div class="ib">' + icon(c[0]) + '</div><b style="font-size:19px;color:var(--deep)">' + esc(c[1]) + '</b></div><p class="muted" style="margin-top:10px;font-size:15.5px;line-height:1.5">' + esc(c[2]) + '</p></div>').join('');
+
+  const S = STATS, maxT = Math.max(...S.byType.map((t) => t.n), 1), maxE = Math.max(...S.byOwner.map((t) => t.n), 1);
+  const bars = (rows, max, color) => '<div class="bars">' + rows.map((r, i) => '<div class="bar"><span class="lbl"><i style="background:' + (r.color || color) + '"></i>' + esc(r.label) + '</span>' +
+    '<span class="tr"><em class="grow" style="--d:' + (6 + i) + ';width:' + (r.n / max * 100).toFixed(1) + '%;background:' + (r.color || color) + '"></em></span><b>' + r.n + '</b></div>').join('') + '</div>';
+  $('#figures').innerHTML =
+    '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:18px">' +
+      '<div class="kpi hero rv" style="--d:2"><small>Properties</small><b>' + num(S.total) + '</b><span>' + S.owned + ' owned · ' + S.leased + ' leased or rented in</span></div>' +
+      '<div class="kpi rv" style="--d:3"><small>Property types in use</small><b>' + S.typesUsed + '</b><span>of ' + S.types + ' defined</span></div>' +
+      '<div class="kpi rv" style="--d:4"><small>Districts covered</small><b>' + S.districts + '</b><span>' + esc(S.topDistricts.slice(0, 3).map((d) => d.label + ' ' + d.n).join(' · ')) + '</span></div>' +
+      '<div class="kpi rv" style="--d:5"><small>Owning companies</small><b>' + S.owners + '</b><span>' + esc(S.byOwner[0].label) + ' holds ' + S.byOwner[0].n + '</span></div>' +
+    '</div>' +
+    '<div style="display:grid;grid-template-columns:1.15fr 1fr;gap:18px;margin-top:18px">' +
+      '<div class="card rv" style="--d:6"><b style="font-size:17px;color:var(--deep)">Properties by type</b>' + bars(S.byType, maxT) + '</div>' +
+      '<div class="card rv" style="--d:7"><b style="font-size:17px;color:var(--deep)">By owning company</b>' + bars(S.byOwner, maxE, '#00a69a') + '</div>' +
+    '</div>' +
+    '<p class="note rv" style="--d:9;margin-top:16px">Live figures from the register on ' + esc(S.date) + '. ' +
+      (S.documents ? S.documents + ' documents attached so far.' : 'Next milestone: attaching the deeds and leases — none are recorded yet.') + '</p>';
+
+  const cls = { Full: 'full', Partial: 'partial', 'View only': 'view', 'No access': 'none' };
+  $('#heat').innerHTML = '<table class="heat rv" style="--d:2"><colgroup><col class="first"></colgroup><tr><th></th>' + ROLES.modules.map((m) => '<th>' + esc(m) + '</th>').join('') + '</tr>' +
+    ROLES.roles.map((r) => '<tr><td>' + esc(r.name) + '</td>' + r.cells.map((c) => '<td class="' + cls[c] + '">' + esc(c) + '</td>').join('') + '</tr>').join('') + '</table>' +
+    '<div class="rv" style="--d:4;margin-top:18px;display:flex;align-items:center;flex-wrap:wrap;gap:6px">' +
+      '<span class="lg"><i style="background:var(--teal)"></i>Full</span><span class="lg"><i style="background:#8fdcd4"></i>Partial — some actions, or Limited</span>' +
+      '<span class="lg"><i style="background:var(--ice)"></i>View only</span><span class="lg"><i style="background:#f2f5f5;border:1px solid #e1e8e7"></i>No access</span>' +
+      '<span class="note" style="margin-left:auto">Limited = only the person\'s assigned property types and companies, or their own uploads.</span></div>';
+
+  const tk = (t) => '<span class="tk">' + icon('check') + esc(t) + '</span>', tc = (t) => '<span class="tk c">' + icon('shield') + esc(t) + '</span>';
+  $('#gov').innerHTML = '<tr><th>Step</th><th>The system checks</th><th>Control</th></tr>' + [
+    ['Sign-in', ['Hashed passwords', 'One generic error', 'Lock after 5 tries'], 'Accounts only from an administrator'],
+    ['Every request', ['Permission for the action', 'Scope of the person'], 'An action with no rule is refused'],
+    ['Property record', ['Required fields', 'Master lists', 'Pin inside Sri Lanka', 'Unique code'], 'Edit and delete by role'],
+    ['Bulk upload', ['Every row validated', 'Duplicates caught'], 'Only passing rows are imported'],
+    ['Documents', ['Type and dates', 'File type and size'], 'Files opened only by permitted roles'],
+    ['People', ['Temporary password', 'Own role can\'t be changed'], 'Last Super Admin can\'t be removed'],
+    ['Audit', ['Sign-ins and every change logged'], 'Auditors can read the log']
+  ].map((r, i) => '<tr class="rv" style="--d:' + (2 + i) + '"><td>' + r[0] + '</td><td>' + r[1].map(tk).join('') + '</td><td>' + tc(r[2]) + '</td></tr>').join('');
+
+  const col = (title, items, d, now) => '<div class="col rv' + (now ? ' now' : '') + '" style="--d:' + d + '"><h4>' + title + '</h4>' + items.map((t) => '<div class="li">' + icon(t[0]) + '<span>' + esc(t[1]) + '</span></div>').join('') + '</div>';
+  $('#next').innerHTML =
+    col('Now', [['paperclip', 'Attach the deeds and leases of all ' + S.total + ' properties'], ['users', 'Give staff their accounts, with roles from the access matrix'], ['lock', 'Serve over HTTPS before office-wide use']], 2, true) +
+    col('Planned in the access matrix', [['pencil', 'Edit a document\'s details after upload'], ['database', 'Backup and restore from the screen'], ['trash', 'Bulk clean-up of old or test data']], 3) +
+    col('Ideas for stage 2', [['activity', 'Tenancy and rent ledger, receipts and arrears'], ['target', 'Maintenance requests and inspections'], ['layers', 'Document versions and approvals']], 4);
+
+  $('#summary').innerHTML = [['map', 'One register', S.total + ' properties on one map, in one place'], ['file', 'Documents & renewals', 'Deeds and leases tracked to expiry'],
+    ['chart', 'Insight', 'Signals, charts and alerts for management'], ['shield', 'Control', 'Roles, scope and a full audit log']]
+    .map((c, i) => '<div class="card rv" style="--d:' + (3 + i) + '"><div class="ib solid">' + icon(c[0]) + '</div><b style="display:block;font-size:19px;color:var(--deep);margin-top:14px">' + c[1] + '</b><p class="muted" style="margin-top:6px;font-size:15px;line-height:1.45">' + c[2] + '</p></div>').join('');
+}
+
+/* ---------- demo players: the captured screens, a cursor and highlights ---------- */
+function buildPlayer(p) {
+  const demo = DEMOS[p.dataset.v];
+  if (!demo || !demo.steps.length) return;
+  const box = $('.vbox', p), segs = $('.segs', p), tm = $('.tm', p), pp = $('.pp', p);
+  demo.steps.forEach((s, i) => { const im = new Image(); im.src = s.src; im.alt = s.label; if (!i) im.className = 'on'; box.appendChild(im); });
+  const hs = document.createElement('div'); hs.className = 'hs'; hs.innerHTML = '<span class="lbl"></span>'; box.appendChild(hs);
+  const rp = document.createElement('div'); rp.className = 'rp'; rp.innerHTML = '<b></b><i></i>'; box.appendChild(rp);
+  segs.innerHTML = demo.steps.map(() => '<span><i></i></span>').join('');
+  const imgs = $$('img', box), bars = $$('i', segs), lbl = $('.lbl', hs);
+  const starts = []; let total = 0;
+  demo.steps.forEach((s) => { starts.push(total); total += s.hold; });
+  const st = { t: 0, playing: true, rate: 1, step: -1, clicked: -1 };
+  p._st = st;
+  const ease = (x) => x < .5 ? 2 * x * x : 1 - Math.pow(-2 * x + 2, 2) / 2;
+
+  function place(s) {
+    if (!s.hot) { hs.classList.remove('on'); return; }
+    const [x, y, w, h] = s.hot;
+    hs.style.cssText = 'left:' + x + '%;top:' + y + '%;width:' + w + '%;height:' + h + '%';
+    lbl.textContent = s.label;
+    const big = h > 62 || (w > 70 && h > 40);
+    lbl.className = 'lbl ' + (big ? 'in' : (y > 12 ? 'up' : 'down')) + ' ' + (x + w / 2 > 58 ? 'r' : 'l');
+    hs.classList.toggle('spot', !big && w * h < 1600);
+  }
+  function render() {
+    let i = 0; while (i < starts.length - 1 && st.t >= starts[i + 1]) i++;
+    const s = demo.steps[i], local = st.t - starts[i];
+    if (i !== st.step) {
+      imgs.forEach((im, j) => im.classList.toggle('on', j === i));
+      hs.classList.remove('on'); place(s); st.step = i; st.clicked = -1;
+    }
+    hs.classList.toggle('on', !!s.hot && local > .45);
+    const from = i ? demo.steps[i - 1].cur : [s.cur[0] - 8, Math.min(96, s.cur[1] + 18)];
+    const k = ease(Math.min(1, Math.max(0, (local - .25) / .95)));
+    rp.style.left = (from[0] + (s.cur[0] - from[0]) * k) + '%';
+    rp.style.top = (from[1] + (s.cur[1] - from[1]) * k) + '%';
+    rp.classList.add('on');
+    if (s.click && local > s.hold - .55 && st.clicked !== i) { st.clicked = i; rp.classList.remove('clk'); void rp.offsetWidth; rp.classList.add('clk'); }
+    bars.forEach((b, j) => { b.style.width = j < i ? '100%' : j > i ? '0' : Math.min(100, local / s.hold * 100) + '%'; });
+    tm.textContent = 'Step ' + (i + 1) + ' / ' + demo.steps.length;
+  }
+  const setIcon = () => { pp.innerHTML = icon(st.playing ? 'pause' : 'play'); };
+  setIcon();
+  p._tick = (dt) => { if (st.playing) { st.t += dt * st.rate; if (st.t >= total) st.t = 0; } render(); };
+  p._reset = () => { st.t = 0; st.step = -1; st.playing = true; st.rate = 1; $('.sp', p).textContent = '1×'; setIcon(); render(); };
+  pp.onclick = (e) => { e.stopPropagation(); st.playing = !st.playing; setIcon(); };
+  box.onclick = () => { st.playing = !st.playing; setIcon(); };
+  $('.rs', p).onclick = () => { st.t = 0; st.playing = true; setIcon(); };
+  const rates = [1, .75, .5, 1.5]; let ri = 0;
+  $('.sp', p).onclick = () => { ri = (ri + 1) % rates.length; st.rate = rates[ri]; $('.sp', p).textContent = rates[ri] + '×'; };
+  segs.onclick = (e) => { const r = segs.getBoundingClientRect(); const j = Math.min(demo.steps.length - 1, Math.floor((e.clientX - r.left) / r.width * demo.steps.length)); st.t = starts[j] + .01; };
+  $('.fo', p).onclick = () => p.closest('.slide').classList.toggle('focus');
+  render();
+}
+
+buildModuleSlides();
+buildContent();
+$$('.player').forEach(buildPlayer);
+
+/* ---------- navigation ---------- */
+const stage = $('#stage'), slides = $$('.slide'); let cur = -1;
+function fit() { const s = Math.min(innerWidth / 1600, innerHeight / 900) * (document.fullscreenElement ? 1 : .96); stage.style.transform = 'scale(' + s + ')'; }
+addEventListener('resize', fit); fit();
+let last = performance.now();
+(function loop(now) { const dt = Math.min(.1, (now - last) / 1000); last = now; const s = slides[cur]; if (s) $$('.player', s).forEach((p) => p._tick && p._tick(dt)); requestAnimationFrame(loop); })(last);
+function go(n) {
+  n = Math.max(0, Math.min(slides.length - 1, n)); if (n === cur) return;
+  const old = slides[cur];
+  if (old) { old.classList.remove('on', 'focus'); old.classList.toggle('back', n > cur); setTimeout(() => old.classList.remove('back'), 700); }
+  slides[n].classList.remove('back'); void slides[n].offsetWidth; slides[n].classList.add('on');
+  $$('.player', slides[n]).forEach((p) => p._reset && p._reset());
+  cur = n; $('#top').style.width = ((n + 1) / slides.length * 100) + '%'; $('#count').textContent = (n + 1) + ' / ' + slides.length;
+  $('#secname').textContent = slides[n].dataset.sec || '';
+  $$('#tocl a').forEach((a, i) => a.classList.toggle('cur', i === n)); history.replaceState(null, '', '#' + (n + 1));
+}
+window.go = go;
+$('#tocl').innerHTML = slides.map((s, i) => '<a data-i="' + i + '"><i>' + String(i + 1).padStart(2, '0') + '</i>' + esc(s.dataset.title || '') + '</a>').join('');
+$$('#tocl a').forEach((a) => a.onclick = () => { go(+a.dataset.i); $('#toc').classList.remove('open'); });
+$$('[data-goto]').forEach((e) => e.addEventListener('click', () => go(slideIndex(e.dataset.goto))));
+$('#bPrev').onclick = () => go(cur - 1); $('#bNext').onclick = () => go(cur + 1);
+$('#bToc').onclick = () => $('#toc').classList.toggle('open');
+const fs = () => { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {}); else document.exitFullscreen(); };
+$('#bFs').onclick = fs; document.addEventListener('fullscreenchange', () => { document.body.classList.toggle('fs', !!document.fullscreenElement); fit(); });
+const togCur = () => { document.body.classList.toggle('cur-off'); document.body.classList.add('cur-on'); }; $('#bCur').onclick = togCur;
+addEventListener('keydown', (e) => {
+  const k = e.key;
+  if (['ArrowRight', 'PageDown', ' ', 'Enter'].includes(k)) { e.preventDefault(); go(cur + 1); }
+  else if (['ArrowLeft', 'PageUp', 'Backspace'].includes(k)) { e.preventDefault(); go(cur - 1); }
+  else if (k === 'Home') go(0); else if (k === 'End') go(slides.length - 1);
+  else if (k === 'f' || k === 'F') fs(); else if (k === 'm' || k === 'M') $('#toc').classList.toggle('open');
+  else if (k === 'c' || k === 'C') togCur();
+  else if (k === 'Escape') { $('#toc').classList.remove('open'); slides[cur].classList.remove('focus'); }
+  else if (k === 'p' || k === 'P') { const p = $('.player', slides[cur]); if (p) $('.pp', p).click(); }
+});
+let tx = null;
+stage.addEventListener('touchstart', (e) => tx = e.touches[0].clientX, { passive: true });
+stage.addEventListener('touchend', (e) => { if (tx === null) return; const d = e.changedTouches[0].clientX - tx; if (Math.abs(d) > 50) go(cur + (d < 0 ? 1 : -1)); tx = null; });
+const dot = $('#cdot'), ring = $('#cring'); let mx = -100, my = -100, rx = -100, ry = -100;
+addEventListener('pointermove', (e) => { mx = e.clientX; my = e.clientY; document.body.classList.add('cur-on');
+  const t = e.target.closest && e.target.closest('button,a,.mcard,.fnode,.nd,.segs,.vbox,[data-goto]'); ring.classList.toggle('big', !!t); });
+document.addEventListener('pointerleave', () => document.body.classList.remove('cur-on'));
+addEventListener('pointerdown', () => { ring.classList.remove('press'); void ring.offsetWidth; ring.classList.add('press'); });
+(function cl() { rx += (mx - rx) * .22; ry += (my - ry) * .22; dot.style.transform = 'translate(' + mx + 'px,' + my + 'px)'; ring.style.transform = 'translate(' + rx + 'px,' + ry + 'px)'; requestAnimationFrame(cl); })();
+go(Math.max(0, (parseInt(location.hash.slice(1)) || 1) - 1));
+</script>
+</body>
+</html>
