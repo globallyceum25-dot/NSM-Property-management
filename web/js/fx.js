@@ -32,25 +32,30 @@ window.Fx = (function () {
   /* ---------- figures that count ---------- */
 
   const shown = new Map();     // last value shown, per figure, so a filter tweens from it
-  const NUM = new Intl.NumberFormat('en-LK', { maximumFractionDigits: 0 });
+  // "65", "1,250", "LKR 105.59 Mn", "+LKR 33.55 Mn", "31.8%": the number counts,
+  // and whatever is written around it (currency, sign, unit) stays as it is.
+  const FIGURE = /^(\D*?)(\d[\d,]*(?:\.\d+)?)(\D*)$/;
 
   function countUp(root, selector) {
     if (!root) return;
     root.querySelectorAll(selector).forEach(function (el, i) {
       const text = el.textContent.trim();
-      if (!/^\d[\d,]*$/.test(text)) return;   // whole numbers only; units stay as written
-      const to = Number(text.replace(/,/g, ''));
+      const m = FIGURE.exec(text);
+      if (!m) return;
+      const decimals = (m[2].split('.')[1] || '').length;
+      const to = Number(m[2].replace(/,/g, ''));
       const key = selector + '#' + i;
       const from = shown.has(key) ? shown.get(key) : 0;
       shown.set(key, to);
       if (calm() || from === to) return;
+      const num = new Intl.NumberFormat('en-LK', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
       const start = performance.now();
       const duration = 700;
-      el.textContent = NUM.format(from);
+      el.textContent = m[1] + num.format(from) + m[3];
       (function frame(now) {
         const t = Math.min(1, (now - start) / duration);
         const eased = 1 - Math.pow(1 - t, 3);
-        el.textContent = NUM.format(from + (to - from) * eased);
+        el.textContent = m[1] + num.format(from + (to - from) * eased) + m[3];
         if (t < 1) requestAnimationFrame(frame);
         else el.textContent = text;            // finish on the exact original text
       })(start);
@@ -84,7 +89,7 @@ window.Fx = (function () {
 
   /* ---------- the pointer spotlight ---------- */
 
-  const SPOT = '.kpi, .signal, .tile';
+  const SPOT = '.kpi, .signal, .tile, .fin-kpi';
 
   document.addEventListener('pointermove', function (event) {
     if (event.pointerType !== 'mouse') return;

@@ -20,6 +20,7 @@ window.Finance = (function () {
   let statusFilter = '';
   let sortKey = 'net-asc';
   let loading = 0;
+  let arriving = false;      // the next render is a fresh visit: let things rise and draw in
   let editing = null;        // the entry open in the form, or null for a new one
   let formProperty = null;
 
@@ -113,12 +114,14 @@ window.Finance = (function () {
       refresh();
       hooks.refreshDrawer && hooks.refreshDrawer();
     });
-    $('#fin-sort').addEventListener('change', function () { sortKey = this.value; renderTable(); });
+    $('#fin-sort').addEventListener('change', function () { sortKey = this.value; renderTable(); Fx.rise($('#fin-rows'), 10); });
     $('#fin-status').addEventListener('click', function (event) {
       const b = event.target.closest('[data-status]');
       if (!b) return;
       statusFilter = statusFilter === b.dataset.status ? '' : b.dataset.status;
       renderTable();
+      renderStanding();
+      Fx.rise($('#fin-rows'), 10);
     });
     $('#fin-rows').addEventListener('click', function (event) {
       const tr = event.target.closest('[data-property]');
@@ -155,7 +158,7 @@ window.Finance = (function () {
 
   /* ---------- the Finance page ---------- */
 
-  function show() { refresh(); }
+  function show() { arriving = true; refresh(); }
 
   async function refresh() {
     const p = period(), mine = ++loading;
@@ -174,6 +177,23 @@ window.Finance = (function () {
     renderStanding();
     renderTable();
     Charts.bindTooltips($('#view-finance'));
+    animate();
+  }
+
+  // The same motion as the other pages: figures count to their new values every
+  // time; on arriving, the cards rise in turn and the charts draw themselves in.
+  function animate() {
+    const page = $('#view-finance');
+    Fx.countUp(page, '.fin-kpi b');
+    Fx.countUp(page, '.fin-key b');
+    Fx.countUp(page, '.fin-standing-list b');
+    if (!arriving) return;
+    arriving = false;
+    Fx.rise($('#fin-kpis'));
+    Fx.rise($('.fin-grid', page), 4);
+    Fx.rise($('#fin-losers'), 5);
+    Fx.rise($('#fin-rows'), 10);
+    Fx.draw(page);
   }
 
   function renderKpis() {
@@ -227,6 +247,7 @@ window.Finance = (function () {
       statusFilter = statusFilter === b.dataset.status ? '' : b.dataset.status;
       renderTable();
       renderStanding();
+      Fx.rise($('#fin-rows'), 10);
       $('#fin-table-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
     }));
     const losers = report.properties.filter((r) => r.net < 0).sort((a, b) => a.net - b.net).slice(0, 5);
@@ -318,6 +339,8 @@ window.Finance = (function () {
       '<div class="fin-drawer-actions">' +
         (mayRecord ? '<button type="button" class="btn btn-dark btn-sm" data-fin-new>' + icon('plus') + 'Record entry</button>' : '') +
         '<button type="button" class="btn btn-ghost btn-sm" data-fin-open>' + icon('chart') + 'Finance page</button></div>';
+    Fx.countUp(box, '.fin-mini b');
+    Fx.rise($('.fin-entries', box), 6);
     const entries = {};
     data.entries.forEach((e) => { entries[e.id] = e; });
     box.addEventListener('click', function (event) {
