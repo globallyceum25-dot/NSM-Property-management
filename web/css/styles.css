@@ -272,7 +272,11 @@ body {
   background: var(--bg);
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  /* The app fills the window, and the cards, map and tables scroll inside it.
+     When the window is too short for that (a laptop, or with the test-data
+     banner showing), the page scrolls instead of squeezing them away. */
+  overflow-x: hidden;
+  overflow-y: auto;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -359,6 +363,7 @@ p { margin: 0; }
   border-bottom: 1px solid var(--border);
   background: var(--surface);
   z-index: 800;
+  position: sticky; top: 0;
 }
 
 .brand {
@@ -740,7 +745,7 @@ button.kpi:hover .kpi-cta, button.kpi:focus-visible .kpi-cta, button.kpi.is-acti
 .fchip .ic { width: 13px; height: 13px; stroke-width: 2.4; }
 
 .portfolio-body {
-  flex: 1 1 auto; min-height: 0;
+  flex: 1 1 auto; min-height: 420px;
   display: grid; gap: 22px;
 }
 .portfolio-body.mode-map { grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr); }
@@ -1416,7 +1421,7 @@ button.kpi:hover .kpi-cta, button.kpi:focus-visible .kpi-cta, button.kpi.is-acti
 
 #view-masters.is-active { display: flex; }
 .masters-layout {
-  flex: 1 1 auto; min-height: 0;
+  flex: 1 1 auto; min-height: 460px;
   display: flex; gap: 24px;
   padding: 26px var(--gutter) 24px;
 }
@@ -3153,14 +3158,14 @@ html.theme-switching *, html.theme-switching *::before, html.theme-switching *::
 
 .test-banner {
   display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
-  margin: 14px var(--gutter) 0; padding: 12px 14px 12px 18px; border-radius: var(--r-lg);
+  margin: 10px var(--gutter) 0; padding: 7px 8px 7px 16px; border-radius: var(--r-lg);
   background: repeating-linear-gradient(-45deg, var(--amber-soft) 0 14px, var(--warn-soft) 14px 28px);
   border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent);
   color: var(--amber-text);
 }
 .test-banner[hidden] { display: none; }
-.test-banner > .ic { width: 22px; height: 22px; flex: 0 0 auto; }
-.test-banner p { flex: 1 1 320px; margin: 0; font-size: 13.5px; line-height: 1.45; color: var(--text-2); }
+.test-banner > .ic { width: 20px; height: 20px; flex: 0 0 auto; }
+.test-banner p { flex: 1 1 320px; margin: 0; font-size: 13px; line-height: 1.4; color: var(--text-2); }
 .test-banner p b { color: var(--amber-text); }
 .test-banner-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .tb-btn { background: var(--surface); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); color: var(--amber-text); }

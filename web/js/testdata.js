@@ -30,8 +30,8 @@ window.TestData = (function () {
     let s;
     try { s = await API.testData(); } catch (err) { return; }
     $('#test-banner-text').innerHTML = s.properties
-      ? '<b>Test data.</b> You are looking at ' + s.properties + ' test properties, ' + s.documents + ' documents and ' +
-        s.entries + ' finance entries. Real data is hidden, and anything you add now is saved as test data.'
+      ? '<b>Test data</b> — ' + s.properties + ' properties, ' + s.documents + ' documents, ' + s.entries +
+        ' finance entries. Real data is hidden; anything you add now is test data.'
       : '<b>Test data.</b> There is no test data yet.' + (s.canManage ? ' Load a ready-made set to try every section.'
         : ' Ask an administrator to load it.');
     $('#btn-test-load').hidden = !s.canManage || !!s.properties;
