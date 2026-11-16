@@ -457,7 +457,7 @@ def delete_role(ctx):
 
 # --- the audit log ----------------------------------------------------------------
 
-AUDIT_CATEGORIES = ["auth", "user", "role", "property", "document", "bulk", "type", "company", "master"]
+AUDIT_CATEGORIES = ["auth", "user", "role", "property", "document", "finance", "bulk", "type", "company", "master"]
 
 
 def list_audit(ctx):

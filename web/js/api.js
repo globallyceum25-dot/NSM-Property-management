@@ -63,6 +63,11 @@ window.API = (function () {
     updateRole: (code, data) => request('PUT', '/api/roles/' + code, data),
     deleteRole: (code) => request('DELETE', '/api/roles/' + code),
     listAudit: (filters) => request('GET', '/api/audit' + qs(filters || {})),
+    financeSummary: (filters) => request('GET', '/api/finance/summary' + qs(filters || {})),
+    propertyFinance: (id, period) => request('GET', '/api/properties/' + id + '/finance' + qs(period || {})),
+    createFinance: (id, data) => request('POST', '/api/properties/' + id + '/finance', data),
+    updateFinance: (id, data) => request('PUT', '/api/finance/' + id, data),
+    deleteFinance: (id) => request('DELETE', '/api/finance/' + id),
 
     listSbus: () => request('GET', '/api/sbus'),
     createSbu: (data) => request('POST', '/api/sbus', data),

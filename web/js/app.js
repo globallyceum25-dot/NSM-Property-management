@@ -314,6 +314,7 @@
 
   const VIEW_PERMS = {
     portfolio: ['properties.view'], documents: ['documents.view'], dashboard: ['dashboard.view'],
+    finance: ['finance.view'],
     sbus: ['types.view'], entities: ['companies.view'], masters: ['masters.view'],
     access: ['users.view', 'roles.manage', 'audit.view']
   };
@@ -436,6 +437,12 @@
     window.__districts = state.reference.districts;   // used by the masters form
     Masters.setAccess(can);
     Access.init(toast, state);
+    Finance.init(toast, state, {
+      filters: activeFilters, can: can, allowedOn: allowedOn,
+      openProperty: (id) => openDrawer(id),
+      openView: (view) => { closeDrawer(); switchView(view); },
+      refreshDrawer: () => { if (state.currentProperty) openDrawer(state.currentProperty.id); }
+    });
     Masters.init(toast, async function (key) {
       // Keep the filters and the property form in step with edits made in the
       // Master sheets module.
@@ -468,7 +475,7 @@
 
   /* ---------- links: #dashboard, #portfolio/grid, #property/12 ... ---------- */
 
-  const VIEWS = ['portfolio', 'documents', 'dashboard', 'sbus', 'entities', 'masters', 'access'];
+  const VIEWS = ['portfolio', 'documents', 'dashboard', 'finance', 'sbus', 'entities', 'masters', 'access'];
   const MODES = ['map', 'grid', 'table'];
 
   function writeHash() {
@@ -649,6 +656,7 @@
     // The dashboard describes the same set, so keep it in step with the filters.
     if (state.view === 'dashboard') await renderDashboard();
     if (state.view === 'documents') await renderDocuments();
+    if (state.view === 'finance') Finance.refresh();
     if (onGroupPage()) await renderGroupPage();
   }
 
@@ -2539,6 +2547,7 @@
       shortLabel('statuses', property.status);
     $('#drawer-name').innerHTML = esc(property.name) + verifiedHtml(property);
     $('#drawer-body').innerHTML = detailHtml(property);
+    Finance.renderDrawer(property, $('#drawer-body'));
     $('#drawer').hidden = false;
     $('#scrim').hidden = false;
     writeHash();
@@ -3402,6 +3411,7 @@
     if (view === 'documents') renderDocuments();
     if (view === 'masters') Masters.show();
     if (view === 'access') Access.show();
+    if (view === 'finance') Finance.show();
     writeHash();
   }
 

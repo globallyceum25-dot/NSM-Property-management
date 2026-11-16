@@ -17,6 +17,7 @@ entry is refused.
 """
 
 import datetime
+import json
 import re
 from typing import Dict, List
 
@@ -80,6 +81,19 @@ MODULES = [
      "actions": [
          _action("alerts.view", "View", "See expiry alerts (the bell) and renewal reminders.",
                  "Only alerts for their assigned scope."),
+     ]},
+    {"key": "finance", "label": "Finance",
+     "description": "What each property costs and earns: rent, running costs, income and capital.",
+     "actions": [
+         _action("finance.view", "View", "See income, costs and the result of each property.",
+                 "Only properties in their assigned scope."),
+         _action("finance.create", "Record", "Add income, running costs and capital against a property.",
+                 "Only for properties in their assigned scope."),
+         _action("finance.edit", "Edit", "Correct an entry already recorded.",
+                 "Only for properties in their assigned scope."),
+         _action("finance.delete", "Delete", "Remove an entry."),
+         _action("finance.export", "Export", "Download the finance report as a CSV file.",
+                 "Only rows for their assigned scope."),
      ]},
     {"key": "types", "label": "Property types",
      "description": "What each property is used for (Educational, Warehouse ...), and each type's page.",
@@ -147,6 +161,11 @@ documents.edit     Y Y Y L Y N N
 documents.delete   Y Y L N L N N
 dashboard.view     Y Y Y L Y Y Y
 alerts.view        Y Y Y L Y Y Y
+finance.view       Y Y L N N Y N
+finance.create     Y Y L N N N N
+finance.edit       Y Y L N N N N
+finance.delete     Y Y N N N N N
+finance.export     Y Y L N N Y N
 types.view         Y Y Y Y Y Y Y
 types.create       Y Y N N N N N
 types.edit         Y Y N N N N N
@@ -204,10 +223,42 @@ def _now():
     return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+# The actions every register's roles were first given. Actions added to the
+# catalog later are given to the built-in roles once, by seed_new_actions.
+FIRST_ACTIONS = [k for k in ALL_KEYS if not k.startswith("finance.")]
+
+
+def seed_new_actions(conn):
+    """Give the built-in roles their workbook level for actions added to the
+    catalog since the register's roles were set up -- once, so a level an
+    administrator later changes is never overwritten."""
+    row = conn.execute("SELECT value FROM register_meta WHERE key = 'role_actions'").fetchone()
+    known = set(json.loads(row["value"])) if row else set(FIRST_ACTIONS)
+    new = [k for k in ALL_KEYS if k not in known]
+    if new:
+        levels = default_levels()
+        for code in levels:
+            if not conn.execute("SELECT 1 FROM app_role WHERE code = ?", (code,)).fetchone():
+                continue
+            for key in new:
+                exists = conn.execute("SELECT 1 FROM app_role_permission WHERE role_code = ? AND permission = ?",
+                                      (code, key)).fetchone()
+                if levels[code][key] != "no" and not exists:
+                    conn.execute("INSERT INTO app_role_permission (role_code, permission, level) VALUES (?, ?, ?)",
+                                 (code, key, levels[code][key]))
+    value = json.dumps(sorted(known | set(ALL_KEYS)))
+    if row:
+        conn.execute("UPDATE register_meta SET value = ? WHERE key = 'role_actions'", (value,))
+    else:
+        conn.execute("INSERT INTO register_meta (key, value) VALUES ('role_actions', ?)", (value,))
+    conn.commit()
+
+
 def seed_roles(conn):
     """Give a register the workbook's roles once; after that they are edited in the app."""
     from . import db
     if db.was_seeded(conn, "roles"):
+        seed_new_actions(conn)
         return
     levels = default_levels()
     stamp = _now()
@@ -221,6 +272,9 @@ def seed_roles(conn):
                 conn.execute("INSERT INTO app_role_permission (role_code, permission, level) VALUES (?, ?, ?)",
                              (code, key, level))
     db.mark_seeded(conn, "roles")
+    conn.execute("DELETE FROM register_meta WHERE key = 'role_actions'")
+    conn.execute("INSERT INTO register_meta (key, value) VALUES ('role_actions', ?)",
+                 (json.dumps(sorted(ALL_KEYS)),))
     conn.commit()
 
 
@@ -434,6 +488,12 @@ ROUTE_PERMISSIONS = {
     "admin.update_role": "roles.manage",
     "admin.delete_role": "roles.manage",
     "admin.list_audit": "audit.view",
+    "finance.get_summary": "finance.view",
+    "finance.property_finance": "finance.view",
+    "finance.create_entry": "finance.create",
+    "finance.update_entry": "finance.edit",
+    "finance.delete_entry": "finance.delete",
+    "finance.export_csv": "finance.export",
 }
 
 
@@ -486,6 +546,9 @@ _AUDIT_ACTIONS = {
     "masters.update_row": ("master.update", "Changed master row"),
     "masters.delete_row": ("master.delete", "Deleted master row"),
     "bulk.upload_properties": ("bulk.import", "Imported properties"),
+    "finance.create_entry": ("finance.create", "Recorded finance entry"),
+    "finance.update_entry": ("finance.update", "Changed finance entry"),
+    "finance.delete_entry": ("finance.delete", "Removed finance entry"),
 }
 
 

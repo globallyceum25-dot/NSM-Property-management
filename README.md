@@ -310,7 +310,7 @@ on everything they did.
 
 **Roles & permissions.** The access matrix from
 `docs/access/Property Register - Roles and Access.xlsx`, now live. Each of the
-34 actions in 10 modules is **Yes**, **Limited** or **No** for each role:
+39 actions in 11 modules is **Yes**, **Limited** or **No** for each role:
 
 | Limited means | For |
 | --- | --- |
@@ -339,6 +339,51 @@ property, document, bulk upload, property type, company and master-sheet change
 - Nobody can change their own role or switch themselves off, and the last
   active Super Admin cannot be removed.
 - Switching someone off or resetting their password signs them out everywhere.
+
+## Finance
+
+The **Finance** page (wallet icon) answers one question for every property:
+*does it pay its way?*
+
+Anything with money attached is recorded as an entry against a property, as
+one of three kinds:
+
+| Kind | Categories | Counted as |
+| --- | --- | --- |
+| Income | business revenue earned at the site (e.g. school fees), rent received, other income | money in |
+| Running cost | rent / lease, rates & taxes, maintenance, utilities, insurance, security & cleaning, site staff, other | money out |
+| Capital | land / property purchase, construction & renovation, fit-out, legal & stamp duty | an investment, kept apart |
+
+An entry covers whole months from its first month: a year's rent paid in
+advance is one entry covering 12 months, and every report counts a twelfth of
+it in each month. Capital is not spread and is never counted as a running cost:
+buying land is an investment, not a loss in the month it is paid. Amounts are in
+LKR; the financial year runs April to March (`YEAR_START_MONTH` in
+`server/finance.py`).
+
+For the chosen period (this financial year to date, the full year, last year,
+the last 12 months or the calendar year) each property gets its income, running
+costs, how much of that is rent, its **net result** and margin, and a status:
+
+- **Profitable** — income exceeds running costs by more than 5%;
+- **Break-even** — within 5% either way;
+- **Loss-making** — running costs exceed income by more than 5%;
+- **Cost only** — costs but no income recorded (an office, a store);
+- **No figures** — nothing recorded yet.
+
+With capital recorded, it also shows the return a year and roughly how many
+years the property takes to pay back what was invested.
+
+The page has the portfolio totals, income against running costs month by month,
+how many properties are in each status, the five biggest losses, and a table of
+every property, worst first, with a CSV export. It follows the same tenure tabs,
+search and filters as the Portfolio. Each property's panel has its own Finance
+section, with its entries and **Record entry**.
+
+Access follows the roles: Super Admin and Administrators do everything,
+Property Managers see and record for their own scope, Auditors read and export,
+and the others do not see Finance. Every entry recorded, changed or removed is
+in the activity log.
 
 ## What it does
 
@@ -794,6 +839,10 @@ Sri Lanka; selecting a district fills the province automatically.
 | POST | `/api/users/{id}/reset-password`, `/sign-out`, `/unlock` | new temporary password; end their sessions; clear a lockout |
 | GET/POST | `/api/roles` | the modules, actions and roles with their levels / add a custom role (`name`, `description`, `copyFrom`) |
 | PUT/DELETE | `/api/roles/{code}` | change a role's `name`, `description`, `permissions` (`{action: yes/limited/no}`) / delete a custom role |
+| GET | `/api/finance/summary` | each property's income, running costs, rent, net result and status for `from`–`to` (`YYYY-MM`; default this financial year to date), with the portfolio totals and month-by-month figures; takes the property filters |
+| GET/POST | `/api/properties/{id}/finance` | one property's figures and entries / record an entry: `kind`, `category`, `amount`, `period_start` (`YYYY-MM`), `months`, `description`, `counterparty`, `reference_no`, `notes` |
+| PUT/DELETE | `/api/finance/{id}` | change / remove an entry |
+| GET | `/api/export/finance.csv` | the finance report as CSV, worst result first |
 | GET | `/api/audit` | the audit log, newest first; `category`, `user_id`, `days`, `q`, `before` (paging), `limit` |
 | GET | `/api/reference` | districts, provinces, enumerations, map bounds (no sign-in needed) |
 | GET/POST | `/api/sbus` | list / create property types |

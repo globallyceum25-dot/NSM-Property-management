@@ -54,6 +54,9 @@ class BrowserSmokeTest(RegisterTestCase):
             page.locator("#view-masters.is-active #masters-nav .master-link").first.wait_for()
             page.goto(self.base + "/#dashboard")
             page.locator("#view-dashboard.is-active").wait_for()
+            page.goto(self.base + "/#finance")
+            page.locator("#view-finance.is-active #fin-kpis .fin-kpi").first.wait_for()
+            page.locator("#fin-rows tr").first.wait_for()
             # Users & access: the people list, the role matrix and the activity log.
             page.goto(self.base + "/#access")
             page.locator("#people-rows tr").first.wait_for()

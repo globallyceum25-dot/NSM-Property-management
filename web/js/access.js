@@ -873,10 +873,13 @@ window.Access = (function () {
     'bulk.import': 'imported properties', 'type.create': 'added a property type', 'type.update': 'changed a property type',
     'type.delete': 'deleted a property type', 'company.create': 'added a company', 'company.update': 'changed a company',
     'company.delete': 'deleted a company', 'master.create': 'added a master row', 'master.update': 'changed a master row',
-    'master.delete': 'deleted a master row'
+    'master.delete': 'deleted a master row',
+    'finance.create': 'recorded a finance entry', 'finance.update': 'changed a finance entry',
+    'finance.delete': 'removed a finance entry'
   };
   const CATEGORY_ICON = { auth: 'key', user: 'users', role: 'shield', property: 'home', document: 'file',
-                          bulk: 'upload', type: 'building', company: 'landmark', master: 'database' };
+                          bulk: 'upload', type: 'building', company: 'landmark', master: 'database',
+                          finance: 'wallet' };
 
   async function loadAudit(reset) {
     if (audit.loading) return;

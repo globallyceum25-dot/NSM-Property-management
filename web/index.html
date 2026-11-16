@@ -64,6 +64,11 @@
   <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.5"/><path d="M15.5 8.5V6.5a2 2 0 0 0-2-2h-7a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h2"/></symbol>
   <symbol id="i-logout" viewBox="0 0 24 24"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14M10 16.5 5.5 12 10 7.5M5.5 12H15"/></symbol>
   <symbol id="i-power" viewBox="0 0 24 24"><path d="M12 3.5v8M7 6.3a7.5 7.5 0 1 0 10 0"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2H5"/><circle cx="16.5" cy="13.5" r="1.2" fill="currentColor"/></symbol>
+  <symbol id="i-fin-up" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6"/></symbol>
+  <symbol id="i-fin-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+  <symbol id="i-fin-level" viewBox="0 0 24 24"><path d="M5 9.5h14M5 14.5h14"/></symbol>
+  <symbol id="i-fin-dot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4" fill="currentColor"/></symbol>
   <symbol id="i-open" viewBox="0 0 24 24"><path d="M7 17 17 7M8.5 7H17v8.5"/></symbol>
   <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M4.6 4.6l1.4 1.4M18 18l1.4 1.4M2.5 12h2M19.5 12h2M4.6 19.4 6 18M18 6l1.4-1.4"/></symbol>
   <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20.2 14.6A8.5 8.5 0 0 1 9.4 3.8a8.5 8.5 0 1 0 10.8 10.8z"/></symbol>
@@ -91,6 +96,7 @@
     <button class="tab is-active" data-view="portfolio" title="Portfolio"><svg class="ic"><use href="#i-map"/></svg><span class="tab-label">Portfolio</span></button>
     <button class="tab" data-view="documents" title="Documents"><svg class="ic"><use href="#i-file"/></svg><span class="tab-label">Documents</span></button>
     <button class="tab" data-view="dashboard" title="Dashboard"><svg class="ic"><use href="#i-chart"/></svg><span class="tab-label">Dashboard</span></button>
+    <button class="tab" data-view="finance" title="Finance"><svg class="ic"><use href="#i-wallet"/></svg><span class="tab-label">Finance</span></button>
     <button class="tab" data-view="sbus" title="Property types"><svg class="ic"><use href="#i-building"/></svg><span class="tab-label">Property types</span></button>
     <button class="tab" data-view="entities" title="Owning companies"><svg class="ic"><use href="#i-landmark"/></svg><span class="tab-label">Owning companies</span></button>
     <button class="tab" data-view="masters" title="Master sheets"><svg class="ic"><use href="#i-database"/></svg><span class="tab-label">Master sheets</span></button>
@@ -390,6 +396,60 @@
       </div>
     </div>
   </section>
+  <!-- Finance: what each property costs and earns (js/finance.js) -->
+  <section class="view" id="view-finance" aria-label="Finance">
+    <div class="page finance-page">
+      <div class="page-head">
+        <div>
+          <h1>Finance</h1>
+          <p class="found" id="fin-caption">What each property costs and earns.</p>
+        </div>
+        <div class="fin-head-actions">
+          <label class="fin-period-pick"><svg class="ic"><use href="#i-clock"/></svg>
+            <select id="fin-period" aria-label="Period"></select></label>
+          <button class="btn btn-ghost" id="btn-fin-export" data-perm="finance.export"><svg class="ic"><use href="#i-download"/></svg>Export</button>
+          <button class="btn btn-dark" id="btn-fin-new" data-perm="finance.create"><svg class="ic"><use href="#i-plus"/></svg>Record entry</button>
+        </div>
+      </div>
+      <p class="access-note" id="fin-hint" hidden>Nothing is recorded for these properties yet. Open a property and choose <b>Record entry</b> — the rent you pay, its running costs, and what the business there earns — or use <b>Record entry</b> above.</p>
+      <div class="fin-kpis" id="fin-kpis"></div>
+      <div class="fin-grid">
+        <section class="fin-card">
+          <header><div><h2>Income and running costs</h2><p>Month by month; payments covering several months are spread across them.</p></div>
+            <div class="fin-legend" id="fin-chart-legend"></div></header>
+          <div id="fin-chart"></div>
+        </section>
+        <section class="fin-card">
+          <header><div><h2>How the properties stand</h2><p>Income against running costs for the period.</p></div></header>
+          <div id="fin-standing"></div>
+          <h3 class="fin-sub">Biggest losses</h3>
+          <ul class="fin-losers" id="fin-losers"></ul>
+        </section>
+      </div>
+      <section class="fin-card fin-table-card" id="fin-table-card">
+        <header class="fin-table-head">
+          <div class="fin-status" id="fin-status" role="tablist" aria-label="Status"></div>
+          <label class="fin-sort">Sort
+            <select id="fin-sort">
+              <option value="net-asc">Net result, lowest first</option>
+              <option value="net-desc">Net result, highest first</option>
+              <option value="income">Income</option>
+              <option value="cost">Running costs</option>
+              <option value="rent">Rent as share of income</option>
+              <option value="name">Name</option>
+            </select></label>
+        </header>
+        <div class="table-wrap">
+          <table class="grid fin-table">
+            <thead><tr><th>Property</th><th>Tenure</th><th class="num">Income</th><th class="num">Running costs</th><th class="num">Of which rent</th><th class="num">Net</th><th>Status</th><th class="num">Capital</th><th class="row-actions"></th></tr></thead>
+            <tbody id="fin-rows"></tbody>
+          </table>
+          <p class="empty" id="fin-empty" hidden></p>
+        </div>
+      </section>
+    </div>
+  </section>
+
   <!-- Users & access: people, roles and the audit log (js/access.js) -->
   <section class="view" id="view-access" aria-label="Users and access">
     <div class="page access-page">
@@ -459,6 +519,7 @@
             <option value="role">Roles</option>
             <option value="property">Properties</option>
             <option value="document">Documents</option>
+            <option value="finance">Finance</option>
             <option value="bulk">Bulk uploads</option>
             <option value="type">Property types</option>
             <option value="company">Owning companies</option>
@@ -976,6 +1037,73 @@
   </div>
 </div>
 
+<!-- Record income, a running cost or capital -->
+<div class="modal" id="finance-modal" hidden>
+  <div class="modal-card">
+    <header class="modal-head">
+      <h2 id="fin-modal-title">Record income or a cost</h2>
+      <button class="circle-btn" data-close-modal aria-label="Close"><svg class="ic"><use href="#i-x"/></svg></button>
+    </header>
+    <form id="fin-form" class="modal-body" novalidate>
+      <label>Property <span class="req" aria-hidden="true">*</span>
+        <select name="property_id"></select>
+      </label>
+      <div class="fin-kind" id="fin-kind" role="radiogroup" aria-label="Kind">
+        <label><input type="radio" name="kind" value="income"><span><svg class="ic"><use href="#i-fin-up"/></svg>Income</span></label>
+        <label><input type="radio" name="kind" value="cost" checked><span><svg class="ic"><use href="#i-fin-down"/></svg>Running cost</span></label>
+        <label><input type="radio" name="kind" value="capital"><span><svg class="ic"><use href="#i-landmark"/></svg>Capital</span></label>
+      </div>
+      <label>Category <span class="req" aria-hidden="true">*</span>
+        <select name="category"></select>
+        <small class="fin-field-hint" id="fin-cat-hint"></small>
+      </label>
+      <div class="grid-2">
+        <label>Amount (LKR) <span class="req" aria-hidden="true">*</span>
+          <input name="amount" inputmode="decimal" placeholder="e.g. 1,200,000" autocomplete="off">
+        </label>
+        <label>First month <span class="req" aria-hidden="true">*</span>
+          <input name="period_start" type="month">
+        </label>
+      </div>
+      <div id="fin-covers-row">
+        <label>The amount covers
+          <span class="fin-covers">
+            <select name="covers">
+              <option value="1">1 month</option>
+              <option value="3">3 months (a quarter)</option>
+              <option value="6">6 months</option>
+              <option value="12">12 months (a year)</option>
+              <option value="custom">Another number of months…</option>
+            </select>
+            <input name="months" type="number" min="1" max="120" value="24" hidden aria-label="Number of months">
+          </span>
+        </label>
+      </div>
+      <p class="fin-spread" id="fin-spread-hint" aria-live="polite"></p>
+      <div class="grid-2">
+        <label>Paid to / received from
+          <input name="counterparty" maxlength="160" placeholder="Landlord, tenant, supplier">
+        </label>
+        <label>Reference no.
+          <input name="reference_no" maxlength="80" placeholder="Invoice, receipt or agreement no.">
+        </label>
+      </div>
+      <label>Description
+        <input name="description" maxlength="200" placeholder="e.g. Rent for FY 2026/27">
+      </label>
+      <label>Notes
+        <textarea name="notes" rows="2" maxlength="2000"></textarea>
+      </label>
+      <p class="form-error" id="fin-form-error" hidden></p>
+    </form>
+    <footer class="modal-foot">
+      <button class="btn btn-ghost danger-text" id="btn-fin-delete" hidden style="margin-right:auto">Remove</button>
+      <button class="btn btn-ghost" data-close-modal>Cancel</button>
+      <button class="btn btn-dark" id="btn-fin-save">Save</button>
+    </footer>
+  </div>
+</div>
+
 <!-- What the signed-in person may do -->
 <div class="modal" id="my-access-modal" hidden>
   <div class="modal-card my-access-card">
@@ -1024,6 +1152,7 @@
 <script src="js/map.js"></script>
 <script src="js/masters.js"></script>
 <script src="js/access.js"></script>
+<script src="js/finance.js"></script>
 <script src="js/charts.js"></script>
 <script src="js/fx.js"></script>
 <script src="js/app.js"></script>

@@ -74,7 +74,7 @@ class RulesTests(AccessTestCase):
         self.assertEqual((viewer["documents.view"], viewer["documents.download"]), ("yes", "no"))
         self.assertEqual((admin["users.create"], admin["roles.manage"], admin["types.delete"]),
                          ("limited", "no", "no"))
-        self.assertEqual(len(access.ALL_KEYS), 34)
+        self.assertEqual(len(access.ALL_KEYS), 39)
 
     def test_status_carries_permissions_and_scope(self):
         _, cookie = self.person("VIEWER")
@@ -96,7 +96,7 @@ class MyAccessTests(AccessTestCase):
         self.assertEqual([t["id"] for t in mine["scope"]["types"]], [sbu_id])
         levels = {a["key"]: a["level"] for m in mine["modules"] for a in m["actions"]}
         self.assertEqual((levels["properties.view"], levels["properties.delete"]), ("limited", "no"))
-        self.assertEqual(len(levels), 34)
+        self.assertEqual(len(levels), 39)
         # ...but not anyone else's.
         self.assertEqual(self.as_(cookie, "GET", "/api/users").status, 403)
 

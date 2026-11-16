@@ -19,6 +19,7 @@ def wipe(reload_sample=False):
         conn.executescript("TRUNCATE %s RESTART IDENTITY;" % ", ".join(db.TABLES))
     else:
         conn.executescript("""
+            DELETE FROM finance_entry;
             DELETE FROM document;
             DELETE FROM property;
             DELETE FROM location_code;
@@ -27,7 +28,7 @@ def wipe(reload_sample=False):
             DELETE FROM legal_entity;
             DELETE FROM sqlite_sequence
              WHERE name IN ('document','property','sbu','legal_entity',
-                            'location','location_code');
+                            'location','location_code','finance_entry');
         """)
     conn.commit()
     storage.clear()

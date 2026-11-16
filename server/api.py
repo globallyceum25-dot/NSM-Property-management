@@ -144,6 +144,7 @@ def get_reference(ctx):
         "colors": srilanka.SBU_COLORS,
         "maxUploadBytes": MAX_UPLOAD_BYTES,
         "allowedExtensions": sorted(ALLOWED_EXTENSIONS),
+        "finance": finance.reference(),
     }
 
 
@@ -645,6 +646,7 @@ def delete_property(ctx):
     ctx.audit_target = "%s · %s" % (gone["property_code"], gone["name"])
     ctx.audit_detail = "Deleted with its %d document%s" % (len(docs), "" if len(docs) == 1 else "s")
     conn.execute("DELETE FROM document WHERE property_id = ?", (pid,))
+    conn.execute("DELETE FROM finance_entry WHERE property_id = ?", (pid,))
     conn.execute("DELETE FROM property WHERE id = ?", (pid,))
     conn.commit()
     for d in docs:
@@ -1075,6 +1077,10 @@ ROUTES = ROUTES + bulk.ROUTES
 # Sign-in and sessions; users, roles and the audit log.
 from . import admin, auth  # noqa: E402
 ROUTES = ROUTES + auth.ROUTES + admin.ROUTES
+
+# What each property costs and earns.
+from . import finance  # noqa: E402
+ROUTES = ROUTES + finance.ROUTES
 
 COMPILED_ROUTES = [(method, re.compile(pattern), handler)
                    for method, pattern, handler in ROUTES]
