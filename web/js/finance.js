@@ -443,19 +443,22 @@ window.Finance = (function () {
   function trendCell(t) {
     if (!t) return '<span class="dash">—</span>';
     const d = DIRECTION[t.direction];
-    return '<div class="fin-trend" data-tip-label="Trend" data-tip-value="' + esc(trendSentence(t, true)) + '" tabindex="0">' +
+    return '<div class="fin-trend" data-tip-label="Trend' + (t.model ? ' · ' + esc(t.model.label) : '') + '" data-tip-value="' + esc(trendSentence(t, true)) + '" tabindex="0">' +
       spark(t.spark) + '<span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></div>';
   }
 
-  // The property panel's chart: each month's result, a 3-month average, and
-  // the fitted line carried forward as a projection.
+  // The trend charts: each month's result, a 3-month average, and the
+  // forecast with its 80% and 95% ranges. The scale follows the 80% range; the
+  // wider 95% range is cut off at the edge of the chart rather than squashing it.
   function trendChart(t, opts) {
     opts = opts || {};
     const compact = !!opts.compact;
     const hist = t.history, proj = t.projection || [];
     const W = opts.width || 432, H = opts.height || 200;
     const padL = compact ? 4 : 46, padR = compact ? 4 : 8, padT = compact ? 6 : 14, padB = compact ? 6 : 26;
-    const all = hist.map((h) => h.net).concat(hist.map((h) => h.avg3), proj.map((p) => p.net), [0]);
+    const ranged = proj.length && proj[0].lo80 !== undefined;
+    const all = hist.map((h) => h.net).concat(hist.map((h) => h.avg3), proj.map((p) => p.net), [0],
+      ranged ? proj.map((p) => p.lo80).concat(proj.map((p) => p.hi80)) : []);
     let top = Math.max.apply(null, all), bottom = Math.min.apply(null, all);
     if (top === bottom) { top += 1; bottom -= 1; }
     const span = top - bottom;
@@ -463,7 +466,8 @@ window.Finance = (function () {
     const slots = hist.length + proj.length, step = (W - padL - padR) / slots;
     const x = (i) => padL + step * (i + 0.5);
     const y = (v) => padT + (top - v) / (top - bottom) * (H - padT - padB);
-    const zero = y(0), bw = Math.max(2, step * 0.62);
+    const zero = y(0), bw = Math.max(compact ? 1 : 2, step * 0.62);
+    const clampY = (v) => Math.max(padT, Math.min(H - padB, y(v)));
     const tickVals = [top - span * 0.08, 0, bottom + span * 0.08].filter((v, i, a) => a.indexOf(v) === i);
     let svg = '<svg class="fin-trend-chart' + (compact ? ' compact' : '') + '" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="' + esc(trendSentence(t)) + '">';
     if (proj.length && compact) {
@@ -482,6 +486,16 @@ window.Finance = (function () {
       svg += '<line class="' + (v === 0 ? 'zero' : 'grid') + '" x1="' + padL + '" x2="' + (W - padR) + '" y1="' + y(v).toFixed(1) + '" y2="' + y(v).toFixed(1) + '"/>' +
         '<text class="tick" x="' + (padL - 6) + '" y="' + (y(v) + 3.5).toFixed(1) + '">' + esc(v === 0 ? '0' : lkr(v, true).replace('LKR ', '')) + '</text>';
     });
+    if (ranged && t.fitNow !== null) {
+      const band = function (lo, hi, cls) {
+        const start = [x(hist.length - 1), clampY(t.fitNow)];
+        const upper = proj.map((p, i) => [x(hist.length + i), clampY(p[hi])]);
+        const lower = proj.map((p, i) => [x(hist.length + i), clampY(p[lo])]).reverse();
+        return '<polygon class="' + cls + '" points="' + [start].concat(upper, lower).map((q) => q[0].toFixed(1) + ',' + q[1].toFixed(1)).join(' ') + '"/>';
+      };
+      if (!compact) svg += band('lo95', 'hi95', 'band95');
+      svg += band('lo80', 'hi80', 'band80');
+    }
     hist.forEach(function (h, i) {
       const top_ = Math.min(y(h.net), zero), len = Math.max(h.net ? 1.5 : 0, Math.abs(y(h.net) - zero));
       svg += '<rect class="bar ' + (h.net >= 0 ? 'pos' : 'neg') + '" x="' + (x(i) - bw / 2).toFixed(1) + '" y="' + top_.toFixed(1) +
@@ -509,15 +523,64 @@ window.Finance = (function () {
     return svg + '</svg>';
   }
 
+  const LEGEND = '<span><i class="k-bar"></i>Monthly result</span><span><i class="k-avg"></i>3-month average</span>' +
+    '<span><i class="k-proj"></i>Forecast</span><span><i class="k-band80"></i>80% range</span><span><i class="k-band95"></i>95% range</span>';
+
+  const METHOD = {
+    sarima: 'Seasonal ARIMA: it forecasts each month from the months just before it and from the same month in earlier years, so the yearly pattern carries forward.',
+    arima: 'ARIMA: it forecasts each month from the months just before it — their level, their drift and how far recent months were off.',
+    line: 'A straight-line trend, carried forward.'
+  };
+
+  function rangeText(p) {
+    return signed(p.net) + ' (80% range ' + lkr(p.lo80, true).replace('LKR ', '') + ' to ' + lkr(p.hi80, true).replace('LKR ', '') + ')';
+  }
+
+  // How the forecast was made, and how far to trust it.
+  function modelHtml(t) {
+    const m = t.model;
+    if (!m || !t.projection.length) return '';
+    const test = m.backtest, proj = t.projection;
+    let why = METHOD[m.method];
+    if (m.method === 'line') why += m.months < 12 ? ' With fewer than 12 months of figures, a time-series model would be guessing.'
+      : ' It forecast the test months better than the ARIMA model did.';
+    else if (m.searched) why += ' Chosen automatically from ' + m.searched + ' candidate models, by the lowest AICc.';
+    const lines = [];
+    lines.push('<b>Next month:</b> ' + esc(rangeText(proj[0])) + (proj.length >= 12 ? ' · <b>in 12 months:</b> ' + esc(rangeText(proj[11])) : ''));
+    if (test) {
+      lines.push('<b>Tested</b> on the last ' + test.months + ' months, kept from it: off by about ' + esc(lkr(test.mae, true)) + ' a month, against ' +
+        esc(lkr(test.naiveMae, true)) + ' for ' + esc(test.naive) + (m.method !== 'line' ? ' and ' + esc(lkr(test.lineMae, true)) + ' for a straight line' : '') + '.');
+    }
+    if (m.whiteNoise !== null) {
+      lines.push(m.whiteNoise ? 'What it leaves unexplained looks like random noise (Ljung-Box p = ' + m.ljungBoxP + ').'
+        : '<b>There is a pattern it has not captured</b> (Ljung-Box p = ' + m.ljungBoxP + '): treat the forecast with care.');
+    }
+    let season = '';
+    if (m.seasonality && m.seasonalStrength !== null) {
+      const idx = m.seasonality, months = Object.keys(idx).map(Number).sort((a, b) => a - b);
+      const max = Math.max.apply(null, months.map((k) => Math.abs(idx[k])).concat([1]));
+      const ranked = months.slice().sort((a, b) => idx[b] - idx[a]);
+      season = '<div class="fin-season"><div class="fin-season-head"><b>Its year</b><span>seasonal strength ' + m.seasonalStrength.toFixed(2) +
+          (m.seasonalStrength > 0.64 ? ' · strong' : m.seasonalStrength > 0.3 ? ' · some' : ' · weak') + '</span></div>' +
+        '<div class="fin-season-bars">' + months.map((k) => '<span tabindex="0" data-tip-label="' + MONTHS[k - 1] + '" data-tip-value="' +
+          esc(signed(idx[k]) + ' against an average month') + '"><i class="' + (idx[k] >= 0 ? 'pos' : 'neg') + '" style="height:' +
+          Math.max(4, Math.abs(idx[k]) / max * 100).toFixed(1) + '%"></i><em>' + MONTHS[k - 1][0] + '</em></span>').join('') + '</div>' +
+        '<small>Best: ' + ranked.slice(0, 3).map((k) => MONTHS[k - 1]).join(', ') + ' · weakest: ' + ranked.slice(-3).reverse().map((k) => MONTHS[k - 1]).join(', ') + '</small></div>';
+    }
+    return '<div class="fin-model"><div class="fin-model-head"><b>Forecast model</b><span class="fin-model-name">' + esc(m.label) + '</span></div>' +
+      '<p>' + esc(why) + '</p><ul>' + lines.map((l) => '<li>' + l + '</li>').join('') + '</ul>' + season + '</div>';
+  }
+
   function trendHtml(t) {
     if (!t) return '';
     const d = DIRECTION[t.direction];
-    return '<div class="fin-trend-box"><div class="fin-trend-head"><b>Profit trend</b><span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></div>' +
+    return '<div class="fin-trend-box"><div class="fin-trend-head"><b>Profit trend and forecast</b><span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span></div>' +
       '<p class="fin-trend-text">' + esc(trendSentence(t)) + '</p>' +
       (t.history.length ? trendChart(t) : '') +
-      '<div class="fin-trend-legend"><span><i class="k-bar"></i>Monthly result</span><span><i class="k-avg"></i>3-month average</span>' +
-        (t.projection.length ? '<span><i class="k-proj"></i>Projection</span>' : '') + '</div>' +
-      (t.direction !== 'short' ? '<p class="fin-trend-note">A straight line through the last ' + t.months + ' months, carried forward: a guide, not a promise.' +
+      (t.projection.length ? '<div class="fin-trend-legend">' + LEGEND + '</div>' :
+        '<div class="fin-trend-legend"><span><i class="k-bar"></i>Monthly result</span><span><i class="k-avg"></i>3-month average</span></div>') +
+      modelHtml(t) +
+      (t.direction !== 'short' ? '<p class="fin-trend-note">A forecast is a guide, not a promise: the ranges show how far the figures could reasonably land.' +
         (t.confidence === 'low' ? ' <b>The figures vary a lot, so treat it with care.</b>' : '') + '</p>' : '') +
       '</div>';
   }
@@ -544,7 +607,9 @@ window.Finance = (function () {
     }
     const d = DIRECTION[t.direction];
     $('#fin-pt-text').innerHTML = '<span class="fin-dirlabel ' + d.cls + '">' + icon(d.icon) + d.label + '</span> ' +
-      esc(trendSentence(t)) + (t.direction !== 'short' ? ' <span class="fin-pt-note">Last ' + t.months + ' months, carried forward: a guide, not a promise.</span>' : '');
+      esc(trendSentence(t)) + (t.model && t.projection.length ? ' <span class="fin-pt-note">Forecast by ' + esc(t.model.label) +
+        (t.model.backtest ? ', off by about ' + esc(lkr(t.model.backtest.mae, true)) + ' a month on the ' + t.model.backtest.months + ' months it was tested on' : '') +
+        ': a guide, not a promise.</span>' : '');
     host.innerHTML = trendChart(t, { width: 1000, height: 260 });
   }
 

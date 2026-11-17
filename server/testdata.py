@@ -16,6 +16,7 @@ loss-making and cost only. Dates are relative to the day it is loaded.
 """
 
 import datetime
+import random
 import uuid
 
 from . import access, db, storage
@@ -95,6 +96,16 @@ PROFILES = {
 # This year's level is the profile's; last year is scaled back from it.
 GROWTH = {"school-loss": 0.12, "yard-loss": 0.10, "school-rented": 0.03, "hostel": 0.02, "school": 0.015,
           "shop": -0.07, "warehouse-thin": -0.05, "let": 0.02}
+
+# A yearly pattern in income, by calendar month (January first; each averages 1),
+# so the forecasts have seasons to find: school fees come in at the start of each
+# term (January, May, September) and dry up in the holidays (April, August,
+# December); a showroom sells most at the New Year in April and in December.
+TERMS = (1.30, 1.00, 0.95, 0.70, 1.30, 1.00, 0.95, 0.70, 1.30, 1.00, 0.95, 0.85)
+FESTIVE = (0.90, 0.85, 0.95, 1.45, 0.95, 0.85, 0.85, 0.90, 0.85, 0.95, 1.00, 1.50)
+SEASONS = {"school": TERMS, "school-rented": TERMS, "school-thin": TERMS, "school-loss": TERMS,
+           "hostel": TERMS, "shop": FESTIVE, "shop-even": FESTIVE}
+YEARS = 4                    # financial years of figures: three past ones and this one
 
 # doc type, title, months to expiry (None: no expiry), with a file?
 DOCS = [
@@ -184,7 +195,7 @@ def load(conn, user_id=None, today=None):
     entities = {r["short_code"]: r["id"] for r in conn.execute("SELECT id, short_code FROM legal_entity")}
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     fy = datetime.date(today.year if today.month >= 4 else today.year - 1, 4, 1)
-    last_fy = datetime.date(fy.year - 1, 4, 1)
+    years = [datetime.date(fy.year - k, 4, 1) for k in range(YEARS - 1, -1, -1)]     # oldest first
     files = []
     try:
         for i, (name, sbu, entity, tenure, structure, status, district, town, lat, lng, land, floor,
@@ -244,7 +255,8 @@ def load(conn, user_id=None, today=None):
                 conn.execute("INSERT INTO document (%s) VALUES (%s)" % (", ".join(dcols), ", ".join(":" + c for c in dcols)),
                              row)
 
-            # Finance: last year and this year, so every period has figures.
+            # Finance: four financial years, so every period has figures and the
+            # forecasts have three years and more to learn from.
             def entry(kind, category, amount, start, months=1, who=None, what=None, pid=pid):
                 conn.execute("""INSERT INTO finance_entry (property_id, kind, category, amount, currency, period_start,
                                     months, description, counterparty, reference_no, notes, created_by, created_at,
@@ -253,7 +265,8 @@ def load(conn, user_id=None, today=None):
                              (pid, kind, category, round(amount, 2), start.isoformat(), months, what, who, user_id, stamp,
                               stamp))
             growth = GROWTH.get(profile, 0)
-            for y, year in enumerate((last_fy, fy)):
+            noise = random.Random(i)                         # the same test set every time
+            for y, year in enumerate(years):
                 if rent:
                     entry("cost", "RENT", rent * 12, year, 12, "Test landlord", "Rent for the year")
                 if running:
@@ -268,13 +281,23 @@ def load(conn, user_id=None, today=None):
                               "One-off repairs")
                 if income:
                     category = "RENT_RECEIVED" if tenure == "LEASED_OUT" else "BUSINESS_REVENUE"
-                    for q in range(4):
-                        level = (1 + growth) ** (y * 4 + q - 4) if growth else 1 + 0.02 * (q % 2)
-                        entry("income", category, income * 3 * level, _day(year, q * 3), 3,
-                              "Test tenant" if category == "RENT_RECEIVED" else None, "Quarter %d" % (q + 1))
+                    quarters = (y - YEARS + 1) * 4           # this year's first quarter is 0
+                    pattern = SEASONS.get(profile)
+                    if pattern:                              # month by month, with the season
+                        for m in range(12):
+                            month = _day(year, m)
+                            level = (1 + growth) ** (quarters + m // 3) if growth else 1
+                            wobble = 1 + noise.gauss(0, 0.03)          # an ordinary month's ups and downs
+                            entry("income", category, income * level * pattern[month.month - 1] * wobble, month, 1,
+                                  None, "Takings, %s" % month.strftime("%B %Y"))
+                    else:
+                        for q in range(4):
+                            level = (1 + growth) ** (quarters + q) if growth else 1 + 0.02 * (q % 2)
+                            entry("income", category, income * 3 * level, _day(year, q * 3), 3,
+                                  "Test tenant" if category == "RENT_RECEIVED" else None, "Quarter %d" % (q + 1))
             if capital:
-                entry("capital", "PURCHASE", capital * 0.8, _day(last_fy, -14 - i), 1, "Test vendor", "Purchase")
-                entry("capital", "LEGAL_FEES", capital * 0.04, _day(last_fy, -14 - i), 1, "Test notary",
+                entry("capital", "PURCHASE", capital * 0.8, _day(years[0], -14 - i), 1, "Test vendor", "Purchase")
+                entry("capital", "LEGAL_FEES", capital * 0.04, _day(years[0], -14 - i), 1, "Test notary",
                       "Stamp duty and legal fees")
                 if profile == "construction":
                     entry("capital", "CONSTRUCTION", capital * 0.3, _day(fy, 2), 1, "Test builder", "Construction")

@@ -3356,3 +3356,27 @@ body.test-mode .topbar { box-shadow: inset 0 -3px 0 var(--warn); }
   .fin-card > header:has(.fin-bench) { flex-wrap: wrap; }
 }
 .fin-measures .fin-m:last-child:nth-child(odd) { grid-column: 1 / -1; }
+
+/* Forecast ranges and the model behind them. */
+.fin-trend-chart .band80 { fill: var(--viz-1); opacity: .18; }
+.fin-trend-chart .band95 { fill: var(--viz-1); opacity: .08; }
+.fin-trend-chart.compact .band80 { opacity: .14; }
+.fin-trend-legend .k-band80 { width: 14px; height: 10px; border-radius: 2px; background: var(--viz-1); opacity: .3; }
+.fin-trend-legend .k-band95 { width: 14px; height: 10px; border-radius: 2px; background: var(--viz-1); opacity: .13; }
+.fin-model { margin-top: 12px; padding: 12px 13px; border-radius: 12px; background: var(--surface-2); font-size: 12.5px; line-height: 1.5; color: var(--text-2); }
+.fin-model-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 4px; }
+.fin-model-head b { font-size: 13px; color: var(--text); }
+.fin-model-name { padding: 2px 8px; border-radius: 7px; background: var(--surface); border: 1px solid var(--border); font-size: 12px; font-weight: 700; color: var(--text); font-variant-numeric: tabular-nums; }
+.fin-model ul { margin: 6px 0 0; padding-left: 16px; }
+.fin-model li + li { margin-top: 3px; }
+.fin-model b { color: var(--text); }
+.fin-season { margin-top: 10px; }
+.fin-season-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.fin-season-head span { font-size: 11.5px; color: var(--text-muted); }
+.fin-season-bars { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 3px; height: 54px; margin-top: 6px; }
+.fin-season-bars span { position: relative; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; outline: none; padding-bottom: 14px; }
+.fin-season-bars i { width: 100%; max-width: 16px; border-radius: 3px; }
+.fin-season-bars i.pos { background: var(--viz-good); }
+.fin-season-bars i.neg { background: var(--viz-critical); }
+.fin-season-bars em { position: absolute; bottom: 0; font-style: normal; font-size: 10.5px; color: var(--text-muted); }
+.fin-season small { display: block; margin-top: 4px; font-size: 11.5px; color: var(--text-muted); }

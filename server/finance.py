@@ -29,7 +29,7 @@ import datetime
 import io
 from typing import Any, Dict, List
 
-from . import access, db
+from . import access, db, forecast
 from .errors import ApiError
 
 YEAR_START_MONTH = 4          # the financial year starts in April
@@ -352,20 +352,22 @@ def _finish(t):
     return t
 
 
-# --- trend and projection ---------------------------------------------------------
+# --- trend and forecast ------------------------------------------------------------
 
-TREND_MONTHS = 24        # history looked at: up to two years, ending this month
-PROJECT_MONTHS = 12      # how far ahead the line is drawn
+TREND_MONTHS = 60        # history looked at: up to five years, ending this month
+PROJECT_MONTHS = 12      # how far ahead the forecast is shown
 MIN_TREND_MONTHS = 4     # fewer months than this is too little to call a trend
 STEADY_BAND = 0.004      # a change under 0.4% of monthly turnover a month counts as steady
 HORIZON_MONTHS = 36      # break-even (or turning to a loss) further out than this is not shown
 
 
 def trend(entries, last, today=None):
-    """A property's monthly result over time, a straight line fitted through it
-    (least squares), and that line carried forward.
+    """A property's monthly result over time: which way it is moving (a straight
+    line fitted through it, least squares), and a forecast of the months ahead
+    from the time-series model that suits its figures best -- ARIMA, seasonal
+    ARIMA or the straight line (see forecast.py) -- with 80% and 95% ranges.
 
-    History runs from the first to the last month with figures, within the two
+    History runs from the first to the last month with figures, within the five
     years up to `last` or this month (whichever is earlier), so months not yet
     lived or not yet recorded are not mistaken for results. Returns None when
     nothing has been recorded.
@@ -380,6 +382,7 @@ def trend(entries, last, today=None):
     # Months before the first figures, and after the last, are not results:
     # nothing had been (or has yet been) recorded for them.
     keys = keys[recorded[0]:recorded[-1] + 1]
+    end = datetime.date(int(keys[-1][:4]), int(keys[-1][5:7]), 1)
     history, nets = [], []
     for i, k in enumerate(keys):
         m = months[k]
@@ -389,35 +392,43 @@ def trend(entries, last, today=None):
         history.append({"month": k, "income": round(m["income"], 2), "cost": round(m["cost"], 2),
                         "net": round(net, 2), "avg3": round(sum(window) / len(window), 2)})
     out = {"history": history, "months": len(nets), "direction": "short", "slope": None, "confidence": None,
-           "projection": [], "breakEven": None, "turnsLoss": None, "fitNow": None}
+           "projection": [], "breakEven": None, "turnsLoss": None, "fitNow": None, "model": None}
     n = len(nets)
     if n < MIN_TREND_MONTHS:
         return out
+    # Which way it is moving, and how fast: the straight line through the history.
     mean_x, mean_y = (n - 1) / 2, sum(nets) / n
     sxx = sum((x - mean_x) ** 2 for x in range(n))
     slope = sum((x - mean_x) * (y - mean_y) for x, y in enumerate(nets)) / sxx
-    intercept = mean_y - slope * mean_x
-    ss_tot = sum((y - mean_y) ** 2 for y in nets)
-    ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in enumerate(nets))
-    r2 = 1 - ss_res / ss_tot if ss_tot else 1.0
     turnover = sum(h["income"] + h["cost"] for h in history) / n
     rel = slope / turnover if turnover else 0
-    fit = lambda x: intercept + slope * x  # noqa: E731
-    now = fit(n - 1)
+    # Where it is heading: the forecast.
+    fc = forecast.forecast(nets, int(keys[0][5:7]), HORIZON_MONTHS)
+    model = fc["model"]
+    test = model["backtest"]
+    if test is None:                    # too short to test: judge by how well the line fits
+        intercept = mean_y - slope * mean_x
+        ss_tot = sum((y - mean_y) ** 2 for y in nets)
+        ss_res = sum((y - (intercept + slope * x)) ** 2 for x, y in enumerate(nets))
+        r2 = 1 - ss_res / ss_tot if ss_tot else 1.0
+        confidence = "low" if n < 6 or r2 < 0.3 else "medium" if r2 < 0.6 else "high"
+    else:                               # how far off it was on months it had not seen
+        miss = test["mae"] / turnover if turnover else 0
+        confidence = "high" if miss <= 0.08 else "medium" if miss <= 0.2 else "low"
     out.update(
         direction="up" if rel > STEADY_BAND else "down" if rel < -STEADY_BAND else "flat",
-        slope=round(slope, 2), fitNow=round(now, 2),
-        confidence="low" if n < 6 or r2 < 0.3 else "medium" if r2 < 0.6 else "high",
-        projection=[{"month": _key(_add_months(end, i)), "net": round(fit(n - 1 + i), 2)}
-                    for i in range(1, PROJECT_MONTHS + 1)])
-    if now < 0 < slope:
-        ahead = -now / slope
-        if ahead <= HORIZON_MONTHS:
-            out["breakEven"] = _key(_add_months(end, max(1, int(ahead + 0.999))))
-    elif now >= 0 > slope:
-        ahead = now / -slope
-        if ahead <= HORIZON_MONTHS:
-            out["turnsLoss"] = _key(_add_months(end, max(1, int(ahead + 0.999))))
+        slope=round(slope, 2), fitNow=fc["now"], confidence=confidence, model=model,
+        projection=[dict(p, month=_key(_add_months(end, i + 1))) for i, p in enumerate(fc["points"][:PROJECT_MONTHS])])
+    # Break-even, or turning to a loss: the first month the forecast level crosses zero.
+    now, levels = fc["levelNow"], fc["levels"]
+    if now < 0:
+        ahead = next((i for i, v in enumerate(levels) if v >= 0), None)
+        if ahead is not None:
+            out["breakEven"] = _key(_add_months(end, ahead + 1))
+    else:
+        ahead = next((i for i, v in enumerate(levels) if v < 0), None)
+        if ahead is not None:
+            out["turnsLoss"] = _key(_add_months(end, ahead + 1))
     return out
 
 
@@ -426,6 +437,7 @@ def _brief(t):
     if t is None:
         return None
     brief = {k: t[k] for k in ("direction", "slope", "confidence", "breakEven", "turnsLoss", "months", "fitNow")}
+    brief["model"] = t["model"] and {k: t["model"][k] for k in ("method", "label")}
     brief["spark"] = [h["net"] for h in t["history"][-12:]]
     # Enough to draw the small chart of each property on the Finance page.
     brief["history"] = [{"month": h["month"], "net": h["net"], "avg3": h["avg3"]} for h in t["history"]]

@@ -65,7 +65,7 @@ class TrendTests(AccessTestCase):
                                                                 [200000 - 4000 * i for i in range(18)])
         t = finance.trend(rows, self.last, self.today)
         self.assertEqual(t["direction"], "down")
-        self.assertEqual(t["turnsLoss"], "2027-02")        # +32,000 in Jun 2026, -4,000 a month -> 8 months
+        self.assertEqual(t["turnsLoss"], "2027-03")        # +32,000 in Jun 2026, -4,000 a month: 0 in Feb, below in Mar
         self.assertIsNone(t["breakEven"])
 
     def test_steady_short_and_none(self):
