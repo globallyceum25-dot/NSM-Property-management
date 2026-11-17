@@ -11,7 +11,11 @@ Every amount is an entry against one property, of one of three kinds:
 
 Income and running costs make the property's result for a period. Capital is
 kept apart -- buying land is an investment, not a loss in the month it is paid --
-and is set against the result as a return and a payback time.
+and is set against the result as a return and a payback time. A property bought
+outright that earns rent and costs nothing to run is therefore "profitable"
+whatever it earns; what tells you whether it pays its way is its return a year
+on the money put in, set against a benchmark: what that money would earn
+elsewhere, for example in a fixed deposit.
 
 An entry covers one or more whole months from its first month: a year's rent
 paid in advance is one entry covering 12 months, and every report counts a
@@ -54,6 +58,10 @@ CATEGORY = {code: {"kind": kind, "label": label} for code, kind, label, _ in CAT
 
 # A property is "break-even" when its result is within this share of its turnover.
 BREAK_EVEN_BAND = 0.05
+
+BENCHMARK_KEY = "finance_benchmark"
+DEFAULT_BENCHMARK = 9.0          # % a year; set by an administrator to the group's own figure
+MAX_PAYBACK_MONTHS = 600         # a paid-back date further out than 50 years is not shown
 
 FIELDS = ["kind", "category", "amount", "currency", "period_start", "months",
           "description", "counterparty", "reference_no", "notes"]
@@ -219,6 +227,37 @@ def delete_entry(ctx):
     return 200, {"deleted": entry_id}
 
 
+# --- settings ---------------------------------------------------------------------
+
+def benchmark(conn):
+    """The return a year (%) the group expects from money tied up in property."""
+    row = conn.execute("SELECT value FROM register_meta WHERE key = ?", (BENCHMARK_KEY,)).fetchone()
+    try:
+        return float(row["value"]) if row else DEFAULT_BENCHMARK
+    except (TypeError, ValueError):
+        return DEFAULT_BENCHMARK
+
+
+def save_settings(ctx):
+    # A register-wide figure: only someone who may edit every property's figures sets it.
+    if ctx.access.level("finance.edit") != "yes":
+        raise ApiError("Only someone who may edit every property's figures can change the benchmark.", 403)
+    raw = str(ctx.json().get("benchmark", "")).replace("%", "").strip()
+    try:
+        rate = round(float(raw), 2)
+    except ValueError:
+        raise ApiError("The benchmark must be a percentage, for example 9.5.", field="benchmark") from None
+    if not 0 <= rate <= 50:
+        raise ApiError("Choose a benchmark between 0% and 50% a year.", field="benchmark")
+    conn = db.get_conn()
+    conn.execute("DELETE FROM register_meta WHERE key = ?", (BENCHMARK_KEY,))
+    conn.execute("INSERT INTO register_meta (key, value) VALUES (?, ?)", (BENCHMARK_KEY, str(rate)))
+    conn.commit()
+    ctx.audit_target = "Finance benchmark"
+    ctx.audit_detail = "Benchmark return set to %s%% a year" % ("{:g}".format(rate))
+    return 200, {"benchmark": rate}
+
+
 # --- reports ----------------------------------------------------------------------
 
 def _empty():
@@ -244,6 +283,51 @@ def spread(entries, first, last):
                 if e["category"] == "RENT":
                     months[key]["rent"] += share
     return months
+
+
+def by_category(entries, first, last):
+    """What the months first..last hold, category by category, largest first.
+    Income and running costs are spread like everywhere else; capital is counted
+    in the month it was spent."""
+    totals: Dict[str, float] = {}
+    for e in entries:
+        start = datetime.date.fromisoformat(str(e["period_start"])[:10])
+        n = 1 if e["kind"] == "capital" else e["months"]
+        share = e["amount"] / n
+        inside = sum(1 for i in range(n) if first <= _add_months(start, i) <= last)
+        if inside:
+            totals[e["category"]] = totals.get(e["category"], 0) + share * inside
+    return [{"category": c, "kind": CATEGORY.get(c, {}).get("kind", "cost"),
+             "label": CATEGORY.get(c, {}).get("label", c), "amount": round(v, 2)}
+            for c, v in sorted(totals.items(), key=lambda kv: -kv[1])]
+
+
+def recovery(entries, invested, last, today=None):
+    """How much of the capital the property has earned back, up to `last` (or
+    this month, whichever is earlier), and when -- at the last year's pace --
+    it will all be back."""
+    if not invested:
+        return None
+    today = today or datetime.date.today()
+    end = min(last, datetime.date(today.year, today.month, 1))
+    running = [e for e in entries if e["kind"] != "capital"]
+    if not running:
+        return {"recovered": 0.0, "pct": 0.0, "paidBack": False, "by": None, "pace": None}
+    first = min(datetime.date.fromisoformat(str(e["period_start"])[:10]) for e in running)
+    if first > end:
+        return {"recovered": 0.0, "pct": 0.0, "paidBack": False, "by": None, "pace": None}
+    months = spread(running, first, end)
+    nets = [m["income"] - m["cost"] for m in months.values()]
+    recovered = sum(nets)
+    recent = nets[-12:]
+    pace = sum(recent) / len(recent)             # net a month over the last year
+    out = {"recovered": round(recovered, 2), "pct": round(recovered / invested * 100, 1),
+           "paidBack": recovered >= invested, "by": None, "pace": round(pace, 2)}
+    if not out["paidBack"] and pace > 0:
+        ahead = int((invested - recovered) / pace + 0.999)
+        if ahead <= MAX_PAYBACK_MONTHS:
+            out["by"] = _key(_add_months(end, ahead))
+    return out
 
 
 def verdict(t):
@@ -349,8 +433,33 @@ def _brief(t):
     return brief
 
 
+def _measures(t, p, invested, n_months, rate):
+    """A property's figures for the period, set against its capital, its value,
+    its size and the benchmark. Amounts "a year" are the period's, scaled to 12 months."""
+    has = t["status"] != "none"
+    scale = 12 / n_months
+    yearly = {"income": round(t["income"] * scale, 2), "cost": round(t["cost"] * scale, 2),
+              "net": round(t["net"] * scale, 2)}
+    value = p["current_value"] or None
+    floor, land = p["building_area_sqft"] or 0, p["extent_sqft"] or 0
+    area = ({"basis": "floor", "sqft": round(floor, 2)} if floor else
+            {"basis": "land", "sqft": round(land, 2)} if land else None)
+    if area and has:
+        area.update(cost=round(yearly["cost"] / area["sqft"], 2) if yearly["cost"] else None,
+                    income=round(yearly["income"] / area["sqft"], 2) if yearly["income"] else None)
+    return {
+        "yearly": yearly if has else None,
+        "currentValue": value,
+        "valueReturnPct": round(yearly["net"] / value * 100, 1) if value and has else None,
+        # What the same money would have earned at the benchmark, and how far above it the property is.
+        "benchmarkGap": round(yearly["net"] - invested * rate / 100, 2) if invested and has else None,
+        "perSqft": area if has else None,
+    }
+
+
 def _report(conn, where, params, first, last):
-    """Per-property and portfolio totals for the months first..last."""
+    """Per-property and portfolio totals for the months first..last, with the
+    same months a year earlier for comparison."""
     from . import api
     props = conn.execute(api._PROPERTY_SELECT + (" WHERE " + " AND ".join(where) if where else ""), params).fetchall()
     ids = [p["id"] for p in props]
@@ -369,16 +478,26 @@ def _report(conn, where, params, first, last):
                               "GROUP BY property_id").fetchall():
             capital_all[r["property_id"]] = r["n"] or 0
     n_months = _months_between(first, last)
+    prev_first, prev_last = _add_months(first, -12), _add_months(last, -12)
+    rate = benchmark(conn)
     portfolio_months = {k: _empty() for k in spread([], first, last)}
+    prev_total = _empty()
     rows = []
     for p in props:
-        months = spread(entries.get(p["id"], []), first, last)
+        mine = entries.get(p["id"], [])
+        months = spread(mine, first, last)
         total = _empty()
         for key, m in months.items():
             for k in total:
                 total[k] += m[k]
                 portfolio_months[key][k] += m[k]
         t = _finish(total)
+        before = _empty()
+        for m in spread(mine, prev_first, prev_last).values():
+            for k in before:
+                before[k] += m[k]
+                prev_total[k] += m[k]
+        prev = _finish(before)
         invested = round(capital_all.get(p["id"], 0), 2)
         yearly = t["net"] / n_months * 12
         rows.append(dict(t, id=p["id"], property_code=p["property_code"], name=p["name"],
@@ -387,20 +506,43 @@ def _report(conn, where, params, first, last):
                          district=p["district"], invested=invested,
                          returnPct=round(yearly / invested * 100, 1) if invested and t["status"] != "none" else None,
                          paybackYears=round(invested / yearly, 1) if invested and yearly > 0 else None,
-                         entries=len(entries.get(p["id"], [])),
-                         trend=_brief(trend(entries.get(p["id"], []), last))))
+                         prev=None if prev["status"] == "none" else {k: prev[k] for k in ("income", "cost", "net")},
+                         recovery=recovery(mine, invested, last),
+                         entries=len(mine),
+                         trend=_brief(trend(mine, last)),
+                         **_measures(t, p, invested, n_months, rate)))
     total = _empty()
     for m in portfolio_months.values():
         for k in total:
             total[k] += m[k]
     totals = _finish(total)
+    prev_totals = _finish(prev_total)
     counts = {s: sum(1 for r in rows if r["status"] == s) for s in ("profit", "break-even", "loss", "cost-only", "none")}
     # The same trend for all these properties together.
     portfolio_trend = trend([e for p in props for e in entries.get(p["id"], [])], last)
+    # Return on capital, for the properties that have capital recorded.
+    owned = [r for r in rows if r["invested"] and r["status"] != "none"]
+    invested_all = sum(r["invested"] for r in owned)
+    yearly_all = sum(r["yearly"]["net"] for r in owned)
+    valued = [r for r in owned if r["currentValue"]]
     return {
         "period": {"from": _key(first), "to": _key(last), "months": n_months},
+        "previous": {"from": _key(prev_first), "to": _key(prev_last),
+                     "totals": None if prev_totals["status"] == "none" else prev_totals},
         "totals": totals, "counts": counts,
         "byMonth": [dict(month=k, **{x: round(v, 2) for x, v in m.items()}) for k, m in portfolio_months.items()],
+        "byCategory": by_category([e for p in props for e in entries.get(p["id"], [])], first, last),
+        "benchmark": rate,
+        "capital": {
+            "properties": len(owned), "invested": round(invested_all, 2), "yearlyNet": round(yearly_all, 2),
+            "returnPct": round(yearly_all / invested_all * 100, 1) if invested_all else None,
+            "value": round(sum(r["currentValue"] for r in valued), 2),
+            "valueReturnPct": round(sum(r["yearly"]["net"] for r in valued) /
+                                    sum(r["currentValue"] for r in valued) * 100, 1) if valued else None,
+            "above": sum(1 for r in owned if r["benchmarkGap"] >= 0),
+            "below": sum(1 for r in owned if r["benchmarkGap"] < 0),
+            "gap": round(sum(r["benchmarkGap"] for r in owned), 2),
+        },
         "trend": portfolio_trend,
         "properties": rows,
     }
@@ -413,7 +555,9 @@ def get_summary(ctx):
     first, last = period_from_query(ctx.query)
     where, params = api._property_filters(ctx.query, ctx)
     scope_where, scope_params = access.scope_for(ctx, "finance.view")
-    return 200, _report(conn, where + scope_where, params + scope_params, first, last)
+    report = _report(conn, where + scope_where, params + scope_params, first, last)
+    report["mayChangeBenchmark"] = ctx.access.level("finance.edit") == "yes"
+    return 200, report
 
 
 def property_finance(ctx):
@@ -427,7 +571,8 @@ def property_finance(ctx):
                            LEFT JOIN app_user u ON u.id = f.created_by
                            WHERE f.property_id = ? ORDER BY f.period_start DESC, f.id DESC""", (pid,)).fetchall()
     every = conn.execute("SELECT * FROM finance_entry WHERE property_id = ?", (pid,)).fetchall()
-    return 200, {"period": report["period"], "summary": report["properties"][0], "byMonth": report["byMonth"],
+    return 200, {"period": report["period"], "previous": report["previous"], "summary": report["properties"][0],
+                 "byMonth": report["byMonth"], "byCategory": report["byCategory"], "benchmark": report["benchmark"],
                  "trend": trend(every, last), "entries": [_entry_json(r) for r in rows]}
 
 
@@ -444,13 +589,22 @@ def export_csv(ctx):
     w = csv.writer(buf)
     w.writerow(["property_code", "property", "property_type", "owning_company", "tenure", "period_from", "period_to",
                 "income_lkr", "running_costs_lkr", "of_which_rent_lkr", "net_lkr", "margin_pct", "status",
-                "capital_invested_lkr", "return_pct_a_year", "payback_years"])
+                "capital_invested_lkr", "return_pct_a_year", "payback_years",
+                "net_a_year_lkr", "benchmark_pct", "above_benchmark_lkr_a_year",
+                "current_value_lkr", "return_on_value_pct", "capital_recovered_pct", "fully_recovered_by",
+                "area_basis", "area_sqft", "running_cost_per_sqft_a_year", "income_per_sqft_a_year",
+                "net_same_months_last_year_lkr"])
+    blank = lambda v: "" if v is None else v  # noqa: E731
     for r in sorted(report["properties"], key=lambda r: r["net"]):
+        rec, area = r["recovery"] or {}, r["perSqft"] or {}
         w.writerow([r["property_code"], r["name"], r["sbu_name"], r["entity_code"] or "", r["ownership_type"],
                     report["period"]["from"], report["period"]["to"], r["income"], r["cost"], r["rent"], r["net"],
-                    "" if r["margin"] is None else r["margin"], labels[r["status"]], r["invested"],
-                    "" if r["returnPct"] is None else r["returnPct"],
-                    "" if r["paybackYears"] is None else r["paybackYears"]])
+                    blank(r["margin"]), labels[r["status"]], r["invested"],
+                    blank(r["returnPct"]), blank(r["paybackYears"]),
+                    blank((r["yearly"] or {}).get("net")), report["benchmark"], blank(r["benchmarkGap"]),
+                    blank(r["currentValue"]), blank(r["valueReturnPct"]), blank(rec.get("pct")), blank(rec.get("by")),
+                    blank(area.get("basis")), blank(area.get("sqft")), blank(area.get("cost")), blank(area.get("income")),
+                    blank((r["prev"] or {}).get("net"))])
     return 200, {"__raw__": True, "body": buf.getvalue().encode("utf-8-sig"),
                  "content_type": "text/csv; charset=utf-8", "inline": False,
                  "filename": "property-finance-%s-to-%s.csv" % (report["period"]["from"], report["period"]["to"])}
@@ -458,6 +612,7 @@ def export_csv(ctx):
 
 ROUTES = [
     ("GET", r"^/api/finance/summary$", get_summary),
+    ("PUT", r"^/api/finance/settings$", save_settings),
     ("GET", r"^/api/export/finance\.csv$", export_csv),
     ("GET", r"^/api/properties/(?P<id>\d+)/finance$", property_finance),
     ("POST", r"^/api/properties/(?P<id>\d+)/finance$", create_entry),

@@ -453,7 +453,7 @@
     Access.init(toast, state);
     TestData.init(toast, state);
     Finance.init(toast, state, {
-      filters: activeFilters, can: can, allowedOn: allowedOn,
+      filters: activeFilters, can: can, level: level, allowedOn: allowedOn,
       openProperty: (id) => openDrawer(id),
       openView: (view) => { closeDrawer(); switchView(view); },
       refreshDrawer: () => { if (state.currentProperty) openDrawer(state.currentProperty.id); }

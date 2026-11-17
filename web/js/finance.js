@@ -47,6 +47,13 @@ window.Finance = (function () {
 
   function signed(n) { return (n > 0 ? '+' : '') + lkr(n, true); }
 
+  function pct(v) {
+    return (v < 0 ? '−' : '') + Math.abs(Number(v || 0)).toLocaleString('en-US', { maximumFractionDigits: 1 }) + '%';
+  }
+
+  // A sort key for a figure that may be missing: missing ones go last.
+  function nv(v) { return v === null || v === undefined ? -1e15 : v; }
+
   function monthKey(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0'); }
 
   function addMonths(key, n) {
@@ -148,6 +155,15 @@ window.Finance = (function () {
       const li = event.target.closest('[data-property]');
       if (li) hooks.openProperty(Number(li.dataset.property));
     });
+    $('#fin-roc').addEventListener('click', function (event) {
+      const li = event.target.closest('[data-property]');
+      if (li) hooks.openProperty(Number(li.dataset.property));
+    });
+    $('#fin-bench').addEventListener('click', function (event) {
+      if (event.target.closest('[data-bench-edit]')) editBenchmark();
+      else if (event.target.closest('[data-bench-cancel]')) renderBenchmark();
+    });
+    $('#fin-bench').addEventListener('submit', function (event) { event.preventDefault(); saveBenchmark(); });
     $('#btn-fin-new').addEventListener('click', () => openEntry(null, null));
     $('#btn-fin-export').addEventListener('click', function () {
       const p = period(), q = Object.assign({}, hooks.filters(), { from: p.from, to: p.to });
@@ -192,6 +208,8 @@ window.Finance = (function () {
     renderKpis();
     renderChart();
     renderStanding();
+    renderReturns();
+    renderCategories();
     renderPortfolioTrend();
     renderMultiples();
     renderTable();
@@ -206,18 +224,33 @@ window.Finance = (function () {
     Fx.countUp(page, '.fin-kpi b');
     Fx.countUp(page, '.fin-key b');
     Fx.countUp(page, '.fin-standing-list b');
+    Fx.countUp(page, '.fin-roc-sum b');
     if (!arriving) return;
     arriving = false;
     Fx.rise($('#fin-kpis'));
     Fx.rise($('.fin-grid', page), 4);
     Fx.rise($('#fin-losers'), 5);
+    Fx.rise($('#fin-roc'), 8);
     Fx.rise($('#fin-mults'), 12);
     Fx.rise($('#fin-rows'), 10);
     Fx.draw(page);
   }
 
+  // How a figure compares with the same months a year earlier.
+  function delta(now, before, kind) {
+    if (!report.previous || !report.previous.totals || before === undefined) return '';
+    const diff = now - before;
+    const months = 'Against ' + rangeLabel(report.previous.from, report.previous.to);
+    if (Math.abs(diff) < 0.5) return '<em class="fin-delta" title="' + esc(months) + '">' + icon('fin-level') + 'Same as last year</em>';
+    const better = kind === 'cost' ? diff < 0 : diff > 0;
+    const text = kind === 'net' || !before ? signed(diff) : (diff > 0 ? '+' : '−') + pct(Math.abs(diff / before * 100));
+    return '<em class="fin-delta ' + (better ? 'good' : 'bad') + '" title="' + esc(months) + '">' + icon(diff > 0 ? 'fin-up' : 'fin-down') +
+      esc(text) + ' on last year</em>';
+  }
+
   function renderKpis() {
-    const t = report.totals, c = report.counts;
+    const t = report.totals, c = report.counts, before = (report.previous && report.previous.totals) || {};
+    const cap = report.capital;
     const withFigures = report.properties.length - c.none;
     const invested = report.properties.reduce((s, r) => s + (r.invested || 0), 0);
     const cards = [
@@ -225,10 +258,12 @@ window.Finance = (function () {
       ['fin-out', 'Running costs', lkr(t.cost, true), t.rent ? 'Rent ' + lkr(t.rent, true) + ' · ' + Math.round(t.rent / (t.cost || 1) * 100) + '% of costs' : 'No rent recorded'],
       ['fin-net', 'Net result', signed(t.net), t.margin === null ? (t.cost ? 'Costs with no income' : 'Nothing recorded yet') : t.margin + '% of income'],
       ['fin-loss', 'Losing money', String(c.loss), withFigures ? 'of ' + withFigures + ' with figures' + (c['cost-only'] ? ' · ' + c['cost-only'] + ' cost only' : '') : 'Record figures to see'],
-      ['fin-cap', 'Capital invested', lkr(invested, true), t.capital ? lkr(t.capital, true) + ' in this period' : 'Purchases and building work']
+      ['fin-cap', 'Capital invested', lkr(invested, true), cap.returnPct !== null ? 'Earning ' + pct(cap.returnPct) + ' a year · benchmark ' + pct(report.benchmark)
+        : t.capital ? lkr(t.capital, true) + ' in this period' : 'Purchases and building work']
     ];
+    const deltas = [delta(t.income, before.income, 'income'), delta(t.cost, before.cost, 'cost'), delta(t.net, before.net, 'net'), '', ''];
     $('#fin-kpis').innerHTML = cards.map((k, i) => '<div class="fin-kpi ' + k[0] + (i === 2 ? ' ' + (t.net < 0 ? 'is-neg' : t.net > 0 ? 'is-pos' : '') : '') + '">' +
-      '<span class="fin-kpi-label">' + esc(k[1]) + '</span><b>' + esc(k[2]) + '</b><small>' + esc(k[3]) + '</small></div>').join('');
+      '<span class="fin-kpi-label">' + esc(k[1]) + '</span><b>' + esc(k[2]) + '</b><small>' + esc(k[3]) + '</small>' + deltas[i] + '</div>').join('');
   }
 
   function renderChart() {
@@ -284,6 +319,89 @@ window.Finance = (function () {
           (r.rentShare ? ' · rent is ' + r.rentShare + '% of income' : r.status === 'cost-only' ? ' · no income recorded' : '') + '</small></span>' +
           '<span class="fin-lval">' + esc(signed(r.net)) + '</span></li>').join('')
       : '<li class="empty-li">No property is losing money in this period.</li>';
+  }
+
+  /* ---------- return on capital: is the money earning enough? ---------- */
+
+  function renderBenchmark() {
+    $('#fin-bench').innerHTML = '<span class="fin-bench-now" title="What the same money would earn elsewhere, for example in a fixed deposit">' +
+      '<i></i>Benchmark <b>' + esc(pct(report.benchmark)) + '</b> a year</span>' +
+      (report.mayChangeBenchmark ? '<button type="button" class="btn btn-ghost btn-sm" data-bench-edit>' + icon('pencil') + 'Change</button>' : '');
+  }
+
+  function editBenchmark() {
+    $('#fin-bench').innerHTML = '<form class="fin-bench-form" novalidate><label>Benchmark <input name="benchmark" type="number" inputmode="decimal" step="0.1" min="0" max="50" value="' +
+      esc(report.benchmark) + '" aria-label="Benchmark return, percent a year"> % a year</label>' +
+      '<button type="submit" class="btn btn-dark btn-sm">Save</button><button type="button" class="btn btn-ghost btn-sm" data-bench-cancel>Cancel</button></form>';
+    const input = $('#fin-bench input');
+    input.focus();
+    input.select();
+  }
+
+  async function saveBenchmark() {
+    const input = $('#fin-bench input');
+    try {
+      const saved = await API.saveFinanceSettings({ benchmark: input.value });
+      notify('Benchmark set to ' + pct(saved.benchmark) + ' a year.');
+      refresh();
+      hooks.refreshDrawer && hooks.refreshDrawer();
+    } catch (err) {
+      notify(err.message, true);
+      input.focus();
+    }
+  }
+
+  // Above the benchmark, below it but still earning, or losing money.
+  function tone(r) { return r.returnPct < 0 ? 'bad' : r.benchmarkGap >= 0 ? 'ok' : 'warn'; }
+
+  function renderReturns() {
+    renderBenchmark();
+    const rate = report.benchmark, cap = report.capital;
+    const rows = report.properties.filter((r) => r.invested && r.status !== 'none').sort((a, b) => b.returnPct - a.returnPct);
+    $('#fin-roc-empty').hidden = rows.length > 0;
+    $('#fin-roc-sum').hidden = !rows.length;
+    $('#fin-roc-sum').innerHTML = !rows.length ? '' :
+      '<div><span>Capital in these properties</span><b>' + esc(lkr(cap.invested, true)) + '</b><small>' + cap.properties + ' propert' + (cap.properties === 1 ? 'y' : 'ies') +
+        (cap.value ? ' · worth ' + esc(lkr(cap.value, true)) + ' today' : '') + '</small></div>' +
+      '<div><span>Earning a year</span><b>' + esc(pct(cap.returnPct)) + '</b><small>' + esc(signed(cap.yearlyNet)) + ' a year' +
+        (cap.valueReturnPct !== null ? ' · ' + esc(pct(cap.valueReturnPct)) + ' on today\'s value' : '') + '</small></div>' +
+      '<div class="' + (cap.gap >= 0 ? 'pos' : 'neg') + '"><span>Against the benchmark</span><b>' + esc(signed(cap.gap)) + '</b><small>a year · ' +
+        cap.above + ' above, ' + cap.below + ' below</small></div>';
+    const top = Math.max.apply(null, rows.map((r) => r.returnPct).concat([rate * 1.5, 1]));
+    $('#fin-roc').innerHTML = rows.map(function (r) {
+      const gap = r.benchmarkGap;
+      return '<li data-property="' + r.id + '" tabindex="0"><span class="swatch" style="background:' + esc(r.sbu_color) + '"></span>' +
+        '<span class="fin-lname"><b>' + esc(r.name) + '</b><small>' + esc(r.property_code) + ' · ' + esc(lkr(r.invested, true)) + ' capital' +
+          (r.valueReturnPct !== null ? ' · ' + esc(pct(r.valueReturnPct)) + ' on today\'s value' : '') + '</small></span>' +
+        '<span class="fin-roc-bar" tabindex="0" data-tip-label="' + esc(r.name) + '" data-tip-value="' + esc(pct(r.returnPct) + ' a year · benchmark ' + pct(rate)) + '">' +
+          '<i class="' + tone(r) + '" style="width:' + (Math.max(0, r.returnPct) / top * 100).toFixed(1) + '%"></i>' +
+          '<em style="left:' + (rate / top * 100).toFixed(1) + '%"></em></span>' +
+        '<span class="fin-roc-val"><b>' + esc(pct(r.returnPct)) + '</b><small class="' + (gap >= 0 ? 'pos' : 'neg') + '">' + esc(signed(gap)) + ' a year</small></span></li>';
+    }).join('');
+  }
+
+  /* ---------- where the money goes ---------- */
+
+  const CAT_GROUPS = [['cost', 'Running costs', 'var(--viz-2)'], ['income', 'Income', 'var(--viz-1)'], ['capital', 'Capital spent', 'var(--viz-other)']];
+
+  function categoryHtml(cats, limit) {
+    return CAT_GROUPS.map(function (g) {
+      const list = cats.filter((c) => c.kind === g[0]);
+      if (!list.length) return '';
+      const total = list.reduce((sum, c) => sum + c.amount, 0), top = list[0].amount || 1;
+      const shown = limit ? list.slice(0, limit) : list;
+      return '<div class="fin-cat-group"><h3 class="fin-sub">' + esc(g[1]) + ' <b>' + esc(lkr(total, true)) + '</b></h3><ul class="fin-cats">' +
+        shown.map((c) => '<li><span class="fin-cat-name" title="' + esc(c.label) + '">' + esc(c.label) + '</span>' +
+          '<span class="fin-cat-bar"><i style="width:' + (c.amount / top * 100).toFixed(1) + '%;background:' + g[2] + '"></i></span>' +
+          '<span class="fin-cat-val"><b>' + esc(lkr(c.amount, true)) + '</b><small>' + Math.round(c.amount / (total || 1) * 100) + '%</small></span></li>').join('') +
+        (list.length > shown.length ? '<li class="fin-cat-more">' + (list.length - shown.length) + ' more</li>' : '') + '</ul></div>';
+    }).join('');
+  }
+
+  function renderCategories() {
+    const cats = report.byCategory || [];
+    $('#fin-cats').innerHTML = cats.length ? categoryHtml(cats)
+      : '<div class="chart-empty">No income or costs recorded for ' + esc(rangeLabel(report.period.from, report.period.to)) + '.</div>';
   }
 
   function slopeOf(r) { return r.trend && r.trend.slope !== null ? r.trend.slope : 0; }
@@ -469,6 +587,8 @@ window.Finance = (function () {
     income: (a, b) => b.income - a.income,
     cost: (a, b) => b.cost - a.cost,
     rent: (a, b) => (b.rentShare || 0) - (a.rentShare || 0),
+    return: (a, b) => nv(b.returnPct) - nv(a.returnPct),
+    sqft: (a, b) => nv(b.perSqft && b.perSqft.cost) - nv(a.perSqft && a.perSqft.cost),
     improving: (a, b) => slopeOf(b) - slopeOf(a),
     worsening: (a, b) => slopeOf(a) - slopeOf(b),
     name: (a, b) => a.name.localeCompare(b.name)
@@ -496,8 +616,8 @@ window.Finance = (function () {
           (r.margin !== null ? '<small>' + r.margin + '% margin</small>' : '')) + '</td>' +
         '<td>' + badge(r.status, true) + '</td>' +
         '<td>' + trendCell(r.trend) + '</td>' +
-        '<td class="num">' + (r.invested ? esc(lkr(r.invested, true)) + (r.paybackYears ? '<small>pays back in ' + r.paybackYears + ' yrs</small>' :
-          r.returnPct !== null ? '<small>no return yet</small>' : '') : '<span class="dash">—</span>') + '</td></tr>';
+        '<td class="num">' + (r.invested ? esc(lkr(r.invested, true)) + (r.returnPct !== null ? '<small class="' + (r.benchmarkGap >= 0 ? 'pos' : 'neg') + '">' +
+          esc(pct(r.returnPct)) + ' a year' + (r.paybackYears ? ' · pays back in ' + r.paybackYears + ' yrs' : '') + '</small>' : '') : '<span class="dash">—</span>') + '</td></tr>';
     }).join('');
     const empty = $('#fin-empty');
     empty.hidden = rows.length > 0;
@@ -506,6 +626,44 @@ window.Finance = (function () {
   }
 
   /* ---------- the property panel's Finance section ---------- */
+
+  function measure(label, value, note, cls) {
+    return '<div class="fin-m' + (cls ? ' ' + cls : '') + '"><span>' + esc(label) + '</span><b>' + esc(value) + '</b><small>' + esc(note) + '</small></div>';
+  }
+
+  // The property's figures set against its capital, its value, its size and last year.
+  function measuresHtml(s, rate) {
+    if (s.status === 'none') return '';
+    const items = [];
+    if (s.invested && s.returnPct !== null) {
+      items.push(measure('Return a year', pct(s.returnPct), 'net ' + signed(s.yearly.net) + ' a year on ' + lkr(s.invested, true) + ' capital', tone(s)));
+      items.push(measure('Against the ' + pct(rate) + ' benchmark', signed(s.benchmarkGap),
+        'a year ' + (s.benchmarkGap >= 0 ? 'more' : 'less') + ' than the money would earn there', s.benchmarkGap >= 0 ? 'pos' : 'neg'));
+    }
+    if (s.valueReturnPct !== null && s.invested) items.push(measure('On today\'s value', pct(s.valueReturnPct), 'valued at ' + lkr(s.currentValue, true)));
+    if (s.perSqft && (s.perSqft.cost || s.perSqft.income)) {
+      const a = s.perSqft;
+      items.push(measure('Per sq ft of ' + a.basis + ', a year', lkr(a.cost || a.income), (a.cost ? 'running cost' + (a.income ? ' · income ' + lkr(a.income) : '') : 'income') +
+        ' · ' + Math.round(a.sqft).toLocaleString('en-US') + ' sq ft'));
+    }
+    if (s.prev) {
+      const diff = s.net - s.prev.net;
+      items.push(measure('Against last year', signed(diff), 'net; same months a year earlier ' + signed(s.prev.net), diff > 0 ? 'pos' : diff < 0 ? 'neg' : ''));
+    }
+    let html = items.length ? '<div class="fin-measures">' + items.join('') + '</div>' : '';
+    const rec = s.recovery;
+    if (rec) {
+      const done = Math.max(0, Math.min(100, rec.pct));
+      const text = rec.paidBack ? 'All ' + lkr(s.invested, true) + ' earned back.'
+        : rec.recovered > 0 ? lkr(rec.recovered, true) + ' of ' + lkr(s.invested, true) + ' so far' +
+          (rec.by ? ' · all back around ' + monthLabel(rec.by) + ' at the last year\'s pace' : '')
+        : 'Nothing earned back yet: running costs so far are more than its income.';
+      html += '<div class="fin-recover"><div class="fin-recover-head"><span>Capital earned back</span><b>' + esc(pct(Math.round(done))) + '</b></div>' +
+        '<div class="fin-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="' + Math.round(done) + '"><i style="width:' + done.toFixed(1) + '%"></i></div>' +
+        '<small>' + esc(text) + '</small></div>';
+    }
+    return html;
+  }
 
   async function renderDrawer(property, host) {
     if (!hooks.can('finance.view')) return;
@@ -533,9 +691,10 @@ window.Finance = (function () {
         '<div class="' + (s.net < 0 ? 'neg' : s.net > 0 ? 'pos' : '') + '"><span>Net</span><b>' + esc(signed(s.net)) + '</b>' +
           (s.margin !== null ? '<small>' + s.margin + '% margin</small>' : '') + '</div>' +
       '</div>' +
+      measuresHtml(s, data.benchmark) +
       trendHtml(data.trend) +
-      (s.invested ? '<p class="fin-capital">' + icon('landmark') + 'Capital invested <b>' + esc(lkr(s.invested)) + '</b>' +
-        (s.paybackYears ? ' · pays back in about <b>' + s.paybackYears + ' years</b> at this rate' : '') + '</p>' : '') +
+      (s.invested && s.returnPct === null ? '<p class="fin-capital">' + icon('landmark') + 'Capital invested <b>' + esc(lkr(s.invested)) + '</b></p>' : '') +
+      (data.byCategory && data.byCategory.length ? '<div class="fin-drawer-cats">' + categoryHtml(data.byCategory, 4) + '</div>' : '') +
       (list.length ? '<ul class="fin-entries">' + list.map((e) => '<li data-entry="' + e.id + '" class="' + (mayEdit ? 'is-editable' : '') + '"' + (mayEdit ? ' tabindex="0"' : '') + '>' +
           '<span class="fin-dir ' + e.kind + '">' + icon(e.kind === 'income' ? 'fin-up' : e.kind === 'capital' ? 'landmark' : 'fin-down') + '</span>' +
           '<span class="fin-ename"><b>' + esc(e.category_label) + '</b><small>' + esc(rangeLabel(e.period_start, e.period_end)) +
@@ -547,6 +706,7 @@ window.Finance = (function () {
         (mayRecord ? '<button type="button" class="btn btn-dark btn-sm" data-fin-new>' + icon('plus') + 'Record entry</button>' : '') +
         '<button type="button" class="btn btn-ghost btn-sm" data-fin-open>' + icon('chart') + 'Finance page</button></div>';
     Fx.countUp(box, '.fin-mini b');
+    Fx.countUp(box, '.fin-m b');
     Charts.bindTooltips(box);
     Fx.draw(box);
     Fx.rise($('.fin-entries', box), 6);

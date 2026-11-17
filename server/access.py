@@ -522,6 +522,7 @@ ROUTE_PERMISSIONS = {
     "finance.update_entry": "finance.edit",
     "finance.delete_entry": "finance.delete",
     "finance.export_csv": "finance.export",
+    "finance.save_settings": "finance.edit",
 }
 
 
@@ -577,6 +578,7 @@ _AUDIT_ACTIONS = {
     "finance.create_entry": ("finance.create", "Recorded finance entry"),
     "finance.update_entry": ("finance.update", "Changed finance entry"),
     "finance.delete_entry": ("finance.delete", "Removed finance entry"),
+    "finance.save_settings": ("finance.settings", "Changed finance settings"),
 }
 
 

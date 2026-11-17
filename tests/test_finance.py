@@ -175,6 +175,74 @@ class EntryTests(AccessTestCase):
         self.assertIn("Cost only", text)
 
 
+class MeasureTests(AccessTestCase):
+
+    def test_capital_earned_back_and_when_the_rest_will_be(self):
+        rows = monthly("income", "RENT_RECEIVED", [50000] * 6, start=datetime.date(2026, 1, 1))
+        rows.append({"kind": "capital", "category": "PURCHASE", "amount": 1000000, "period_start": "2025-12-01",
+                     "months": 1})
+        r = finance.recovery(rows, 1000000, datetime.date(2026, 6, 1), datetime.date(2026, 6, 15))
+        self.assertEqual((r["recovered"], r["pct"], r["paidBack"], r["pace"]), (300000, 30.0, False, 50000))
+        self.assertEqual(r["by"], "2027-08")               # 700,000 left at 50,000 a month: 14 months
+        done = finance.recovery(rows, 200000, datetime.date(2026, 6, 1), datetime.date(2026, 6, 15))
+        self.assertEqual((done["paidBack"], done["by"]), (True, None))
+        self.assertIsNone(finance.recovery(rows, 0, datetime.date(2026, 6, 1)))
+
+    def test_a_property_bought_outright_against_the_benchmark(self):
+        """Bought for 4.8 Mn, earning 1.2 Mn a year with 240,000 of running costs."""
+        conn = db.get_conn()
+        conn.execute("UPDATE property SET current_value = 6000000, building_area_value = 2000, "
+                     "building_area_unit = 'SQ_FT', building_area_sqft = 2000 WHERE id = 2")
+        conn.commit()
+        db.release()
+        self.ok("POST", "/api/properties/2/finance", 201, data=entry("income", "RENT_RECEIVED", 1200000, "2026-01", 12))
+        self.ok("POST", "/api/properties/2/finance", 201, data=entry("cost", "MAINTENANCE", 240000, "2026-01", 12))
+        self.ok("POST", "/api/properties/2/finance", 201, data=entry("capital", "PURCHASE", 4800000, "2025-06"))
+        report = self.get("/api/finance/summary", **{"from": "2026-01", "to": "2026-12"})
+        two = next(p for p in report["properties"] if p["id"] == 2)
+        self.assertEqual(report["benchmark"], finance.DEFAULT_BENCHMARK)
+        self.assertEqual(two["yearly"], {"income": 1200000, "cost": 240000, "net": 960000})
+        self.assertEqual(two["returnPct"], 20.0)
+        self.assertEqual(two["benchmarkGap"], 960000 - 4800000 * finance.DEFAULT_BENCHMARK / 100)
+        self.assertEqual(two["valueReturnPct"], 16.0)
+        self.assertEqual(two["perSqft"], {"basis": "floor", "sqft": 2000, "cost": 120, "income": 600})
+        self.assertGreater(two["recovery"]["recovered"], 0)
+        self.assertEqual(report["capital"]["invested"], 4800000)
+        self.assertEqual(report["capital"]["above"], 1)
+        self.assertEqual([c["category"] for c in report["byCategory"]], ["RENT_RECEIVED", "MAINTENANCE"])
+        mine = self.get("/api/properties/2/finance", **{"from": "2026-01", "to": "2026-12"})
+        self.assertEqual(mine["benchmark"], finance.DEFAULT_BENCHMARK)
+        self.assertEqual(mine["byCategory"][0]["amount"], 1200000)
+
+    def test_the_same_months_last_year(self):
+        self.ok("POST", "/api/properties/1/finance", 201, data=entry("income", "BUSINESS_REVENUE", 90000, "2025-02", 3))
+        self.ok("POST", "/api/properties/1/finance", 201, data=entry("income", "BUSINESS_REVENUE", 120000, "2026-02", 3))
+        report = self.get("/api/finance/summary", **{"from": "2026-02", "to": "2026-04"})
+        one = next(p for p in report["properties"] if p["id"] == 1)
+        self.assertEqual(one["prev"], {"income": 90000, "cost": 0, "net": 90000})
+        self.assertEqual((report["previous"]["from"], report["previous"]["to"]), ("2025-02", "2025-04"))
+        self.assertEqual(report["previous"]["totals"]["income"], 90000)
+        csv = self.request("GET", "/api/export/finance.csv", query={"from": "2026-02", "to": "2026-04"})
+        self.assertIn("net_same_months_last_year_lkr", csv.body.decode("utf-8-sig").splitlines()[0])
+
+    def test_setting_the_benchmark(self):
+        self.assertTrue(self.get("/api/finance/summary")["mayChangeBenchmark"])
+        self.assertEqual(self.ok("PUT", "/api/finance/settings", data={"benchmark": "10.5%"})["benchmark"], 10.5)
+        self.assertEqual(self.get("/api/finance/summary")["benchmark"], 10.5)
+        for bad in ("lots", 80, -1):
+            self.assertEqual(self.request("PUT", "/api/finance/settings", data={"benchmark": bad}).status, 400, bad)
+        actions = [e["action"] for e in self.get("/api/audit", category="finance")["entries"]]
+        self.assertIn("finance.settings", actions)
+
+    def test_only_someone_who_may_edit_every_property_sets_the_benchmark(self):
+        sbu_id, _, _ = self.sample()
+        _, manager = self.person("PROPERTY_MANAGER", types=[sbu_id])        # finance.edit: limited
+        self.assertFalse(self.as_(manager, "GET", "/api/finance/summary").json()["mayChangeBenchmark"])
+        self.assertEqual(self.as_(manager, "PUT", "/api/finance/settings", data={"benchmark": 5}).status, 403)
+        _, auditor = self.person("AUDITOR")
+        self.assertEqual(self.as_(auditor, "PUT", "/api/finance/settings", data={"benchmark": 5}).status, 403)
+
+
 class FinanceAccessTests(AccessTestCase):
 
     def test_who_may_see_and_record(self):

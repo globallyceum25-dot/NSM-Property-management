@@ -72,6 +72,7 @@ window.API = (function () {
     createFinance: (id, data) => request('POST', '/api/properties/' + id + '/finance', data),
     updateFinance: (id, data) => request('PUT', '/api/finance/' + id, data),
     deleteFinance: (id) => request('DELETE', '/api/finance/' + id),
+    saveFinanceSettings: (data) => request('PUT', '/api/finance/settings', data),
 
     listSbus: () => request('GET', '/api/sbus'),
     createSbu: (data) => request('POST', '/api/sbus', data),

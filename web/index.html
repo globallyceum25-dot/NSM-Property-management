@@ -448,6 +448,19 @@
           <ul class="fin-losers" id="fin-losers"></ul>
         </section>
       </div>
+      <div class="fin-grid">
+        <section class="fin-card fin-roc-card">
+          <header><div><h2>Is the money earning enough?</h2><p>Each property's net result a year on the capital put into it, against what that money would earn elsewhere.</p></div>
+            <div class="fin-bench" id="fin-bench"></div></header>
+          <div class="fin-roc-sum" id="fin-roc-sum"></div>
+          <ul class="fin-roc" id="fin-roc"></ul>
+          <p class="empty" id="fin-roc-empty" hidden>No property with capital recorded has figures for this period. Record the purchase price or building work as <b>Capital</b> to see its return.</p>
+        </section>
+        <section class="fin-card fin-cat-card">
+          <header><div><h2>Where the money goes</h2><p>Running costs and income by category, for the period.</p></div></header>
+          <div id="fin-cats"></div>
+        </section>
+      </div>
       <section class="fin-card fin-pt-card">
         <header><div><h2>Net result over time</h2><p id="fin-pt-text">Income less running costs, month by month, for the properties shown.</p></div>
           <div class="fin-trend-legend"><span><i class="k-bar"></i>Monthly result</span><span><i class="k-avg"></i>3-month average</span><span><i class="k-proj"></i>Projection</span></div></header>
@@ -469,6 +482,8 @@
               <option value="income">Income</option>
               <option value="cost">Running costs</option>
               <option value="rent">Rent as share of income</option>
+              <option value="return">Return on capital</option>
+              <option value="sqft">Running cost per sq ft</option>
               <option value="improving">Most improving</option>
               <option value="worsening">Most worsening</option>
               <option value="name">Name</option>
