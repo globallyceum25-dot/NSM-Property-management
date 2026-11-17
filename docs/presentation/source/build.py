@@ -4,7 +4,9 @@
 
 FRAMES_DIR is what capture.py wrote. The figures and the role matrix are read
 from the live register (data/properties.db, read-only) at build time, so a
-rebuild brings them up to date. Needs Pillow for the WebP screens.
+rebuild brings them up to date; test data in the register is left out. The
+finance examples come from a fresh copy of the built-in test data, made in
+memory. Needs Pillow for the WebP screens.
 """
 
 import base64
@@ -21,7 +23,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 sys.path.insert(0, REPO)
 
-from server import access, srilanka  # noqa: E402
+from server import access, finance, srilanka, storage, testdata  # noqa: E402
 
 TENURE_OWNED = {"FREEHOLD"}
 UNIT_LABELS = {"PERCH": "perch", "ROOD": "rood", "ACRE": "acre", "HECTARE": "hectare", "SQ_M": "m²"}
@@ -50,18 +52,19 @@ def demos(frames):
 
 def stats(conn):
     one = lambda sql: conn.execute(sql).fetchone()[0]  # noqa: E731
-    total = one("SELECT COUNT(*) FROM property")
-    owned = one("SELECT COUNT(*) FROM property WHERE ownership_type IN (%s)"
+    total = one("SELECT COUNT(*) FROM property WHERE is_test = 0")
+    owned = one("SELECT COUNT(*) FROM property WHERE is_test = 0 AND ownership_type IN (%s)"
                 % ",".join("'%s'" % t for t in TENURE_OWNED))
     by_type = [{"label": r[0], "color": r[1], "n": r[2]} for r in conn.execute(
-        """SELECT s.name, s.color, COUNT(p.id) FROM sbu s LEFT JOIN property p ON p.sbu_id = s.id
+        """SELECT s.name, s.color, COUNT(p.id) FROM sbu s LEFT JOIN property p ON p.sbu_id = s.id AND p.is_test = 0
            GROUP BY s.id ORDER BY COUNT(p.id) DESC, s.name""")]
     owners = [{"label": r[0], "n": r[1]} for r in conn.execute(
         """SELECT e.short_code, COUNT(*) FROM property p JOIN legal_entity e ON e.id = p.legal_entity_id
-           GROUP BY e.id ORDER BY COUNT(*) DESC, e.short_code""")]
-    none = one("SELECT COUNT(*) FROM property WHERE legal_entity_id IS NULL")
+           WHERE p.is_test = 0 GROUP BY e.id ORDER BY COUNT(*) DESC, e.short_code""")]
+    none = one("SELECT COUNT(*) FROM property WHERE is_test = 0 AND legal_entity_id IS NULL")
     districts = [{"label": r[0], "n": r[1]} for r in conn.execute(
-        "SELECT district, COUNT(*) FROM property WHERE district IS NOT NULL GROUP BY district ORDER BY 2 DESC")]
+        "SELECT district, COUNT(*) FROM property WHERE is_test = 0 AND district IS NOT NULL "
+        "GROUP BY district ORDER BY 2 DESC")]
     return {
         "date": datetime.date.today().strftime("%-d %B %Y"),
         "total": total, "owned": owned, "leased": total - owned,
@@ -70,7 +73,7 @@ def stats(conn):
         "owners": len(owners),
         "byOwner": owners + ([{"label": "No group company", "n": none, "color": "#b3bfbd"}] if none else []),
         "districts": len(districts), "topDistricts": districts[:5],
-        "documents": one("SELECT COUNT(*) FROM document"),
+        "documents": one("SELECT COUNT(*) FROM document d JOIN property p ON p.id = d.property_id WHERE p.is_test = 0"),
         "units": [[UNIT_LABELS[k], "{:,.2f}".format(v).rstrip("0").rstrip(".")]
                   for k, v in srilanka.SQFT_PER_UNIT.items() if k in UNIT_LABELS],
         "docTypes": [label for _, label in srilanka.DOCUMENT_TYPES],
@@ -104,7 +107,49 @@ def roles(conn):
         out.append({"name": name, "cells": cells})
     short = {"Portfolio (properties)": "Portfolio", "User & access management": "Users & access",
              "Alerts & reminders": "Alerts", "System & audit": "Audit"}
-    return {"modules": [short.get(m["label"], m["label"]) for m in modules], "roles": out}
+    return {"modules": [short.get(m["label"], m["label"]) for m in modules], "roles": out,
+            "permissions": len(access.ALL_KEYS)}
+
+
+def finance_examples(conn):
+    """The Finance slides' figures: the built-in test data, loaded into an
+    in-memory copy of the register, read the way the Finance page reads it."""
+    mem = sqlite3.connect(":memory:")
+    conn.backup(mem)
+    mem.row_factory = sqlite3.Row
+    saved = storage.save, storage.remove
+    storage.save = storage.remove = lambda *a, **k: None     # the test PDFs are not needed here
+    try:
+        testdata.load(mem)
+    finally:
+        storage.save, storage.remove = saved
+    today = datetime.date.today()
+    first, last = finance.current_year_start(today), datetime.date(today.year, today.month, 1)
+    report = finance._report(mem, ["p.is_test = 1"], [], first, last)
+    mem.close()
+    rows = [r for r in report["properties"] if r["trend"]]
+
+    def pick(test, key):
+        found = [r for r in rows if test(r["trend"])]
+        found.sort(key=key)
+        return found[0] if found else None
+
+    examples = [
+        pick(lambda t: t["breakEven"], lambda r: r["trend"]["breakEven"]),       # a loss-maker turning around
+        pick(lambda t: t["turnsLoss"], lambda r: r["trend"]["turnsLoss"]),       # a profit slipping away
+        pick(lambda t: t["direction"] == "up" and (t["fitNow"] or 0) > 0, lambda r: -r["trend"]["slope"]),
+    ]
+    month = lambda key: datetime.date(int(key[:4]), int(key[5:7]), 1).strftime("%b %Y")  # noqa: E731
+    return {
+        "period": "FY %d/%s to date" % (first.year, str(first.year + 1)[2:]),
+        "counts": report["counts"], "totals": report["totals"], "properties": len(report["properties"]),
+        "categories": {kind: [label for _, k, label, _ in finance.CATEGORIES if k == kind] for kind, _ in finance.KINDS},
+        "band": int(finance.BREAK_EVEN_BAND * 100),
+        "examples": [{"name": r["name"].replace("Test ", "", 1), "status": r["status"], "net": r["net"],
+                      "trend": dict(r["trend"], breakEvenLabel=month(r["trend"]["breakEven"]) if r["trend"]["breakEven"] else None,
+                                    turnsLossLabel=month(r["trend"]["turnsLoss"]) if r["trend"]["turnsLoss"] else None)}
+                     for r in examples if r],
+    }
 
 
 def sprite():
@@ -125,6 +170,7 @@ def main():
     for key, value in (("__SPRITE__", sprite()), ("__LOGO__", logo),
                        ("__MONTH__", datetime.date.today().strftime("%B %Y")),
                        ("__STATS__", json.dumps(stats(conn))), ("__ROLES__", json.dumps(roles(conn))),
+                       ("__FIN__", json.dumps(finance_examples(conn))),
                        ("__DEMOS__", json.dumps(demos(frames)))):
         html = html.replace(key, value)
     conn.close()

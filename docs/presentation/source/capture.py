@@ -61,11 +61,14 @@ def make_admin(data_dir, password):
     run: add the demo Super Admin directly."""
     os.environ.update(REGISTER_DATA_DIR=data_dir, DATABASE_URL="", REGISTER_PBKDF2_ITERATIONS="20000")
     sys.path.insert(0, REPO)
-    from server import auth, db
+    from server import auth, db, storage, testdata
     db.init_db()
+    storage.init()
     conn = db.get_conn()
     if not conn.execute("SELECT 1 FROM app_user WHERE email = 'demo.admin@example.test'").fetchone():
         auth.create_user(conn, "demo.admin@example.test", "Demo Administrator", "SUPER_ADMIN", password)
+    # A fresh test set, for the Finance demo (the real register has no figures yet).
+    testdata.load(conn)
     db.release()
 
 
@@ -349,6 +352,59 @@ def walk(page, rec, admin_password, demo_users):
     page.wait_for_timeout(700)
     rec.shot("#alerts-pop", "The bell: documents expiring soon", "left", click=False, hold=3.6)
     close_all()
+
+    # Finance -- on the test data, which has two years of figures
+    rec.module("finance", "Property Register › Finance")
+    page.request.put(BASE + "/api/test-data/mode", data={"on": True})
+    hide_banner = ".test-banner{display:none!important} body.test-mode .topbar{box-shadow:none!important}"
+
+    def finance_page():
+        page.goto(BASE + "/")    # a fresh page: no filter left over from the dashboard demo
+        page.locator(".tab[data-view=finance]").click()
+        page.locator("#fin-rows tr").first.wait_for(timeout=15000)
+        page.add_style_tag(content=hide_banner)
+        page.wait_for_timeout(1600)
+
+    def show(sel):
+        page.evaluate("s => { const e = document.querySelector(s); const v = document.getElementById('view-finance');"
+                      " v.scrollTop += e.getBoundingClientRect().top - 150; }", sel)
+        page.wait_for_timeout(700)
+
+    finance_page()
+    rec.shot("#fin-kpis", "Income, running costs and the net result", "below", cursor="#fin-period", settle=300)
+    rec.shot(".fin-period-pick", "This financial year, last year, the last 12 months…", "below",
+             cursor=".fin-grid .fin-card:nth-child(2)", settle=200)
+    show(".fin-grid")
+    rec.shot(".fin-grid .fin-card:nth-child(2)", "Profitable, break-even, loss-making — and who is turning around",
+             "left", cursor="#fin-turning-list li", hold=3.8, settle=300)
+    show(".fin-pt-card")
+    rec.shot(".fin-pt-card", "The portfolio month by month, and where it is heading", "below",
+             cursor=".fin-mult-card", hold=3.6, settle=300)
+    show(".fin-mult-card")
+    rec.shot(".fin-mults", "Every property's trend, side by side", "below", cursor=".fin-mult", settle=300)
+    matara = page.locator(".fin-mult", has_text="Matara").first
+    matara.scroll_into_view_if_needed()
+    page.wait_for_timeout(400)
+    rec.shot(".fin-mult:has-text(\"Matara\")", "A loss-maker turning around", "right",
+             cursor=".fin-mult >> text=Matara", settle=300)
+    matara.click()
+    page.locator("#drawer .fin-trend-chart").wait_for(timeout=10000)
+    page.wait_for_timeout(1500)
+    page.evaluate("document.querySelector('#drawer .fin-drawer').scrollIntoView({block: 'start'})")
+    page.wait_for_timeout(500)
+    rec.shot("#drawer .fin-trend-box", "Its own trend: breaks even around Feb 2028", "left",
+             cursor="#drawer [data-fin-new]", hold=4)
+    page.locator("#drawer [data-fin-new]").scroll_into_view_if_needed()
+    page.click("#drawer [data-fin-new]")
+    page.locator("#finance-modal").wait_for()
+    page.fill("#fin-form input[name=amount]", "5,400,000")
+    page.select_option("#fin-form select[name=covers]", "12")
+    page.fill("#fin-form input[name=counterparty]", "Landowner")
+    page.wait_for_timeout(500)
+    rec.shot("#fin-spread-hint", "A year's rent, spread over the months it covers", "below",
+             cursor="#btn-fin-save", click=False, hold=4)
+    close_all()
+    page.request.put(BASE + "/api/test-data/mode", data={"on": False})
 
     # 07 Property types & companies
     rec.module("groups", "Property Register › Property types")
